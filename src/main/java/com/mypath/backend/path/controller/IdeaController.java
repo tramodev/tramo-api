@@ -1,5 +1,7 @@
 package com.mypath.backend.path.controller;
 
+import com.mypath.backend.path.dto.IdeaContentRequestDTO;
+import com.mypath.backend.path.dto.IdeaContentResponseDTO;
 import com.mypath.backend.path.dto.IdeaRequestDTO;
 import com.mypath.backend.path.dto.IdeaResponseDTO;
 import com.mypath.backend.path.service.IdeaService;
@@ -40,6 +42,18 @@ public class IdeaController {
     @DeleteMapping("/idea/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal User user) {
         ideaService.delete(id, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/idea/{id}/content")
+    public ResponseEntity<IdeaContentResponseDTO> getContent(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(ideaService.getContent(id, user));
+    }
+
+    @PutMapping("/idea/{id}/content")
+    public ResponseEntity<Void> updateContent(@PathVariable Long id, @RequestBody IdeaContentRequestDTO request,
+                                               @AuthenticationPrincipal User user) {
+        ideaService.updateContent(id, request.getContent(), user);
         return ResponseEntity.noContent().build();
     }
 

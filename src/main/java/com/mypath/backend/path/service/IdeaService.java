@@ -1,6 +1,7 @@
 package com.mypath.backend.path.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.path.dto.IdeaContentResponseDTO;
 import com.mypath.backend.path.dto.IdeaRequestDTO;
 import com.mypath.backend.path.dto.IdeaResponseDTO;
 import com.mypath.backend.path.entity.Idea;
@@ -82,6 +83,24 @@ public class IdeaService {
     public void delete(Long id, User requester) {
         Idea idea = getOwnedIdea(id, requester);
         ideaRepository.delete(idea);
+    }
+
+    public IdeaContentResponseDTO getContent(Long id, User requester) {
+        Idea idea = getOwnedIdea(id, requester);
+        String content = idea.getContent() != null ? idea.getContent().getContent() : "";
+        return new IdeaContentResponseDTO(content);
+    }
+
+    public void updateContent(Long id, String content, User requester) {
+        Idea idea = getOwnedIdea(id, requester);
+        IdeaContent ideaContent = idea.getContent();
+        if (ideaContent == null) {
+            ideaContent = new IdeaContent();
+            idea.setContent(ideaContent);
+        }
+        ideaContent.setContent(content);
+        ideaContent.setUpdatedDate(new Date());
+        ideaRepository.save(idea);
     }
 
     public void attachToPath(Long pathId, Long ideaId, User requester) {
