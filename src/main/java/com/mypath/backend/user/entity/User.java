@@ -41,6 +41,10 @@ public class User implements UserDetails {
     @OneToMany(mappedBy="owner")
     private List<Project> projects;
     private Role role;
+    // Backfilled true for pre-existing rows via the column default; new registrations
+    // explicitly set this false until the verification link is clicked.
+    @Column(columnDefinition = "boolean default true")
+    private boolean emailVerified;
 //    @OneToOne(cascade = CascadeType.ALL)
 //    private Subscription subscription;
 
@@ -66,6 +70,6 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return emailVerified;
     }
 }

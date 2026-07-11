@@ -1,15 +1,21 @@
 package com.mypath.backend.auth.controller;
 
 import com.mypath.backend.auth.dto.AuthResponse;
+import com.mypath.backend.auth.dto.AvailabilityResponseDTO;
 import com.mypath.backend.auth.dto.LoginRequestDTO;
 import com.mypath.backend.auth.dto.RegisterRequestDTO;
+import com.mypath.backend.auth.dto.RegisterResponseDTO;
+import com.mypath.backend.auth.dto.ResendVerificationRequestDTO;
+import com.mypath.backend.auth.dto.VerifyEmailRequestDTO;
 import com.mypath.backend.auth.service.AuthService;
 import com.mypath.backend.auth.dto.RefreshTokenRequestDTO;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -20,9 +26,30 @@ public class AuthController {
         this.authService = authService;
     }
 
+    @GetMapping("/check-username")
+    public ResponseEntity<AvailabilityResponseDTO> checkUsername(@RequestParam String username) {
+        return ResponseEntity.ok(authService.checkUsernameAvailability(username));
+    }
+
+    @GetMapping("/check-email")
+    public ResponseEntity<AvailabilityResponseDTO> checkEmail(@RequestParam String email) {
+        return ResponseEntity.ok(authService.checkEmailAvailability(email));
+    }
+
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequestDTO registerRequest){
+    public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO registerRequest){
         return ResponseEntity.ok(authService.register(registerRequest));
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<AuthResponse> verifyEmail(@RequestBody VerifyEmailRequestDTO request) {
+        return ResponseEntity.ok(authService.verifyEmail(request.getToken()));
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@RequestBody ResendVerificationRequestDTO request) {
+        authService.resendVerification(request.getUsername(), request.getEmail());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/login")

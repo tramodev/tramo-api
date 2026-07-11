@@ -7,13 +7,12 @@ import lombok.Setter;
 public class AuthResponse {
     String accessToken;
     String refreshToken;
+    String username;
 
-
-
-    public AuthResponse(String accessToken, String refreshToken) {
+    public AuthResponse(String accessToken, String refreshToken, String username) {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
-
+        this.username = username;
     }
 
 }
