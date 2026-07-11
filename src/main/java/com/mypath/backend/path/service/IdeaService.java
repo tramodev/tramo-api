@@ -1,0 +1,170 @@
+package com.mypath.backend.path.service;
+
+import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.path.dto.IdeaRequestDTO;
+import com.mypath.backend.path.dto.IdeaResponseDTO;
+import com.mypath.backend.path.entity.Idea;
+import com.mypath.backend.path.entity.IdeaContent;
+import com.mypath.backend.path.entity.IdeaLink;
+import com.mypath.backend.path.entity.Path;
+import com.mypath.backend.path.entity.PathIdea;
+import com.mypath.backend.path.repository.IdeaLinkRepository;
+import com.mypath.backend.path.repository.IdeaRepository;
+import com.mypath.backend.path.repository.PathIdeaRepository;
+import com.mypath.backend.user.entity.User;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+
+import java.util.Date;
+import java.util.List;
+
+@Service
+public class IdeaService {
+    private final IdeaRepository ideaRepository;
+    private final PathIdeaRepository pathIdeaRepository;
+    private final IdeaLinkRepository ideaLinkRepository;
+    private final PathService pathService;
+
+    public IdeaService(IdeaRepository ideaRepository, PathIdeaRepository pathIdeaRepository,
+                        IdeaLinkRepository ideaLinkRepository, PathService pathService) {
+        this.ideaRepository = ideaRepository;
+        this.pathIdeaRepository = pathIdeaRepository;
+        this.ideaLinkRepository = ideaLinkRepository;
+        this.pathService = pathService;
+    }
+
+    public IdeaResponseDTO create(Long pathId, IdeaRequestDTO request, User requester) {
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new IllegalArgumentException("Title is required");
+        }
+        Path path = pathService.getOwnedPath(pathId, requester);
+
+        IdeaContent content = new IdeaContent();
+        content.setContent("");
+        content.setUpdatedDate(new Date());
+
+        Idea idea = new Idea();
+        idea.setTitle(request.getTitle());
+        idea.setType(request.getType());
+        idea.setContent(content);
+        idea.setCreatedDate(new Date());
+        idea.setModifiedDate(new Date());
+        idea = ideaRepository.save(idea);
+
+        PathIdea pathIdea = new PathIdea();
+        pathIdea.setPath(path);
+        pathIdea.setIdea(idea);
+        pathIdea.setOrderIndex(pathIdeaRepository.countByPathId(pathId));
+        pathIdeaRepository.save(pathIdea);
+
+        return toResponse(idea);
+    }
+
+    public List<IdeaResponseDTO> getAllForPath(Long pathId, User requester) {
+        pathService.getOwnedPath(pathId, requester);
+        return pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(pathId).stream()
+                .map(pi -> toResponse(pi.getIdea()))
+                .toList();
+    }
+
+    public IdeaResponseDTO update(Long id, IdeaRequestDTO request, User requester) {
+        Idea idea = getOwnedIdea(id, requester);
+        if (request.getTitle() != null && !request.getTitle().isBlank()) {
+            idea.setTitle(request.getTitle());
+        }
+        if (request.getType() != null) {
+            idea.setType(request.getType());
+        }
+        idea.setModifiedDate(new Date());
+        return toResponse(ideaRepository.save(idea));
+    }
+
+    public void delete(Long id, User requester) {
+        Idea idea = getOwnedIdea(id, requester);
+        ideaRepository.delete(idea);
+    }
+
+    public void attachToPath(Long pathId, Long ideaId, User requester) {
+        Path path = pathService.getOwnedPath(pathId, requester);
+        Idea idea = getOwnedIdea(ideaId, requester);
+        boolean alreadyAttached = pathIdeaRepository.findByIdeaId(idea.getId()).stream()
+                .anyMatch(pi -> pi.getPath().getId().equals(path.getId()));
+        if (alreadyAttached) {
+            return;
+        }
+        PathIdea pathIdea = new PathIdea();
+        pathIdea.setPath(path);
+        pathIdea.setIdea(idea);
+        pathIdea.setOrderIndex(pathIdeaRepository.countByPathId(pathId));
+        pathIdeaRepository.save(pathIdea);
+    }
+
+    public void detachFromPath(Long pathId, Long ideaId, User requester) {
+        pathService.getOwnedPath(pathId, requester);
+        Idea idea = getOwnedIdea(ideaId, requester);
+
+        pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(pathId).stream()
+                .filter(pi -> pi.getIdea().getId().equals(idea.getId()))
+                .findFirst()
+                .ifPresent(pathIdeaRepository::delete);
+
+        if (pathIdeaRepository.findByIdeaId(idea.getId()).isEmpty()) {
+            ideaRepository.delete(idea);
+        }
+    }
+
+    public void linkIdeas(Long sourceId, Long targetId, User requester) {
+        if (sourceId.equals(targetId)) {
+            throw new IllegalArgumentException("An idea cannot be linked to itself");
+        }
+        Idea source = getOwnedIdea(sourceId, requester);
+        Idea target = getOwnedIdea(targetId, requester);
+
+        if (ideaLinkRepository.findBySourceIdeaIdAndTargetIdeaId(source.getId(), target.getId()).isPresent()
+                || ideaLinkRepository.findBySourceIdeaIdAndTargetIdeaId(target.getId(), source.getId()).isPresent()) {
+            return;
+        }
+
+        IdeaLink link = new IdeaLink();
+        link.setSourceIdea(source);
+        link.setTargetIdea(target);
+        link.setCreatedDate(new Date());
+        ideaLinkRepository.save(link);
+    }
+
+    public void unlinkIdeas(Long sourceId, Long targetId, User requester) {
+        getOwnedIdea(sourceId, requester);
+        getOwnedIdea(targetId, requester);
+        ideaLinkRepository.findBySourceIdeaIdAndTargetIdeaId(sourceId, targetId).ifPresent(ideaLinkRepository::delete);
+        ideaLinkRepository.findBySourceIdeaIdAndTargetIdeaId(targetId, sourceId).ifPresent(ideaLinkRepository::delete);
+    }
+
+    public List<IdeaResponseDTO> getLinkedIdeas(Long id, User requester) {
+        Idea idea = getOwnedIdea(id, requester);
+        return ideaLinkRepository.findBySourceIdeaIdOrTargetIdeaId(idea.getId(), idea.getId()).stream()
+                .map(link -> link.getSourceIdea().getId().equals(idea.getId()) ? link.getTargetIdea() : link.getSourceIdea())
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private Idea getOwnedIdea(Long id, User requester) {
+        Idea idea = ideaRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Idea not found"));
+        boolean owns = idea.getPathIdea().stream()
+                .anyMatch(pi -> pi.getPath().getProject().getOwner().getId().equals(requester.getId()));
+        if (!owns) {
+            throw new AccessDeniedException("Not allowed to access this idea");
+        }
+        return idea;
+    }
+
+    private IdeaResponseDTO toResponse(Idea idea) {
+        return new IdeaResponseDTO(
+                idea.getId(),
+                idea.getTitle(),
+                idea.getType(),
+                idea.getCreatedDate(),
+                idea.getModifiedDate()
+        );
+    }
+}

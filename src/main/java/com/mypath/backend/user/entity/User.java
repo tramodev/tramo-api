@@ -1,6 +1,6 @@
 package com.mypath.backend.user.entity;
 
-import com.mypath.backend.path.entity.Path;
+import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.subscription.entity.Subscription;
 import com.mypath.backend.user.Role;
 import jakarta.persistence.*;
@@ -39,7 +39,7 @@ public class User implements UserDetails {
     private Date createdAt;
     private Date updatedAt;
     @OneToMany(mappedBy="owner")
-    private List<Path> paths;
+    private List<Project> projects;
     private Role role;
 //    @OneToOne(cascade = CascadeType.ALL)
 //    private Subscription subscription;

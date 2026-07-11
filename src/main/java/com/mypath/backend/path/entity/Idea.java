@@ -25,4 +25,10 @@ public class Idea {
     @OneToMany(mappedBy = "idea")
     List<PathIdea> pathIdea;
 
+    @OneToMany(mappedBy = "sourceIdea", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<IdeaLink> outgoingLinks;
+
+    @OneToMany(mappedBy = "targetIdea", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<IdeaLink> incomingLinks;
+
 }
