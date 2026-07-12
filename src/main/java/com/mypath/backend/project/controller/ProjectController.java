@@ -53,4 +53,9 @@ public class ProjectController {
     public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.toggleVote(id, user));
     }
+
+    @PostMapping("/{id}/fork")
+    public ResponseEntity<ProjectResponseDTO> fork(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.fork(id, user));
+    }
 }

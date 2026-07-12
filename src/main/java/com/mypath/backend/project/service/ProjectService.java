@@ -2,8 +2,11 @@ package com.mypath.backend.project.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.path.entity.Idea;
+import com.mypath.backend.path.entity.IdeaContent;
+import com.mypath.backend.path.entity.IdeaLink;
 import com.mypath.backend.path.entity.Path;
 import com.mypath.backend.path.entity.PathIdea;
+import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
@@ -27,6 +30,8 @@ import org.springframework.stereotype.Service;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,14 +45,16 @@ public class ProjectService {
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaRepository ideaRepository;
     private final ProjectVoteRepository projectVoteRepository;
+    private final IdeaLinkRepository ideaLinkRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
-                           ProjectVoteRepository projectVoteRepository) {
+                           ProjectVoteRepository projectVoteRepository, IdeaLinkRepository ideaLinkRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaRepository = ideaRepository;
+        this.ideaLinkRepository = ideaLinkRepository;
         this.projectVoteRepository = projectVoteRepository;
     }
 
@@ -118,17 +125,102 @@ public class ProjectService {
         projectRepository.delete(project);
     }
 
-    public PublicProjectResponseDTO getPublicProject(Long id, User requester) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        // Both "unlisted" (share-link only) and "published" (also in the public feed)
-        // are viewable here — only "private" (or unset, the default) is blocked.
-        // 404s the same as a nonexistent project either way, so this can't be used
-        // to probe which project IDs exist and are simply private.
+    // Both "unlisted" (share-link only) and "published" (also in the public feed)
+    // are viewable here — only "private" (or unset, the default) is blocked.
+    // 404s the same as a nonexistent project either way, so this can't be used
+    // to probe which project IDs exist and are simply private.
+    private void assertViewable(Project project) {
         String visibility = project.getVisibility();
         if (!"unlisted".equals(visibility) && !"published".equals(visibility)) {
             throw new ResourceNotFoundException("Project not found");
         }
+    }
+
+    @Transactional
+    public ProjectResponseDTO fork(Long sourceProjectId, User requester) {
+        Project source = projectRepository.findById(sourceProjectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        assertViewable(source);
+        if (source.getOwner().getId().equals(requester.getId())) {
+            throw new AccessDeniedException("Cannot fork your own project");
+        }
+
+        Project fork = new Project();
+        fork.setTitle(source.getTitle());
+        fork.setDescription(source.getDescription());
+        fork.setVisibility("private");
+        fork.setThumbnail(source.getThumbnail());
+        fork.setTags(source.getTags());
+        fork.setOwner(requester);
+        fork.setCreationDate(new Date());
+        fork.setModifiedDate(new Date());
+        fork = projectRepository.save(fork);
+
+        // Ideas can be shared across multiple paths within the same project
+        // (PathIdea join), so copies are keyed by source idea id to preserve
+        // that sharing rather than duplicating an idea once per path.
+        Map<Long, Idea> ideaCopies = new HashMap<>();
+        for (Path sourcePath : pathRepository.findByProjectId(sourceProjectId)) {
+            Path pathCopy = new Path();
+            pathCopy.setTitle(sourcePath.getTitle());
+            pathCopy.setVisibility(sourcePath.getVisibility());
+            pathCopy.setCreationDate(new Date());
+            pathCopy.setModifiedDate(new Date());
+            pathCopy.setProject(fork);
+            pathCopy = pathRepository.save(pathCopy);
+
+            for (PathIdea membership : pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(sourcePath.getId())) {
+                Idea ideaCopy = ideaCopies.computeIfAbsent(membership.getIdea().getId(),
+                        ignored -> copyIdea(membership.getIdea()));
+
+                PathIdea membershipCopy = new PathIdea();
+                membershipCopy.setPath(pathCopy);
+                membershipCopy.setIdea(ideaCopy);
+                membershipCopy.setOrderIndex(membership.getOrderIndex());
+                pathIdeaRepository.save(membershipCopy);
+            }
+        }
+
+        // Idea links are looked up from both sides, so track which link ids have
+        // already been copied to avoid creating each one twice.
+        Set<Long> copiedLinkIds = new HashSet<>();
+        for (Long sourceIdeaId : ideaCopies.keySet()) {
+            for (IdeaLink link : ideaLinkRepository.findBySourceIdeaIdOrTargetIdeaId(sourceIdeaId, sourceIdeaId)) {
+                if (!copiedLinkIds.add(link.getId())) continue;
+                Idea newSource = ideaCopies.get(link.getSourceIdea().getId());
+                Idea newTarget = ideaCopies.get(link.getTargetIdea().getId());
+                if (newSource == null || newTarget == null) continue;
+
+                IdeaLink linkCopy = new IdeaLink();
+                linkCopy.setSourceIdea(newSource);
+                linkCopy.setTargetIdea(newTarget);
+                linkCopy.setCreatedDate(new Date());
+                ideaLinkRepository.save(linkCopy);
+            }
+        }
+
+        return toResponse(fork);
+    }
+
+    private Idea copyIdea(Idea source) {
+        Idea copy = new Idea();
+        copy.setTitle(source.getTitle());
+        copy.setType(source.getType());
+        copy.setCreatedDate(new Date());
+        copy.setModifiedDate(new Date());
+        if (source.getContent() != null) {
+            IdeaContent contentCopy = new IdeaContent();
+            contentCopy.setContent(source.getContent().getContent());
+            contentCopy.setUpdatedDate(new Date());
+            copy.setContent(contentCopy);
+        }
+        return ideaRepository.save(copy);
+    }
+
+    public PublicProjectResponseDTO getPublicProject(Long id, User requester) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        assertViewable(project);
 
         List<PublicPathDTO> paths = pathRepository.findByProjectId(id).stream()
                 .map(path -> new PublicPathDTO(
