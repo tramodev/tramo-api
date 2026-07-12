@@ -21,6 +21,12 @@ public class Project {
     private String title;
     private String description;
     private String visibility;
+    @Column(columnDefinition = "TEXT")
+    private String thumbnail;
+    // Comma-separated, lowercased tags (e.g. "webdev,react,tutorial") — kept as
+    // a flat string rather than a join table since hot-topics counting runs in
+    // memory over the (small) set of published projects, not via SQL grouping.
+    private String tags;
     private Date creationDate;
     private Date modifiedDate;
 

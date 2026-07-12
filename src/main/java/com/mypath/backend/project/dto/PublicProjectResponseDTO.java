@@ -5,17 +5,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.Date;
+import java.util.List;
 
 @Getter
 @Setter
 @AllArgsConstructor
-public class ProjectResponseDTO {
+public class PublicProjectResponseDTO {
     private Long id;
     private String title;
     private String description;
-    private String visibility;
-    private String thumbnail;
-    private String tags;
-    private Date creationDate;
+    private String ownerUsername;
     private Date modifiedDate;
+    private List<PublicPathDTO> paths;
 }

@@ -1,23 +1,45 @@
 package com.mypath.backend.project.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.path.entity.Idea;
+import com.mypath.backend.path.entity.Path;
+import com.mypath.backend.path.entity.PathIdea;
+import com.mypath.backend.path.repository.IdeaRepository;
+import com.mypath.backend.path.repository.PathIdeaRepository;
+import com.mypath.backend.path.repository.PathRepository;
+import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
+import com.mypath.backend.project.dto.PublicIdeaDTO;
+import com.mypath.backend.project.dto.PublicPathDTO;
+import com.mypath.backend.project.dto.PublicProjectResponseDTO;
+import com.mypath.backend.project.dto.TagCountDTO;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.project.repository.ProjectRepository;
 import com.mypath.backend.user.entity.User;
+import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ProjectService {
     private final ProjectRepository projectRepository;
+    private final PathRepository pathRepository;
+    private final PathIdeaRepository pathIdeaRepository;
+    private final IdeaRepository ideaRepository;
 
-    public ProjectService(ProjectRepository projectRepository) {
+    public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
+                           PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository) {
         this.projectRepository = projectRepository;
+        this.pathRepository = pathRepository;
+        this.pathIdeaRepository = pathIdeaRepository;
+        this.ideaRepository = ideaRepository;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -28,6 +50,7 @@ public class ProjectService {
         project.setTitle(request.getTitle());
         project.setDescription(request.getDescription());
         project.setVisibility(request.getVisibility());
+        project.setTags(normalizeTags(request.getTags()));
         project.setOwner(owner);
         project.setCreationDate(new Date());
         project.setModifiedDate(new Date());
@@ -55,13 +78,131 @@ public class ProjectService {
         if (request.getVisibility() != null) {
             project.setVisibility(request.getVisibility());
         }
+        if (request.getThumbnail() != null) {
+            project.setThumbnail(request.getThumbnail());
+        }
+        if (request.getTags() != null) {
+            project.setTags(normalizeTags(request.getTags()));
+        }
         project.setModifiedDate(new Date());
         return toResponse(projectRepository.save(project));
     }
 
+    @Transactional
     public void delete(Long id, User requester) {
         Project project = getOwnedProject(id, requester);
+        // Paths/ideas don't cascade from Project, so they need the same manual
+        // cleanup PathService.delete does for a single path — otherwise the FK
+        // from path -> project blocks the delete below.
+        for (Path path : pathRepository.findByProjectId(id)) {
+            List<PathIdea> memberships = pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(path.getId());
+            for (PathIdea membership : memberships) {
+                Long ideaId = membership.getIdea().getId();
+                pathIdeaRepository.delete(membership);
+                if (pathIdeaRepository.findByIdeaId(ideaId).isEmpty()) {
+                    ideaRepository.deleteById(ideaId);
+                }
+            }
+            pathRepository.delete(path);
+        }
         projectRepository.delete(project);
+    }
+
+    public PublicProjectResponseDTO getPublicProject(Long id) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        // Both "unlisted" (share-link only) and "published" (also in the public feed)
+        // are viewable here — only "private" (or unset, the default) is blocked.
+        // 404s the same as a nonexistent project either way, so this can't be used
+        // to probe which project IDs exist and are simply private.
+        String visibility = project.getVisibility();
+        if (!"unlisted".equals(visibility) && !"published".equals(visibility)) {
+            throw new ResourceNotFoundException("Project not found");
+        }
+
+        List<PublicPathDTO> paths = pathRepository.findByProjectId(id).stream()
+                .map(path -> new PublicPathDTO(
+                        path.getId(),
+                        path.getTitle(),
+                        pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(path.getId()).stream()
+                                .map(pathIdea -> pathIdea.getIdea())
+                                .map(this::toPublicIdea)
+                                .toList()
+                ))
+                .toList();
+
+        return new PublicProjectResponseDTO(
+                project.getId(),
+                project.getTitle(),
+                project.getDescription(),
+                project.getOwner().getUsername(),
+                project.getModifiedDate(),
+                paths
+        );
+    }
+
+    public List<ProjectFeedItemDTO> getPublishedFeed(String query) {
+        String q = query == null ? "" : query.trim().toLowerCase();
+        return projectRepository.findByVisibilityOrderByModifiedDateDesc("published").stream()
+                .filter(project -> q.isEmpty() || matchesSearch(project, q))
+                .map(project -> new ProjectFeedItemDTO(
+                        project.getId(),
+                        project.getTitle(),
+                        project.getDescription(),
+                        project.getOwner().getUsername(),
+                        project.getThumbnail(),
+                        project.getTags(),
+                        project.getModifiedDate()
+                ))
+                .toList();
+    }
+
+    private boolean matchesSearch(Project project, String q) {
+        return containsIgnoreCase(project.getTitle(), q)
+                || containsIgnoreCase(project.getDescription(), q)
+                || containsIgnoreCase(project.getTags(), q);
+    }
+
+    private boolean containsIgnoreCase(String value, String q) {
+        return value != null && value.toLowerCase().contains(q);
+    }
+
+    // In-memory rather than a SQL GROUP BY since tags live as a flat
+    // comma-separated string, not a normalized join table — fine at the
+    // scale of "published projects on a side project," not fine at scale.
+    public List<TagCountDTO> getHotTopics(int limit) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc("published")) {
+            for (String tag : splitTags(project.getTags())) {
+                counts.merge(tag, 1L, Long::sum);
+            }
+        }
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(limit)
+                .map(entry -> new TagCountDTO(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    private List<String> splitTags(String tags) {
+        if (tags == null || tags.isBlank()) return List.of();
+        return Arrays.stream(tags.split(","))
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .toList();
+    }
+
+    private String normalizeTags(String rawTags) {
+        List<String> tags = splitTags(rawTags == null ? "" : rawTags.toLowerCase())
+                .stream()
+                .distinct()
+                .toList();
+        return String.join(",", tags);
+    }
+
+    private PublicIdeaDTO toPublicIdea(Idea idea) {
+        String content = idea.getContent() != null ? idea.getContent().getContent() : "";
+        return new PublicIdeaDTO(idea.getId(), idea.getTitle(), idea.getType(), content);
     }
 
     public Project getOwnedProject(Long id, User requester) {
@@ -79,6 +220,8 @@ public class ProjectService {
                 project.getTitle(),
                 project.getDescription(),
                 project.getVisibility(),
+                project.getThumbnail(),
+                project.getTags(),
                 project.getCreationDate(),
                 project.getModifiedDate()
         );
