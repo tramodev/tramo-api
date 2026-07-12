@@ -2,10 +2,13 @@ package com.mypath.backend.auth.controller;
 
 import com.mypath.backend.auth.dto.AuthResponse;
 import com.mypath.backend.auth.dto.AvailabilityResponseDTO;
+import com.mypath.backend.auth.dto.ForgotPasswordRequestDTO;
+import com.mypath.backend.auth.dto.GoogleAuthRequestDTO;
 import com.mypath.backend.auth.dto.LoginRequestDTO;
 import com.mypath.backend.auth.dto.RegisterRequestDTO;
 import com.mypath.backend.auth.dto.RegisterResponseDTO;
 import com.mypath.backend.auth.dto.ResendVerificationRequestDTO;
+import com.mypath.backend.auth.dto.ResetPasswordRequestDTO;
 import com.mypath.backend.auth.dto.VerifyEmailRequestDTO;
 import com.mypath.backend.auth.service.AuthService;
 import com.mypath.backend.auth.dto.RefreshTokenRequestDTO;
@@ -50,6 +53,23 @@ public class AuthController {
     public ResponseEntity<Void> resendVerification(@RequestBody ResendVerificationRequestDTO request) {
         authService.resendVerification(request.getUsername(), request.getEmail());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequestDTO request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO request) {
+        authService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleAuthRequestDTO request) {
+        return ResponseEntity.ok(authService.googleAuth(request.getIdToken()));
     }
 
     @PostMapping("/login")

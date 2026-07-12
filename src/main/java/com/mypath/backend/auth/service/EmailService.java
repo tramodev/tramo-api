@@ -47,4 +47,25 @@ public class EmailService {
                     user.getEmail(), ex.getMessage(), verificationLink);
         }
     }
+
+    public void sendPasswordResetEmail(User user, String token) {
+        String resetLink = frontendUrl + "/reset-password?token=" + token;
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(user.getEmail());
+        message.setSubject("Reset your MyPath password");
+        message.setText(
+                "Hi " + user.getUsername() + ",\n\n"
+                        + "Click the link below to reset your password:\n"
+                        + resetLink + "\n\n"
+                        + "This link expires in 1 hour. If you didn't request this, you can ignore this email."
+        );
+        try {
+            mailSender.send(message);
+        } catch (MailException ex) {
+            log.warn("Failed to send password reset email to {}: {}. Reset link: {}",
+                    user.getEmail(), ex.getMessage(), resetLink);
+        }
+    }
 }

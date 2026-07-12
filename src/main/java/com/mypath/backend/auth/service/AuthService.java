@@ -7,8 +7,10 @@ import com.mypath.backend.auth.dto.RefreshTokenRequestDTO;
 import com.mypath.backend.auth.dto.RegisterRequestDTO;
 import com.mypath.backend.auth.dto.RegisterResponseDTO;
 import com.mypath.backend.auth.entity.EmailVerificationToken;
+import com.mypath.backend.auth.entity.PasswordResetToken;
 import com.mypath.backend.auth.entity.RefreshToken;
 import com.mypath.backend.auth.repository.EmailVerificationTokenRepository;
+import com.mypath.backend.auth.repository.PasswordResetTokenRepository;
 import com.mypath.backend.auth.repository.RefreshTokenRepository;
 import com.mypath.backend.exception.InvalidTokenException;
 import com.mypath.backend.exception.UserAlreadyExistsException;
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,18 +39,24 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
+    private final GoogleTokenVerifier googleTokenVerifier;
 
     public AuthService(UserRepository userRepository, JwtService jwtService, AuthenticationManager authenticationManager,
                         PasswordEncoder passwordEncoder, RefreshTokenRepository refreshTokenRepository,
-                        EmailVerificationTokenRepository emailVerificationTokenRepository, EmailService emailService) {
+                        EmailVerificationTokenRepository emailVerificationTokenRepository,
+                        PasswordResetTokenRepository passwordResetTokenRepository, EmailService emailService,
+                        GoogleTokenVerifier googleTokenVerifier) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
         this.passwordEncoder = passwordEncoder;
         this.refreshTokenRepository = refreshTokenRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailService = emailService;
+        this.googleTokenVerifier = googleTokenVerifier;
     }
 
     public AvailabilityResponseDTO checkUsernameAvailability(String username) {
@@ -134,6 +143,93 @@ public class AuthService {
         evt.setToken(UUID.randomUUID().toString());
         evt.setExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
         return emailVerificationTokenRepository.save(evt);
+    }
+
+    @Transactional
+    public void forgotPassword(String email) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            passwordResetTokenRepository.deleteByUserId(user.getId());
+            PasswordResetToken token = createPasswordResetToken(user);
+            emailService.sendPasswordResetEmail(user, token.getToken());
+        });
+        // Always succeeds regardless of whether the account exists, so this
+        // endpoint can't be used to probe which emails are registered.
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
+                .orElseThrow(() -> new InvalidTokenException("Invalid or expired reset link"));
+
+        if (resetToken.getExpiresAt().isBefore(Instant.now())) {
+            passwordResetTokenRepository.delete(resetToken);
+            throw new InvalidTokenException("Invalid or expired reset link");
+        }
+
+        User user = resetToken.getUser();
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        passwordResetTokenRepository.delete(resetToken);
+
+        // Reset invalidates all existing sessions, not just the one that requested it.
+        refreshTokenRepository.deleteByUserId(user.getId());
+    }
+
+    private PasswordResetToken createPasswordResetToken(User user) {
+        PasswordResetToken token = new PasswordResetToken();
+        token.setUser(user);
+        token.setToken(UUID.randomUUID().toString());
+        token.setExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
+        return passwordResetTokenRepository.save(token);
+    }
+
+    @Transactional
+    public AuthResponse googleAuth(String idToken) {
+        GoogleTokenVerifier.GoogleTokenPayload payload = googleTokenVerifier.verify(idToken);
+
+        User user = userRepository.findByEmail(payload.email())
+                .orElseGet(() -> createGoogleUser(payload));
+
+        // Google already verified this email, so an existing-but-unverified local
+        // account gets fast-tracked instead of staying stuck behind the link-click flow.
+        if (!user.isEmailVerified()) {
+            user.setEmailVerified(true);
+            userRepository.save(user);
+        }
+
+        String accessToken = jwtService.getToken(user);
+        RefreshToken refreshToken = createRefreshToken(user);
+        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername());
+    }
+
+    private User createGoogleUser(GoogleTokenVerifier.GoogleTokenPayload payload) {
+        User user = new User();
+        user.setUsername(generateUsernameFromEmail(payload.email()));
+        user.setEmail(payload.email());
+        user.setPassword(null);
+        user.setVisibility(true);
+        user.setCreatedAt(new Date());
+        user.setUpdatedAt(new Date());
+        user.setRole(Role.USER);
+        user.setEmailVerified(true);
+        return userRepository.save(user);
+    }
+
+    private String generateUsernameFromEmail(String email) {
+        String base = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9_]", "");
+        if (base.length() < 3) {
+            base = (base + "user").substring(0, Math.max(3, base.length()));
+        }
+        base = base.substring(0, Math.min(base.length(), 20));
+
+        String candidate = base;
+        int suffix = 0;
+        while (userRepository.existsByUsernameIgnoreCase(candidate)) {
+            suffix++;
+            String suffixStr = String.valueOf(suffix);
+            candidate = base.substring(0, Math.min(base.length(), 20 - suffixStr.length())) + suffixStr;
+        }
+        return candidate;
     }
 
     public AuthResponse login(LoginRequestDTO request) {
