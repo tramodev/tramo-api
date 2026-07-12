@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,8 +27,9 @@ public class PublicProjectController {
 
     @GetMapping("/project/{id}")
     public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable Long id,
-                                                                @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublicProject(id, user));
+                                                                @AuthenticationPrincipal User user,
+                                                                @RequestHeader(value = "X-Anon-Id", required = false) String anonId) {
+        return ResponseEntity.ok(projectService.getPublicProject(id, user, anonId));
     }
 
     @GetMapping("/projects")

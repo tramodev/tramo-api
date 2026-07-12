@@ -1,5 +1,6 @@
 package com.mypath.backend.project.controller;
 
+import com.mypath.backend.project.dto.BookmarkResponseDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
 import com.mypath.backend.project.dto.VoteResponseDTO;
@@ -57,5 +58,10 @@ public class ProjectController {
     @PostMapping("/{id}/fork")
     public ResponseEntity<ProjectResponseDTO> fork(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.fork(id, user));
+    }
+
+    @PostMapping("/{id}/bookmark")
+    public ResponseEntity<BookmarkResponseDTO> toggleBookmark(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.toggleBookmark(id, user));
     }
 }

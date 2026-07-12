@@ -20,4 +20,6 @@ public class ProjectFeedItemDTO {
     private Date modifiedDate;
     private long voteCount;
     private boolean votedByRequester;
+    private boolean bookmarkedByRequester;
+    private long viewCount;
 }

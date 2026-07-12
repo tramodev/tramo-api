@@ -10,6 +10,7 @@ import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
+import com.mypath.backend.project.dto.BookmarkResponseDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
@@ -19,8 +20,12 @@ import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
 import com.mypath.backend.project.dto.VoteResponseDTO;
 import com.mypath.backend.project.entity.Project;
+import com.mypath.backend.project.entity.ProjectBookmark;
 import com.mypath.backend.project.entity.ProjectVote;
+import com.mypath.backend.project.entity.ProjectView;
+import com.mypath.backend.project.repository.ProjectBookmarkRepository;
 import com.mypath.backend.project.repository.ProjectRepository;
+import com.mypath.backend.project.repository.ProjectViewRepository;
 import com.mypath.backend.project.repository.ProjectVoteRepository;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
@@ -45,17 +50,22 @@ public class ProjectService {
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaRepository ideaRepository;
     private final ProjectVoteRepository projectVoteRepository;
+    private final ProjectBookmarkRepository projectBookmarkRepository;
+    private final ProjectViewRepository projectViewRepository;
     private final IdeaLinkRepository ideaLinkRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
-                           ProjectVoteRepository projectVoteRepository, IdeaLinkRepository ideaLinkRepository) {
+                           ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
+                           ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaRepository = ideaRepository;
         this.ideaLinkRepository = ideaLinkRepository;
+        this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
+        this.projectBookmarkRepository = projectBookmarkRepository;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -122,6 +132,8 @@ public class ProjectService {
             pathRepository.delete(path);
         }
         projectVoteRepository.deleteByProjectId(id);
+        projectBookmarkRepository.deleteByProjectId(id);
+        projectViewRepository.deleteByProjectId(id);
         projectRepository.delete(project);
     }
 
@@ -217,10 +229,32 @@ public class ProjectService {
         return ideaRepository.save(copy);
     }
 
-    public PublicProjectResponseDTO getPublicProject(Long id, User requester) {
+    @Transactional
+    public PublicProjectResponseDTO getPublicProject(Long id, User requester, String anonId) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         assertViewable(project);
+
+        // Deduplicated per viewer, not per page load: logged-in visitors key by
+        // user id, anonymous ones by the "anon-id" cookie middleware.ts mints on
+        // first visit to a /p/* page. No stable identity (e.g. a bare API call
+        // with no cookie) means the view just isn't counted, rather than falling
+        // back to counting every request.
+        String viewerKey = requester != null ? "user:" + requester.getId()
+                : anonId != null && !anonId.isBlank() ? "anon:" + anonId
+                : null;
+        long viewCount = project.getViewCount();
+        if (viewerKey != null && !projectViewRepository.existsByProjectIdAndViewerKey(id, viewerKey)) {
+            ProjectView view = new ProjectView();
+            view.setProject(project);
+            view.setViewerKey(viewerKey);
+            view.setCreatedDate(new Date());
+            projectViewRepository.save(view);
+            // The in-memory `project` entity is stale after this write, so the
+            // response below uses the locally tracked count rather than a second read.
+            projectRepository.incrementViewCount(id);
+            viewCount++;
+        }
 
         List<PublicPathDTO> paths = pathRepository.findByProjectId(id).stream()
                 .map(path -> new PublicPathDTO(
@@ -241,7 +275,9 @@ public class ProjectService {
                 project.getModifiedDate(),
                 paths,
                 projectVoteRepository.countByProjectId(id),
-                requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent()
+                requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
+                requester != null && projectBookmarkRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
+                viewCount
         );
     }
 
@@ -251,11 +287,15 @@ public class ProjectService {
                 .filter(project -> q.isEmpty() || matchesSearch(project, q))
                 .toList();
 
+        List<Long> publishedIds = published.stream().map(Project::getId).toList();
         Set<Long> votedProjectIds = requester == null
                 ? Set.of()
-                : projectVoteRepository.findByUserIdAndProjectIdIn(
-                        requester.getId(), published.stream().map(Project::getId).toList())
+                : projectVoteRepository.findByUserIdAndProjectIdIn(requester.getId(), publishedIds)
                 .stream().map(vote -> vote.getProject().getId()).collect(Collectors.toSet());
+        Set<Long> bookmarkedProjectIds = requester == null
+                ? Set.of()
+                : projectBookmarkRepository.findByUserIdAndProjectIdIn(requester.getId(), publishedIds)
+                .stream().map(bookmark -> bookmark.getProject().getId()).collect(Collectors.toSet());
 
         List<ProjectFeedItemDTO> feed = published.stream()
                 .map(project -> new ProjectFeedItemDTO(
@@ -267,7 +307,9 @@ public class ProjectService {
                         project.getTags(),
                         project.getModifiedDate(),
                         projectVoteRepository.countByProjectId(project.getId()),
-                        votedProjectIds.contains(project.getId())
+                        votedProjectIds.contains(project.getId()),
+                        bookmarkedProjectIds.contains(project.getId()),
+                        project.getViewCount()
                 ))
                 .collect(Collectors.toList());
 
@@ -297,6 +339,27 @@ public class ProjectService {
             voted = true;
         }
         return new VoteResponseDTO(voted, projectVoteRepository.countByProjectId(projectId));
+    }
+
+    @Transactional
+    public BookmarkResponseDTO toggleBookmark(Long projectId, User requester) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+
+        var existingBookmark = projectBookmarkRepository.findByProjectIdAndUserId(projectId, requester.getId());
+        boolean bookmarked;
+        if (existingBookmark.isPresent()) {
+            projectBookmarkRepository.delete(existingBookmark.get());
+            bookmarked = false;
+        } else {
+            ProjectBookmark bookmark = new ProjectBookmark();
+            bookmark.setProject(project);
+            bookmark.setUser(requester);
+            bookmark.setCreatedDate(new Date());
+            projectBookmarkRepository.save(bookmark);
+            bookmarked = true;
+        }
+        return new BookmarkResponseDTO(bookmarked);
     }
 
     private boolean matchesSearch(Project project, String q) {

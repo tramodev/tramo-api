@@ -19,4 +19,6 @@ public class PublicProjectResponseDTO {
     private List<PublicPathDTO> paths;
     private long voteCount;
     private boolean votedByRequester;
+    private boolean bookmarkedByRequester;
+    private long viewCount;
 }

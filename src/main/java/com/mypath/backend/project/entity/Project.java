@@ -30,6 +30,9 @@ public class Project {
     private Date creationDate;
     private Date modifiedDate;
 
+    @Column(columnDefinition = "bigint default 0")
+    private long viewCount;
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User owner;
