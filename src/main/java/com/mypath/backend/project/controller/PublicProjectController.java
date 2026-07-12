@@ -4,7 +4,9 @@ import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
 import com.mypath.backend.project.service.ProjectService;
+import com.mypath.backend.user.entity.User;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,14 +25,17 @@ public class PublicProjectController {
     }
 
     @GetMapping("/project/{id}")
-    public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable Long id) {
-        return ResponseEntity.ok(projectService.getPublicProject(id));
+    public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable Long id,
+                                                                @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublicProject(id, user));
     }
 
     @GetMapping("/projects")
     public ResponseEntity<List<ProjectFeedItemDTO>> getFeed(
-            @RequestParam(required = false) String q) {
-        return ResponseEntity.ok(projectService.getPublishedFeed(q));
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false, defaultValue = "recent") String sort,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublishedFeed(q, sort, user));
     }
 
     @GetMapping("/tags")

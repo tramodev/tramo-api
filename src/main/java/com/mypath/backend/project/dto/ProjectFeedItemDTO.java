@@ -18,4 +18,6 @@ public class ProjectFeedItemDTO {
     private String thumbnail;
     private String tags;
     private Date modifiedDate;
+    private long voteCount;
+    private boolean votedByRequester;
 }

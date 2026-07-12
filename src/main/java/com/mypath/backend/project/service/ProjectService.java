@@ -14,18 +14,24 @@ import com.mypath.backend.project.dto.PublicIdeaDTO;
 import com.mypath.backend.project.dto.PublicPathDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
+import com.mypath.backend.project.dto.VoteResponseDTO;
 import com.mypath.backend.project.entity.Project;
+import com.mypath.backend.project.entity.ProjectVote;
 import com.mypath.backend.project.repository.ProjectRepository;
+import com.mypath.backend.project.repository.ProjectVoteRepository;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
@@ -33,13 +39,16 @@ public class ProjectService {
     private final PathRepository pathRepository;
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaRepository ideaRepository;
+    private final ProjectVoteRepository projectVoteRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
-                           PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository) {
+                           PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
+                           ProjectVoteRepository projectVoteRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaRepository = ideaRepository;
+        this.projectVoteRepository = projectVoteRepository;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -105,10 +114,11 @@ public class ProjectService {
             }
             pathRepository.delete(path);
         }
+        projectVoteRepository.deleteByProjectId(id);
         projectRepository.delete(project);
     }
 
-    public PublicProjectResponseDTO getPublicProject(Long id) {
+    public PublicProjectResponseDTO getPublicProject(Long id, User requester) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         // Both "unlisted" (share-link only) and "published" (also in the public feed)
@@ -137,14 +147,25 @@ public class ProjectService {
                 project.getDescription(),
                 project.getOwner().getUsername(),
                 project.getModifiedDate(),
-                paths
+                paths,
+                projectVoteRepository.countByProjectId(id),
+                requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent()
         );
     }
 
-    public List<ProjectFeedItemDTO> getPublishedFeed(String query) {
+    public List<ProjectFeedItemDTO> getPublishedFeed(String query, String sort, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        return projectRepository.findByVisibilityOrderByModifiedDateDesc("published").stream()
+        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc("published").stream()
                 .filter(project -> q.isEmpty() || matchesSearch(project, q))
+                .toList();
+
+        Set<Long> votedProjectIds = requester == null
+                ? Set.of()
+                : projectVoteRepository.findByUserIdAndProjectIdIn(
+                        requester.getId(), published.stream().map(Project::getId).toList())
+                .stream().map(vote -> vote.getProject().getId()).collect(Collectors.toSet());
+
+        List<ProjectFeedItemDTO> feed = published.stream()
                 .map(project -> new ProjectFeedItemDTO(
                         project.getId(),
                         project.getTitle(),
@@ -152,9 +173,38 @@ public class ProjectService {
                         project.getOwner().getUsername(),
                         project.getThumbnail(),
                         project.getTags(),
-                        project.getModifiedDate()
+                        project.getModifiedDate(),
+                        projectVoteRepository.countByProjectId(project.getId()),
+                        votedProjectIds.contains(project.getId())
                 ))
-                .toList();
+                .collect(Collectors.toList());
+
+        if ("hot".equals(sort)) {
+            feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
+                    .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
+        }
+        return feed;
+    }
+
+    @Transactional
+    public VoteResponseDTO toggleVote(Long projectId, User requester) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+
+        var existingVote = projectVoteRepository.findByProjectIdAndUserId(projectId, requester.getId());
+        boolean voted;
+        if (existingVote.isPresent()) {
+            projectVoteRepository.delete(existingVote.get());
+            voted = false;
+        } else {
+            ProjectVote vote = new ProjectVote();
+            vote.setProject(project);
+            vote.setUser(requester);
+            vote.setCreatedDate(new Date());
+            projectVoteRepository.save(vote);
+            voted = true;
+        }
+        return new VoteResponseDTO(voted, projectVoteRepository.countByProjectId(projectId));
     }
 
     private boolean matchesSearch(Project project, String q) {

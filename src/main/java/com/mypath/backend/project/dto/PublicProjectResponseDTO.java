@@ -17,4 +17,6 @@ public class PublicProjectResponseDTO {
     private String ownerUsername;
     private Date modifiedDate;
     private List<PublicPathDTO> paths;
+    private long voteCount;
+    private boolean votedByRequester;
 }

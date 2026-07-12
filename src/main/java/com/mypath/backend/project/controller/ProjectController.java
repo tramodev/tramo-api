@@ -2,6 +2,7 @@ package com.mypath.backend.project.controller;
 
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
+import com.mypath.backend.project.dto.VoteResponseDTO;
 import com.mypath.backend.project.service.ProjectService;
 import com.mypath.backend.user.entity.User;
 import jakarta.validation.Valid;
@@ -46,5 +47,10 @@ public class ProjectController {
     public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal User user) {
         projectService.delete(id, user);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/vote")
+    public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.toggleVote(id, user));
     }
 }
