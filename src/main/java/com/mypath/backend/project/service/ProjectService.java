@@ -1,6 +1,7 @@
 package com.mypath.backend.project.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.notification.service.NotificationService;
 import com.mypath.backend.path.entity.Idea;
 import com.mypath.backend.path.entity.IdeaContent;
 import com.mypath.backend.path.entity.IdeaLink;
@@ -38,9 +39,12 @@ import com.mypath.backend.project.repository.ProjectViewRepository;
 import com.mypath.backend.project.repository.ProjectVoteRepository;
 import com.mypath.backend.user.entity.Follow;
 import com.mypath.backend.user.entity.User;
+import com.mypath.backend.user.entity.UserBadge;
 import com.mypath.backend.user.repository.FollowRepository;
+import com.mypath.backend.user.repository.UserBadgeRepository;
 import com.mypath.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +57,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -68,12 +73,15 @@ public class ProjectService {
     private final IdeaLinkRepository ideaLinkRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
+    private final UserBadgeRepository userBadgeRepository;
+    private final NotificationService notificationService;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
                            ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
-                           UserRepository userRepository, FollowRepository followRepository) {
+                           UserRepository userRepository, FollowRepository followRepository,
+                           UserBadgeRepository userBadgeRepository, NotificationService notificationService) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -84,6 +92,8 @@ public class ProjectService {
         this.projectBookmarkRepository = projectBookmarkRepository;
         this.userRepository = userRepository;
         this.followRepository = followRepository;
+        this.userBadgeRepository = userBadgeRepository;
+        this.notificationService = notificationService;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -129,7 +139,11 @@ public class ProjectService {
             project.setTags(normalizeTags(request.getTags()));
         }
         project.setModifiedDate(new Date());
-        return toResponse(projectRepository.save(project));
+        ProjectResponseDTO response = toResponse(projectRepository.save(project));
+        if ("published".equals(request.getVisibility())) {
+            checkAndAwardBadges(project.getOwner());
+        }
+        return response;
     }
 
     @Transactional
@@ -233,6 +247,8 @@ public class ProjectService {
             }
         }
 
+        notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
+        checkAndAwardBadges(source.getOwner());
         return toResponse(fork);
     }
 
@@ -340,7 +356,8 @@ public class ProjectService {
                         votedProjectIds.contains(project.getId()),
                         bookmarkedProjectIds.contains(project.getId()),
                         project.getViewCount(),
-                        forkCounts.getOrDefault(project.getId(), 0L)
+                        forkCounts.getOrDefault(project.getId(), 0L),
+                        project.isFeatured()
                 ))
                 .collect(Collectors.toList());
 
@@ -349,6 +366,38 @@ public class ProjectService {
                     .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
         }
         return feed;
+    }
+
+    // Runs once a day rather than being derived live, so "featured" is a
+    // stable fact (see the comment on Project.featured) — only writes/
+    // notifies when the top project actually changed since last run, so it
+    // can't flap within a day even if vote counts tie or shuffle.
+    @Scheduled(cron = "0 0 0 * * *")
+    @Transactional
+    public void refreshFeaturedProject() {
+        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc("published");
+        if (published.isEmpty()) return;
+
+        List<Long> ids = published.stream().map(Project::getId).toList();
+        Map<Long, Long> voteCounts = projectVoteRepository.countGroupedByProjectIdIn(ids).stream()
+                .collect(Collectors.toMap(ProjectVoteRepository.ProjectVoteCount::getProjectId, ProjectVoteRepository.ProjectVoteCount::getVoteCount));
+
+        Project top = published.stream()
+                .max(Comparator.comparingLong(p -> voteCounts.getOrDefault(p.getId(), 0L)))
+                .orElseThrow();
+
+        Optional<Project> currentlyFeatured = projectRepository.findByFeaturedTrue();
+        if (currentlyFeatured.isPresent() && currentlyFeatured.get().getId().equals(top.getId())) {
+            return;
+        }
+
+        currentlyFeatured.ifPresent(project -> {
+            project.setFeatured(false);
+            projectRepository.save(project);
+        });
+        top.setFeatured(true);
+        projectRepository.save(top);
+        notificationService.recordFeatured(top.getOwner(), top);
     }
 
     @Transactional
@@ -368,6 +417,8 @@ public class ProjectService {
             vote.setCreatedDate(new Date());
             projectVoteRepository.save(vote);
             voted = true;
+            notificationService.recordEvent(project.getOwner(), "UPVOTE", project, requester);
+            checkAndAwardBadges(project.getOwner());
         }
         return new VoteResponseDTO(voted, projectVoteRepository.countByProjectId(projectId));
     }
@@ -427,6 +478,8 @@ public class ProjectService {
     // result, so each list was queried twice per page load).
     public ProfileBundleDTO getProfileBundle(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
+        List<BadgeDTO> badges = buildBadges(stats);
+        awardNewlyEarnedBadges(user, badges);
 
         List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
         List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
@@ -439,7 +492,42 @@ public class ProjectService {
         List<ProjectFeedItemDTO> published = toFeedItems(myPublishedProjects, user);
         List<ActivityItemDTO> activity = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
 
-        return new ProfileBundleDTO(stats, buildBadges(stats), bookmarks, upvoted, forks, published, activity);
+        return new ProfileBundleDTO(stats, badges, bookmarks, upvoted, forks, published, activity);
+    }
+
+    // Badges are computed live every request (see buildBadges) with no
+    // persisted "earned" state, so this is where the not-earned -> earned
+    // transition actually gets detected and turned into a one-time award +
+    // notification — checked whenever the owner loads their own bundle,
+    // rather than threading a check into every stat-changing action.
+    // Not @Transactional: Spring's proxy-based AOP can't intercept a private
+    // method called via self-invocation anyway, so it'd be a no-op here — the
+    // save() and notificationService.recordBadge() calls below each already
+    // get correct transactional semantics from their own bean proxies.
+    private void awardNewlyEarnedBadges(User user, List<BadgeDTO> badges) {
+        Set<String> alreadyAwarded = userBadgeRepository.findByUserId(user.getId()).stream()
+                .map(UserBadge::getBadgeCode)
+                .collect(Collectors.toSet());
+
+        for (BadgeDTO badge : badges) {
+            if (badge.isEarned() && !alreadyAwarded.contains(badge.getCode())) {
+                UserBadge userBadge = new UserBadge();
+                userBadge.setUser(user);
+                userBadge.setBadgeCode(badge.getCode());
+                userBadge.setEarnedAt(new Date());
+                userBadgeRepository.save(userBadge);
+                notificationService.recordBadge(user, badge.getCode(), badge.getName());
+            }
+        }
+    }
+
+    // Called right after the specific action that could cross a threshold
+    // (vote received, fork received, publish) instead of only lazily on the
+    // owner's next /profile visit — otherwise a badge earned mid-session
+    // wouldn't notify until they happened to load their own profile.
+    private void checkAndAwardBadges(User user) {
+        ProfileStatsDTO stats = getProfileStats(user);
+        awardNewlyEarnedBadges(user, buildBadges(stats));
     }
 
     // requester is null for an anonymous visitor — public, no auth required.
@@ -482,6 +570,7 @@ public class ProjectService {
             follow.setCreatedDate(new Date());
             followRepository.save(follow);
             following = true;
+            notificationService.recordEvent(target, "FOLLOW", null, requester);
         }
         return new FollowResponseDTO(following, followRepository.countByFollowedId(target.getId()));
     }
@@ -609,7 +698,8 @@ public class ProjectService {
                 ctx.votedProjectIds().contains(project.getId()),
                 ctx.bookmarkedProjectIds().contains(project.getId()),
                 project.getViewCount(),
-                ctx.forkCounts().getOrDefault(project.getId(), 0L)
+                ctx.forkCounts().getOrDefault(project.getId(), 0L),
+                project.isFeatured()
         );
     }
 
@@ -628,6 +718,7 @@ public class ProjectService {
                 ctx.bookmarkedProjectIds().contains(project.getId()),
                 project.getViewCount(),
                 ctx.forkCounts().getOrDefault(project.getId(), 0L),
+                project.isFeatured(),
                 source != null ? source.getId() : null,
                 source != null ? source.getTitle() : null,
                 source != null ? source.getOwner().getUsername() : null

@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
@@ -16,6 +17,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     long countByOwnerIdAndVisibility(Long ownerId, String visibility);
     long countByOwnerIdAndForkedFromNotNull(Long ownerId);
     List<Project> findByOwnerIdAndVisibilityOrderByCreationDateDesc(Long ownerId, String visibility);
+    Optional<Project> findByFeaturedTrue();
 
     // forkedFrom/owner are plain (non-lazy) @ManyToOne, so without an explicit
     // JOIN FETCH here Hibernate resolves each row's forkedFrom (and its own

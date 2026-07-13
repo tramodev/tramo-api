@@ -45,6 +45,13 @@ public class Project {
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;
 
+    // Recomputed daily (see ProjectService.refreshFeaturedProject) rather than
+    // derived on the fly, so "featured" is a stable fact that changes at most
+    // once a day instead of flipping between projects on every page load as
+    // vote counts shift.
+    @Column(columnDefinition = "boolean default false")
+    private boolean featured;
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User owner;

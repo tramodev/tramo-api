@@ -23,4 +23,5 @@ public class ProjectFeedItemDTO {
     private boolean bookmarkedByRequester;
     private long viewCount;
     private long forkCount;
+    private boolean featured;
 }
