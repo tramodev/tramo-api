@@ -11,6 +11,8 @@ import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
+import com.mypath.backend.project.dto.ForkFeedItemDTO;
+import com.mypath.backend.project.dto.ProfileStatsDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
@@ -18,6 +20,7 @@ import com.mypath.backend.project.dto.PublicIdeaDTO;
 import com.mypath.backend.project.dto.PublicPathDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
+import com.mypath.backend.project.dto.UserProfileDTO;
 import com.mypath.backend.project.dto.VoteResponseDTO;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.project.entity.ProjectBookmark;
@@ -134,6 +137,9 @@ public class ProjectService {
         projectVoteRepository.deleteByProjectId(id);
         projectBookmarkRepository.deleteByProjectId(id);
         projectViewRepository.deleteByProjectId(id);
+        // Forks keep their own copied content, so they just lose the "forked from"
+        // attribution rather than being blocked or cascade-deleted.
+        projectRepository.clearForkedFromReferences(id);
         projectRepository.delete(project);
     }
 
@@ -164,6 +170,7 @@ public class ProjectService {
         fork.setThumbnail(source.getThumbnail());
         fork.setTags(source.getTags());
         fork.setOwner(requester);
+        fork.setForkedFrom(source);
         fork.setCreationDate(new Date());
         fork.setModifiedDate(new Date());
         fork = projectRepository.save(fork);
@@ -360,6 +367,72 @@ public class ProjectService {
             bookmarked = true;
         }
         return new BookmarkResponseDTO(bookmarked);
+    }
+
+    public UserProfileDTO getProfile(User user) {
+        return new UserProfileDTO(user.getUsername(), user.getBio(), user.getImageUrl());
+    }
+
+    public ProfileStatsDTO getProfileStats(User user) {
+        long pathsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), "published");
+        long upvotesReceived = projectVoteRepository.countByProjectOwnerIdAndProjectPublished(user.getId());
+        long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
+        long forksCount = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId()).size();
+        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount);
+    }
+
+    public List<ProjectFeedItemDTO> getMyBookmarks(User user) {
+        return projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId()).stream()
+                .map(bookmark -> toFeedItem(bookmark.getProject(), user))
+                .toList();
+    }
+
+    public List<ProjectFeedItemDTO> getMyUpvoted(User user) {
+        return projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId()).stream()
+                .map(vote -> toFeedItem(vote.getProject(), user))
+                .toList();
+    }
+
+    public List<ForkFeedItemDTO> getMyForks(User user) {
+        return projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId()).stream()
+                .map(project -> toForkFeedItem(project, user))
+                .toList();
+    }
+
+    private ProjectFeedItemDTO toFeedItem(Project project, User requester) {
+        return new ProjectFeedItemDTO(
+                project.getId(),
+                project.getTitle(),
+                project.getDescription(),
+                project.getOwner().getUsername(),
+                project.getThumbnail(),
+                project.getTags(),
+                project.getModifiedDate(),
+                projectVoteRepository.countByProjectId(project.getId()),
+                projectVoteRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
+                projectBookmarkRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
+                project.getViewCount()
+        );
+    }
+
+    private ForkFeedItemDTO toForkFeedItem(Project project, User requester) {
+        Project source = project.getForkedFrom();
+        return new ForkFeedItemDTO(
+                project.getId(),
+                project.getTitle(),
+                project.getDescription(),
+                project.getOwner().getUsername(),
+                project.getThumbnail(),
+                project.getTags(),
+                project.getModifiedDate(),
+                projectVoteRepository.countByProjectId(project.getId()),
+                projectVoteRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
+                projectBookmarkRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
+                project.getViewCount(),
+                source != null ? source.getId() : null,
+                source != null ? source.getTitle() : null,
+                source != null ? source.getOwner().getUsername() : null
+        );
     }
 
     private boolean matchesSearch(Project project, String q) {

@@ -37,6 +37,11 @@ public class Project {
     @JoinColumn(name = "user_id")
     private User owner;
 
+    // Null for original projects; set to the source project on fork().
+    @ManyToOne
+    @JoinColumn(name = "forked_from_id")
+    private Project forkedFrom;
+
     @OneToMany(mappedBy = "project")
     private List<Path> paths;
 }

@@ -11,5 +11,6 @@ import java.util.Optional;
 public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark, Long> {
     Optional<ProjectBookmark> findByProjectIdAndUserId(Long projectId, Long userId);
     List<ProjectBookmark> findByUserIdAndProjectIdIn(Long userId, List<Long> projectIds);
+    List<ProjectBookmark> findByUserIdOrderByCreatedDateDesc(Long userId);
     void deleteByProjectId(Long projectId);
 }
