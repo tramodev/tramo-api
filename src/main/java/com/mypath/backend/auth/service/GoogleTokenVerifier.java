@@ -35,8 +35,6 @@ public class GoogleTokenVerifier {
                     .retrieve()
                     .body(TokenInfoResponse.class);
         } catch (RestClientException ex) {
-            // Google's tokeninfo endpoint returns 4xx for any malformed/expired/tampered
-            // token, so any client error here means the token itself is bad.
             throw new InvalidTokenException("Invalid Google token");
         }
 

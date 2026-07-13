@@ -7,11 +7,6 @@ import lombok.Setter;
 
 import java.util.Date;
 
-// Persists the moment a badge (whose earned/progress state is otherwise
-// computed live from stats every request — see ProjectService.buildBadges)
-// actually gets crossed, so the transition can be detected exactly once and
-// trigger a notification instead of re-evaluating "did I earn this already?"
-// from nothing every time.
 @Entity
 @Getter
 @Setter

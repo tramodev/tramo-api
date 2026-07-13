@@ -9,9 +9,6 @@ import lombok.Setter;
 import java.time.Instant;
 import java.util.UUID;
 
-// Speeds up deleteByUserId (logout / account cleanup revoking all of a
-// user's refresh tokens) — token itself is already indexed via its unique
-// constraint.
 @Entity
 @Getter
 @Setter

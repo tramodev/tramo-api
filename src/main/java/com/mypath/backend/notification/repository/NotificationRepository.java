@@ -12,8 +12,6 @@ import java.util.Optional;
 
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
-    // JOIN FETCH project/latestActor here for the same reason as the profile
-    // feed queries — avoids Hibernate resolving those per-row after the fact.
     @Query("SELECT n FROM Notification n LEFT JOIN FETCH n.project LEFT JOIN FETCH n.latestActor WHERE n.recipient.id = :recipientId ORDER BY n.updatedDate DESC")
     List<Notification> findByRecipientIdOrderByUpdatedDateDesc(@Param("recipientId") Long recipientId);
 
@@ -27,8 +25,5 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Query("UPDATE Notification n SET n.read = true WHERE n.recipient.id = :recipientId AND n.read = false")
     void markAllReadByRecipientId(@Param("recipientId") Long recipientId);
 
-    // Scoped to recipientId so a crafted id for someone else's notification
-    // can't be deleted — returns 0 rows affected either way (not found or not
-    // yours), which the service treats identically as a 404.
     long deleteByIdAndRecipientId(Long id, Long recipientId);
 }

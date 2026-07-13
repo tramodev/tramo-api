@@ -7,8 +7,6 @@ import lombok.Setter;
 
 import java.util.Date;
 
-// One row per "follower follows followed". A user's follower count is
-// countByFollowedId, backed by the index below.
 @Entity
 @Getter
 @Setter

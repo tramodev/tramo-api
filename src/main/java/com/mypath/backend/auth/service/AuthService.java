@@ -133,8 +133,6 @@ public class AuthService {
                 emailService.sendVerificationEmail(user, token.getToken());
             }
         });
-        // Always succeeds regardless of whether the account exists, so this
-        // endpoint can't be used to probe which usernames/emails are registered.
     }
 
     private EmailVerificationToken createVerificationToken(User user) {
@@ -152,8 +150,6 @@ public class AuthService {
             PasswordResetToken token = createPasswordResetToken(user);
             emailService.sendPasswordResetEmail(user, token.getToken());
         });
-        // Always succeeds regardless of whether the account exists, so this
-        // endpoint can't be used to probe which emails are registered.
     }
 
     @Transactional
@@ -171,7 +167,6 @@ public class AuthService {
         userRepository.save(user);
         passwordResetTokenRepository.delete(resetToken);
 
-        // Reset invalidates all existing sessions, not just the one that requested it.
         refreshTokenRepository.deleteByUserId(user.getId());
     }
 
@@ -190,8 +185,6 @@ public class AuthService {
         User user = userRepository.findByEmail(payload.email())
                 .orElseGet(() -> createGoogleUser(payload));
 
-        // Google already verified this email, so an existing-but-unverified local
-        // account gets fast-tracked instead of staying stuck behind the link-click flow.
         if (!user.isEmailVerified()) {
             user.setEmailVerified(true);
             userRepository.save(user);

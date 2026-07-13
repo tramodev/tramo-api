@@ -23,7 +23,6 @@ public class ForkFeedItemDTO {
     private long viewCount;
     private long forkCount;
     private boolean featured;
-    // Null if the source project was since deleted.
     private Long forkedFromProjectId;
     private String forkedFromTitle;
     private String forkedFromOwnerUsername;

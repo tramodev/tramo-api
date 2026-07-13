@@ -33,8 +33,6 @@ public class User implements UserDetails {
     private String firstName;
     private String lastName;
     private String phone;
-    // No length cap: bio is free text and imageUrl holds base64 data URLs for
-    // uploaded avatars, both of which blow past Hibernate's default varchar(255).
     @Column(columnDefinition = "text")
     private String bio;
     @Column(columnDefinition = "text")
@@ -45,12 +43,8 @@ public class User implements UserDetails {
     @OneToMany(mappedBy="owner")
     private List<Project> projects;
     private Role role;
-    // Backfilled true for pre-existing rows via the column default; new registrations
-    // explicitly set this false until the verification link is clicked.
     @Column(columnDefinition = "boolean default true")
     private boolean emailVerified;
-//    @OneToOne(cascade = CascadeType.ALL)
-//    private Subscription subscription;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

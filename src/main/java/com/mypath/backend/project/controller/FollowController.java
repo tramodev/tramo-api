@@ -10,8 +10,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Outside /api/public/** on purpose — SecurityConfiguration's anyRequest()
-// .authenticated() gates this, unlike the read-only public profile endpoint.
 @RestController
 @RequestMapping("/api/users")
 public class FollowController {

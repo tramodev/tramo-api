@@ -39,10 +39,6 @@ public class EmailService {
         try {
             mailSender.send(message);
         } catch (MailException ex) {
-            // Common in dev: Resend's sandbox sender can only deliver to the account's own
-            // address until a domain is verified there. Don't fail registration over it —
-            // the user account is already saved by this point — log the link instead so
-            // local testing isn't blocked.
             log.warn("Failed to send verification email to {}: {}. Verification link: {}",
                     user.getEmail(), ex.getMessage(), verificationLink);
         }

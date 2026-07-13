@@ -21,9 +21,6 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
-    // Upsert-on-unread: a viral post's 200 upvotes bump one row's count
-    // instead of creating 200 — the moment the recipient reads it (see
-    // markAllRead), the next event starts a fresh notification.
     @Transactional
     public void recordEvent(User recipient, String type, Project project, User actor) {
         if (recipient.getId().equals(actor.getId())) return;
@@ -51,9 +48,6 @@ public class NotificationService {
         }
     }
 
-    // Badges/featured are rare, distinct achievements — always a fresh row,
-    // no aggregation (there's nothing sensible to collapse "you earned badge
-    // X" into if it happened twice, since it can't).
     @Transactional
     public void recordBadge(User recipient, String badgeCode, String badgeName) {
         Notification notification = new Notification();

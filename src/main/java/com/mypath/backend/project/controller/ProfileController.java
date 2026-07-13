@@ -13,9 +13,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// Everything here is the signed-in user's own data — no path param, no
-// visibility gating needed, since /api/profile/** requires authentication
-// (SecurityConfiguration only permits /api/auth/** and /api/public/** anonymously).
 @RestController
 @RequestMapping("/api/profile")
 public class ProfileController {
@@ -36,10 +33,6 @@ public class ProfileController {
         return ResponseEntity.ok(projectService.updateProfile(user, request));
     }
 
-    // Replaces what used to be 6 separate GETs (stats/badges/bookmarks/upvoted/
-    // forks/activity) — each paid its own JWT-auth user lookup and badges
-    // recomputed stats independently; this is one round trip, one auth lookup,
-    // stats computed once and reused for badges.
     @GetMapping("/bundle")
     public ResponseEntity<ProfileBundleDTO> getBundle(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getProfileBundle(user));

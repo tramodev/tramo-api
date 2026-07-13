@@ -149,9 +149,6 @@ public class ProjectService {
     @Transactional
     public void delete(Long id, User requester) {
         Project project = getOwnedProject(id, requester);
-        // Paths/ideas don't cascade from Project, so they need the same manual
-        // cleanup PathService.delete does for a single path — otherwise the FK
-        // from path -> project blocks the delete below.
         for (Path path : pathRepository.findByProjectId(id)) {
             List<PathIdea> memberships = pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(path.getId());
             for (PathIdea membership : memberships) {
@@ -166,16 +163,10 @@ public class ProjectService {
         projectVoteRepository.deleteByProjectId(id);
         projectBookmarkRepository.deleteByProjectId(id);
         projectViewRepository.deleteByProjectId(id);
-        // Forks keep their own copied content, so they just lose the "forked from"
-        // attribution rather than being blocked or cascade-deleted.
         projectRepository.clearForkedFromReferences(id);
         projectRepository.delete(project);
     }
 
-    // Both "unlisted" (share-link only) and "published" (also in the public feed)
-    // are viewable here — only "private" (or unset, the default) is blocked.
-    // 404s the same as a nonexistent project either way, so this can't be used
-    // to probe which project IDs exist and are simply private.
     private void assertViewable(Project project) {
         String visibility = project.getVisibility();
         if (!"unlisted".equals(visibility) && !"published".equals(visibility)) {
@@ -204,9 +195,6 @@ public class ProjectService {
         fork.setModifiedDate(new Date());
         fork = projectRepository.save(fork);
 
-        // Ideas can be shared across multiple paths within the same project
-        // (PathIdea join), so copies are keyed by source idea id to preserve
-        // that sharing rather than duplicating an idea once per path.
         Map<Long, Idea> ideaCopies = new HashMap<>();
         for (Path sourcePath : pathRepository.findByProjectId(sourceProjectId)) {
             Path pathCopy = new Path();
@@ -229,8 +217,6 @@ public class ProjectService {
             }
         }
 
-        // Idea links are looked up from both sides, so track which link ids have
-        // already been copied to avoid creating each one twice.
         Set<Long> copiedLinkIds = new HashSet<>();
         for (Long sourceIdeaId : ideaCopies.keySet()) {
             for (IdeaLink link : ideaLinkRepository.findBySourceIdeaIdOrTargetIdeaId(sourceIdeaId, sourceIdeaId)) {
@@ -273,11 +259,6 @@ public class ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         assertViewable(project);
 
-        // Deduplicated per viewer, not per page load: logged-in visitors key by
-        // user id, anonymous ones by the "anon-id" cookie middleware.ts mints on
-        // first visit to a /p/* page. No stable identity (e.g. a bare API call
-        // with no cookie) means the view just isn't counted, rather than falling
-        // back to counting every request.
         String viewerKey = requester != null ? "user:" + requester.getId()
                 : anonId != null && !anonId.isBlank() ? "anon:" + anonId
                 : null;
@@ -288,8 +269,6 @@ public class ProjectService {
             view.setViewerKey(viewerKey);
             view.setCreatedDate(new Date());
             projectViewRepository.save(view);
-            // The in-memory `project` entity is stale after this write, so the
-            // response below uses the locally tracked count rather than a second read.
             projectRepository.incrementViewCount(id);
             viewCount++;
         }
@@ -368,10 +347,6 @@ public class ProjectService {
         return feed;
     }
 
-    // Runs once a day rather than being derived live, so "featured" is a
-    // stable fact (see the comment on Project.featured) — only writes/
-    // notifies when the top project actually changed since last run, so it
-    // can't flap within a day even if vote counts tie or shuffle.
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void refreshFeaturedProject() {
@@ -469,13 +444,6 @@ public class ProjectService {
         return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount);
     }
 
-    // One call assembling everything the profile page needs, instead of 7
-    // separate REST round trips each paying their own JWT-auth user lookup —
-    // and badges reuse this single stats computation instead of recomputing it.
-    // Bookmarks/votes/forks are each fetched exactly once here and shared
-    // between their own tab and the activity feed, which needs the same rows
-    // (previously they were separate REST calls with no way to share a query
-    // result, so each list was queried twice per page load).
     public ProfileBundleDTO getProfileBundle(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
         List<BadgeDTO> badges = buildBadges(stats);
@@ -495,15 +463,6 @@ public class ProjectService {
         return new ProfileBundleDTO(stats, badges, bookmarks, upvoted, forks, published, activity);
     }
 
-    // Badges are computed live every request (see buildBadges) with no
-    // persisted "earned" state, so this is where the not-earned -> earned
-    // transition actually gets detected and turned into a one-time award +
-    // notification — checked whenever the owner loads their own bundle,
-    // rather than threading a check into every stat-changing action.
-    // Not @Transactional: Spring's proxy-based AOP can't intercept a private
-    // method called via self-invocation anyway, so it'd be a no-op here — the
-    // save() and notificationService.recordBadge() calls below each already
-    // get correct transactional semantics from their own bean proxies.
     private void awardNewlyEarnedBadges(User user, List<BadgeDTO> badges) {
         Set<String> alreadyAwarded = userBadgeRepository.findByUserId(user.getId()).stream()
                 .map(UserBadge::getBadgeCode)
@@ -521,18 +480,11 @@ public class ProjectService {
         }
     }
 
-    // Called right after the specific action that could cross a threshold
-    // (vote received, fork received, publish) instead of only lazily on the
-    // owner's next /profile visit — otherwise a badge earned mid-session
-    // wouldn't notify until they happened to load their own profile.
     private void checkAndAwardBadges(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
         awardNewlyEarnedBadges(user, buildBadges(stats));
     }
 
-    // requester is null for an anonymous visitor — public, no auth required.
-    // Deliberately narrower than the owner's own bundle: no bookmarks/upvoted/
-    // forks/activity, since those reveal another person's browsing behavior.
     public PublicProfileDTO getPublicProfile(String username, User requester) {
         User target = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -575,9 +527,6 @@ public class ProjectService {
         return new FollowResponseDTO(following, followRepository.countByFollowedId(target.getId()));
     }
 
-    // Badges are computed live off the same stats as getProfileStats rather than
-    // persisted/earned-once, so raising a stat (or a project getting unpublished)
-    // always reflects the current true state instead of a stale snapshot.
     private List<BadgeDTO> buildBadges(ProfileStatsDTO stats) {
         List<BadgeDTO> badges = new ArrayList<>();
         badges.add(badge("first_publish", "First Publish", "Publish your first path", stats.getPathsPublished(), 1));
@@ -595,11 +544,6 @@ public class ProjectService {
         return new BadgeDTO(code, name, description, progress >= target, Math.min(progress, target), target);
     }
 
-    // Merges across five existing tables (votes/bookmarks/forks in both
-    // directions, plus publishes) at read time instead of a dedicated event
-    // log table, since every source already carries the timestamp/FKs needed.
-    // Bookmarks/votes/forks are passed in already-loaded (getProfileBundle
-    // fetched them for the tabs) rather than re-queried here.
     private List<ActivityItemDTO> getMyActivity(User user, List<ProjectBookmark> myBookmarks, List<ProjectVote> myVotes, List<Project> myForkedProjects, List<Project> myPublishedProjects) {
         Long userId = user.getId();
         List<ActivityItemDTO> items = new ArrayList<>();
@@ -641,15 +585,9 @@ public class ProjectService {
 
     private List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
         FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
-        // These are always the caller's own projects, so the owner username is
-        // already known — no need to touch project.getOwner() at all here,
-        // which is what let the repository query above skip fetching it.
         return projects.stream().map(project -> toForkFeedItem(project, requester.getUsername(), ctx)).toList();
     }
 
-    // Vote/fork counts + the requester's own vote/bookmark status for a batch
-    // of projects, fetched in four grouped queries total instead of per-row
-    // (what made a 20-item feed fire 60+ extra queries).
     private record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds) {
         static FeedContext forProjects(
                 List<Project> projects,
@@ -669,8 +607,6 @@ public class ProjectService {
             for (ProjectRepository.ProjectForkCount row : projectRepository.countGroupedByForkedFromIdIn(ids)) {
                 forkCounts.put(row.getProjectId(), row.getForkCount());
             }
-            // requester is null for an anonymous visitor viewing a public profile
-            // (toFeedItems' other callers always pass the authenticated owner).
             Set<Long> votedProjectIds = requester == null
                     ? Set.of()
                     : voteRepository.findByUserIdAndProjectIdIn(requester.getId(), ids).stream()
@@ -735,9 +671,6 @@ public class ProjectService {
         return value != null && value.toLowerCase().contains(q);
     }
 
-    // In-memory rather than a SQL GROUP BY since tags live as a flat
-    // comma-separated string, not a normalized join table — fine at the
-    // scale of "published projects on a side project," not fine at scale.
     public List<TagCountDTO> getHotTopics(int limit) {
         Map<String, Long> counts = new LinkedHashMap<>();
         for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc("published")) {

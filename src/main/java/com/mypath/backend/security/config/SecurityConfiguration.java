@@ -21,7 +21,7 @@ public class SecurityConfiguration {
     @Autowired
     private AuthenticationProvider authProvider;
     @Autowired
-    private RateLimitFilter rateLimitFilter; // Inject your rate limit filter
+    private RateLimitFilter rateLimitFilter;
     @Autowired
     private JwtAuthEntryPoint authEntryPoint;
 

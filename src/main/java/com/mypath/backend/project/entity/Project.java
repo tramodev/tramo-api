@@ -10,13 +10,6 @@ import lombok.Setter;
 import java.util.Date;
 import java.util.List;
 
-// user_id+visibility covers the common owner-scoped-by-visibility lookups
-// (countByOwnerIdAndVisibility, findByOwnerIdAndVisibilityOrderBy...,
-// sumViewCountByOwnerIdAndPublished) and, as a leftmost-prefix, plain
-// owner-only lookups too (findByOwnerIdAndForkedFromNotNull*, the self-join
-// in findByForkedFromOwnerIdAndOwnerIdNot*). visibility alone covers the
-// global published-feed scan (findByVisibilityOrderByModifiedDateDesc, no
-// owner filter). forked_from_id covers the fork-direction joins/filters.
 @Entity
 @Getter
 @Setter
@@ -35,9 +28,6 @@ public class Project {
     private String visibility;
     @Column(columnDefinition = "TEXT")
     private String thumbnail;
-    // Comma-separated, lowercased tags (e.g. "webdev,react,tutorial") — kept as
-    // a flat string rather than a join table since hot-topics counting runs in
-    // memory over the (small) set of published projects, not via SQL grouping.
     private String tags;
     private Date creationDate;
     private Date modifiedDate;
@@ -45,10 +35,6 @@ public class Project {
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;
 
-    // Recomputed daily (see ProjectService.refreshFeaturedProject) rather than
-    // derived on the fly, so "featured" is a stable fact that changes at most
-    // once a day instead of flipping between projects on every page load as
-    // vote counts shift.
     @Column(columnDefinition = "boolean default false")
     private boolean featured;
 
@@ -56,7 +42,6 @@ public class Project {
     @JoinColumn(name = "user_id")
     private User owner;
 
-    // Null for original projects; set to the source project on fork().
     @ManyToOne
     @JoinColumn(name = "forked_from_id")
     private Project forkedFrom;

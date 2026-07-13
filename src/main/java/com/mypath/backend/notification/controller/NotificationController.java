@@ -15,8 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// Outside /api/public/** — SecurityConfiguration's anyRequest().authenticated()
-// gates this, matching FollowController's reasoning.
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {

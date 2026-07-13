@@ -7,11 +7,6 @@ import lombok.Setter;
 
 import java.util.Date;
 
-// Deduplicates the public view counter per visitor: `viewerKey` is either
-// "user:<id>" (logged-in) or "anon:<cookie-uuid>" (anonymous, minted by
-// middleware.ts on first visit to a /p/* page) — a single non-null string
-// column keeps the unique constraint simple instead of two nullable FK-style
-// columns that would each need their own partial unique index.
 @Entity
 @Getter
 @Setter

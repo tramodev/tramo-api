@@ -16,6 +16,6 @@ public class Payment {
     private BigDecimal amount;
     private String currency;
     private String description;
-    private String provider; //Enum
+    private String provider;
 
 }
