@@ -12,7 +12,13 @@ import java.util.Date;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(uniqueConstraints = @UniqueConstraint(columnNames = {"project_id", "user_id"}))
+// See the matching note on ProjectVote — user_id-led lookups need their own
+// index since the (project_id, user_id) unique constraint only covers
+// project_id-led ones.
+@Table(
+        uniqueConstraints = @UniqueConstraint(columnNames = {"project_id", "user_id"}),
+        indexes = @Index(name = "idx_project_bookmark_user", columnList = "user_id")
+)
 public class ProjectBookmark {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

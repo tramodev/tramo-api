@@ -1,6 +1,7 @@
 package com.mypath.backend.project.controller;
 
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
+import com.mypath.backend.project.dto.PublicProfileDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
 import com.mypath.backend.project.service.ProjectService;
@@ -43,5 +44,11 @@ public class PublicProjectController {
     @GetMapping("/tags")
     public ResponseEntity<List<TagCountDTO>> getHotTopics() {
         return ResponseEntity.ok(projectService.getHotTopics(10));
+    }
+
+    @GetMapping("/users/{username}")
+    public ResponseEntity<PublicProfileDTO> getPublicProfile(@PathVariable String username,
+                                                              @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublicProfile(username, user));
     }
 }

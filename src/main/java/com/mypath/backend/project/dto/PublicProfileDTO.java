@@ -5,13 +5,19 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.Date;
+import java.util.List;
 
 @Getter
 @Setter
 @AllArgsConstructor
-public class UserProfileDTO {
+public class PublicProfileDTO {
     private String username;
     private String bio;
     private String imageUrl;
     private Date createdAt;
+    private ProfileStatsDTO stats;
+    private List<BadgeDTO> badges;
+    private List<ProjectFeedItemDTO> published;
+    private boolean following;
+    private boolean self;
 }

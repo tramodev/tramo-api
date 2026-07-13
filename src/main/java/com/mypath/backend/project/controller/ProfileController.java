@@ -1,18 +1,17 @@
 package com.mypath.backend.project.controller;
 
-import com.mypath.backend.project.dto.ForkFeedItemDTO;
-import com.mypath.backend.project.dto.ProfileStatsDTO;
-import com.mypath.backend.project.dto.ProjectFeedItemDTO;
+import com.mypath.backend.project.dto.ProfileBundleDTO;
+import com.mypath.backend.project.dto.UpdateProfileRequestDTO;
 import com.mypath.backend.project.dto.UserProfileDTO;
 import com.mypath.backend.project.service.ProjectService;
 import com.mypath.backend.user.entity.User;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 // Everything here is the signed-in user's own data — no path param, no
 // visibility gating needed, since /api/profile/** requires authentication
@@ -31,23 +30,18 @@ public class ProfileController {
         return ResponseEntity.ok(projectService.getProfile(user));
     }
 
-    @GetMapping("/stats")
-    public ResponseEntity<ProfileStatsDTO> getStats(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getProfileStats(user));
+    @PutMapping("/me")
+    public ResponseEntity<UserProfileDTO> updateProfile(@AuthenticationPrincipal User user,
+                                                          @RequestBody UpdateProfileRequestDTO request) {
+        return ResponseEntity.ok(projectService.updateProfile(user, request));
     }
 
-    @GetMapping("/bookmarks")
-    public ResponseEntity<List<ProjectFeedItemDTO>> getBookmarks(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getMyBookmarks(user));
-    }
-
-    @GetMapping("/upvoted")
-    public ResponseEntity<List<ProjectFeedItemDTO>> getUpvoted(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getMyUpvoted(user));
-    }
-
-    @GetMapping("/forks")
-    public ResponseEntity<List<ForkFeedItemDTO>> getForks(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getMyForks(user));
+    // Replaces what used to be 6 separate GETs (stats/badges/bookmarks/upvoted/
+    // forks/activity) — each paid its own JWT-auth user lookup and badges
+    // recomputed stats independently; this is one round trip, one auth lookup,
+    // stats computed once and reused for badges.
+    @GetMapping("/bundle")
+    public ResponseEntity<ProfileBundleDTO> getBundle(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getProfileBundle(user));
     }
 }

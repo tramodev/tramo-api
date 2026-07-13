@@ -7,10 +7,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @AllArgsConstructor
-public class ProfileStatsDTO {
-    private long pathsPublished;
-    private long upvotesReceived;
-    private long totalViews;
-    private long forksCount;
+public class FollowResponseDTO {
+    private boolean following;
     private long followersCount;
 }

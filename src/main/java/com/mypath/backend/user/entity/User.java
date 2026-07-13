@@ -33,7 +33,11 @@ public class User implements UserDetails {
     private String firstName;
     private String lastName;
     private String phone;
+    // No length cap: bio is free text and imageUrl holds base64 data URLs for
+    // uploaded avatars, both of which blow past Hibernate's default varchar(255).
+    @Column(columnDefinition = "text")
     private String bio;
+    @Column(columnDefinition = "text")
     private String imageUrl;
     private Boolean visibility;
     private Date createdAt;

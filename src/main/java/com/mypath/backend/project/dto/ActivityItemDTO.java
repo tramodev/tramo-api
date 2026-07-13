@@ -9,9 +9,10 @@ import java.util.Date;
 @Getter
 @Setter
 @AllArgsConstructor
-public class UserProfileDTO {
-    private String username;
-    private String bio;
-    private String imageUrl;
-    private Date createdAt;
+public class ActivityItemDTO {
+    private String type;
+    private Date timestamp;
+    private Long projectId;
+    private String projectTitle;
+    private String otherUsername;
 }

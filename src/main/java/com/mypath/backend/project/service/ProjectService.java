@@ -10,16 +10,22 @@ import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
+import com.mypath.backend.project.dto.ActivityItemDTO;
+import com.mypath.backend.project.dto.BadgeDTO;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
+import com.mypath.backend.project.dto.FollowResponseDTO;
 import com.mypath.backend.project.dto.ForkFeedItemDTO;
+import com.mypath.backend.project.dto.ProfileBundleDTO;
 import com.mypath.backend.project.dto.ProfileStatsDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
 import com.mypath.backend.project.dto.PublicIdeaDTO;
 import com.mypath.backend.project.dto.PublicPathDTO;
+import com.mypath.backend.project.dto.PublicProfileDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
 import com.mypath.backend.project.dto.TagCountDTO;
+import com.mypath.backend.project.dto.UpdateProfileRequestDTO;
 import com.mypath.backend.project.dto.UserProfileDTO;
 import com.mypath.backend.project.dto.VoteResponseDTO;
 import com.mypath.backend.project.entity.Project;
@@ -30,11 +36,15 @@ import com.mypath.backend.project.repository.ProjectBookmarkRepository;
 import com.mypath.backend.project.repository.ProjectRepository;
 import com.mypath.backend.project.repository.ProjectViewRepository;
 import com.mypath.backend.project.repository.ProjectVoteRepository;
+import com.mypath.backend.user.entity.Follow;
 import com.mypath.backend.user.entity.User;
+import com.mypath.backend.user.repository.FollowRepository;
+import com.mypath.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
@@ -56,11 +66,14 @@ public class ProjectService {
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final ProjectViewRepository projectViewRepository;
     private final IdeaLinkRepository ideaLinkRepository;
+    private final UserRepository userRepository;
+    private final FollowRepository followRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
-                           ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository) {
+                           ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
+                           UserRepository userRepository, FollowRepository followRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -69,6 +82,8 @@ public class ProjectService {
         this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
+        this.userRepository = userRepository;
+        this.followRepository = followRepository;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -295,6 +310,14 @@ public class ProjectService {
                 .toList();
 
         List<Long> publishedIds = published.stream().map(Project::getId).toList();
+        Map<Long, Long> voteCounts = publishedIds.isEmpty()
+                ? Map.of()
+                : projectVoteRepository.countGroupedByProjectIdIn(publishedIds).stream()
+                .collect(Collectors.toMap(ProjectVoteRepository.ProjectVoteCount::getProjectId, ProjectVoteRepository.ProjectVoteCount::getVoteCount));
+        Map<Long, Long> forkCounts = publishedIds.isEmpty()
+                ? Map.of()
+                : projectRepository.countGroupedByForkedFromIdIn(publishedIds).stream()
+                .collect(Collectors.toMap(ProjectRepository.ProjectForkCount::getProjectId, ProjectRepository.ProjectForkCount::getForkCount));
         Set<Long> votedProjectIds = requester == null
                 ? Set.of()
                 : projectVoteRepository.findByUserIdAndProjectIdIn(requester.getId(), publishedIds)
@@ -313,10 +336,11 @@ public class ProjectService {
                         project.getThumbnail(),
                         project.getTags(),
                         project.getModifiedDate(),
-                        projectVoteRepository.countByProjectId(project.getId()),
+                        voteCounts.getOrDefault(project.getId(), 0L),
                         votedProjectIds.contains(project.getId()),
                         bookmarkedProjectIds.contains(project.getId()),
-                        project.getViewCount()
+                        project.getViewCount(),
+                        forkCounts.getOrDefault(project.getId(), 0L)
                 ))
                 .collect(Collectors.toList());
 
@@ -370,36 +394,209 @@ public class ProjectService {
     }
 
     public UserProfileDTO getProfile(User user) {
-        return new UserProfileDTO(user.getUsername(), user.getBio(), user.getImageUrl());
+        return new UserProfileDTO(user.getUsername(), user.getBio(), user.getImageUrl(), user.getCreatedAt());
     }
 
-    public ProfileStatsDTO getProfileStats(User user) {
+    @Transactional
+    public UserProfileDTO updateProfile(User user, UpdateProfileRequestDTO request) {
+        if (request.getBio() != null) {
+            user.setBio(request.getBio().isBlank() ? null : request.getBio());
+        }
+        if (request.getImageUrl() != null) {
+            user.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl());
+        }
+        User saved = userRepository.save(user);
+        return new UserProfileDTO(saved.getUsername(), saved.getBio(), saved.getImageUrl(), saved.getCreatedAt());
+    }
+
+    private ProfileStatsDTO getProfileStats(User user) {
         long pathsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), "published");
         long upvotesReceived = projectVoteRepository.countByProjectOwnerIdAndProjectPublished(user.getId());
         long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
-        long forksCount = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId()).size();
-        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount);
+        long forksCount = projectRepository.countByOwnerIdAndForkedFromNotNull(user.getId());
+        long followersCount = followRepository.countByFollowedId(user.getId());
+        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount);
     }
 
-    public List<ProjectFeedItemDTO> getMyBookmarks(User user) {
-        return projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId()).stream()
-                .map(bookmark -> toFeedItem(bookmark.getProject(), user))
+    // One call assembling everything the profile page needs, instead of 7
+    // separate REST round trips each paying their own JWT-auth user lookup —
+    // and badges reuse this single stats computation instead of recomputing it.
+    // Bookmarks/votes/forks are each fetched exactly once here and shared
+    // between their own tab and the activity feed, which needs the same rows
+    // (previously they were separate REST calls with no way to share a query
+    // result, so each list was queried twice per page load).
+    public ProfileBundleDTO getProfileBundle(User user) {
+        ProfileStatsDTO stats = getProfileStats(user);
+
+        List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
+        List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
+        List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId());
+        List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), "published");
+
+        List<ProjectFeedItemDTO> bookmarks = toFeedItems(myBookmarks.stream().map(ProjectBookmark::getProject).toList(), user);
+        List<ProjectFeedItemDTO> upvoted = toFeedItems(myVotes.stream().map(ProjectVote::getProject).toList(), user);
+        List<ForkFeedItemDTO> forks = toForkFeedItems(myForkedProjects, user);
+        List<ProjectFeedItemDTO> published = toFeedItems(myPublishedProjects, user);
+        List<ActivityItemDTO> activity = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
+
+        return new ProfileBundleDTO(stats, buildBadges(stats), bookmarks, upvoted, forks, published, activity);
+    }
+
+    // requester is null for an anonymous visitor — public, no auth required.
+    // Deliberately narrower than the owner's own bundle: no bookmarks/upvoted/
+    // forks/activity, since those reveal another person's browsing behavior.
+    public PublicProfileDTO getPublicProfile(String username, User requester) {
+        User target = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        ProfileStatsDTO stats = getProfileStats(target);
+        List<ProjectFeedItemDTO> published = toFeedItems(
+                projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(target.getId(), "published"),
+                requester
+        );
+        boolean self = requester != null && requester.getId().equals(target.getId());
+        boolean following = !self && requester != null
+                && followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId()).isPresent();
+
+        return new PublicProfileDTO(target.getUsername(), target.getBio(), target.getImageUrl(), target.getCreatedAt(),
+                stats, buildBadges(stats), published, following, self);
+    }
+
+    @Transactional
+    public FollowResponseDTO toggleFollow(String username, User requester) {
+        User target = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (target.getId().equals(requester.getId())) {
+            throw new AccessDeniedException("Cannot follow yourself");
+        }
+
+        var existing = followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId());
+        boolean following;
+        if (existing.isPresent()) {
+            followRepository.delete(existing.get());
+            following = false;
+        } else {
+            Follow follow = new Follow();
+            follow.setFollower(requester);
+            follow.setFollowed(target);
+            follow.setCreatedDate(new Date());
+            followRepository.save(follow);
+            following = true;
+        }
+        return new FollowResponseDTO(following, followRepository.countByFollowedId(target.getId()));
+    }
+
+    // Badges are computed live off the same stats as getProfileStats rather than
+    // persisted/earned-once, so raising a stat (or a project getting unpublished)
+    // always reflects the current true state instead of a stale snapshot.
+    private List<BadgeDTO> buildBadges(ProfileStatsDTO stats) {
+        List<BadgeDTO> badges = new ArrayList<>();
+        badges.add(badge("first_publish", "First Publish", "Publish your first path", stats.getPathsPublished(), 1));
+        badges.add(badge("prolific", "Prolific", "Publish 10 paths", stats.getPathsPublished(), 10));
+        badges.add(badge("rising_star", "Rising Star", "Earn 10 upvotes", stats.getUpvotesReceived(), 10));
+        badges.add(badge("crowd_favorite", "Crowd Favorite", "Earn 100 upvotes", stats.getUpvotesReceived(), 100));
+        badges.add(badge("on_the_map", "On the Map", "Reach 1,000 total views", stats.getTotalViews(), 1000));
+        badges.add(badge("trendsetter", "Trendsetter", "Reach 10,000 total views", stats.getTotalViews(), 10000));
+        badges.add(badge("forked_once", "Forked Once", "Get forked by another user", stats.getForksCount(), 1));
+        badges.add(badge("remix_king", "Remix King", "Get forked 25 times", stats.getForksCount(), 25));
+        return badges;
+    }
+
+    private BadgeDTO badge(String code, String name, String description, long progress, long target) {
+        return new BadgeDTO(code, name, description, progress >= target, Math.min(progress, target), target);
+    }
+
+    // Merges across five existing tables (votes/bookmarks/forks in both
+    // directions, plus publishes) at read time instead of a dedicated event
+    // log table, since every source already carries the timestamp/FKs needed.
+    // Bookmarks/votes/forks are passed in already-loaded (getProfileBundle
+    // fetched them for the tabs) rather than re-queried here.
+    private List<ActivityItemDTO> getMyActivity(User user, List<ProjectBookmark> myBookmarks, List<ProjectVote> myVotes, List<Project> myForkedProjects, List<Project> myPublishedProjects) {
+        Long userId = user.getId();
+        List<ActivityItemDTO> items = new ArrayList<>();
+
+        for (Project project : myPublishedProjects) {
+            items.add(new ActivityItemDTO("published", project.getCreationDate(), project.getId(), project.getTitle(), null));
+        }
+        for (Project project : myForkedProjects) {
+            String sourceOwner = project.getForkedFrom() != null ? project.getForkedFrom().getOwner().getUsername() : null;
+            items.add(new ActivityItemDTO("forked", project.getCreationDate(), project.getId(), project.getTitle(), sourceOwner));
+        }
+        for (ProjectVote vote : myVotes) {
+            items.add(new ActivityItemDTO("voted", vote.getCreatedDate(), vote.getProject().getId(), vote.getProject().getTitle(), null));
+        }
+        for (ProjectBookmark bookmark : myBookmarks) {
+            items.add(new ActivityItemDTO("bookmarked", bookmark.getCreatedDate(), bookmark.getProject().getId(), bookmark.getProject().getTitle(), null));
+        }
+        for (ProjectVote vote : projectVoteRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
+            items.add(new ActivityItemDTO("received_vote", vote.getCreatedDate(), vote.getProject().getId(), vote.getProject().getTitle(), vote.getUser().getUsername()));
+        }
+        for (Project project : projectRepository.findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(userId, userId)) {
+            Project source = project.getForkedFrom();
+            items.add(new ActivityItemDTO("received_fork", project.getCreationDate(), source.getId(), source.getTitle(), project.getOwner().getUsername()));
+        }
+        for (ProjectBookmark bookmark : projectBookmarkRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
+            items.add(new ActivityItemDTO("received_bookmark", bookmark.getCreatedDate(), bookmark.getProject().getId(), bookmark.getProject().getTitle(), bookmark.getUser().getUsername()));
+        }
+
+        return items.stream()
+                .sorted(Comparator.comparing(ActivityItemDTO::getTimestamp).reversed())
+                .limit(50)
                 .toList();
     }
 
-    public List<ProjectFeedItemDTO> getMyUpvoted(User user) {
-        return projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId()).stream()
-                .map(vote -> toFeedItem(vote.getProject(), user))
-                .toList();
+    private List<ProjectFeedItemDTO> toFeedItems(List<Project> projects, User requester) {
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
     }
 
-    public List<ForkFeedItemDTO> getMyForks(User user) {
-        return projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId()).stream()
-                .map(project -> toForkFeedItem(project, user))
-                .toList();
+    private List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        // These are always the caller's own projects, so the owner username is
+        // already known — no need to touch project.getOwner() at all here,
+        // which is what let the repository query above skip fetching it.
+        return projects.stream().map(project -> toForkFeedItem(project, requester.getUsername(), ctx)).toList();
     }
 
-    private ProjectFeedItemDTO toFeedItem(Project project, User requester) {
+    // Vote/fork counts + the requester's own vote/bookmark status for a batch
+    // of projects, fetched in four grouped queries total instead of per-row
+    // (what made a 20-item feed fire 60+ extra queries).
+    private record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds) {
+        static FeedContext forProjects(
+                List<Project> projects,
+                User requester,
+                ProjectRepository projectRepository,
+                ProjectVoteRepository voteRepository,
+                ProjectBookmarkRepository bookmarkRepository
+        ) {
+            List<Long> ids = projects.stream().map(Project::getId).toList();
+            if (ids.isEmpty()) return new FeedContext(Map.of(), Map.of(), Set.of(), Set.of());
+
+            Map<Long, Long> voteCounts = new HashMap<>();
+            for (ProjectVoteRepository.ProjectVoteCount row : voteRepository.countGroupedByProjectIdIn(ids)) {
+                voteCounts.put(row.getProjectId(), row.getVoteCount());
+            }
+            Map<Long, Long> forkCounts = new HashMap<>();
+            for (ProjectRepository.ProjectForkCount row : projectRepository.countGroupedByForkedFromIdIn(ids)) {
+                forkCounts.put(row.getProjectId(), row.getForkCount());
+            }
+            // requester is null for an anonymous visitor viewing a public profile
+            // (toFeedItems' other callers always pass the authenticated owner).
+            Set<Long> votedProjectIds = requester == null
+                    ? Set.of()
+                    : voteRepository.findByUserIdAndProjectIdIn(requester.getId(), ids).stream()
+                    .map(vote -> vote.getProject().getId())
+                    .collect(Collectors.toSet());
+            Set<Long> bookmarkedProjectIds = requester == null
+                    ? Set.of()
+                    : bookmarkRepository.findByUserIdAndProjectIdIn(requester.getId(), ids).stream()
+                    .map(bookmark -> bookmark.getProject().getId())
+                    .collect(Collectors.toSet());
+            return new FeedContext(voteCounts, forkCounts, votedProjectIds, bookmarkedProjectIds);
+        }
+    }
+
+    private ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx) {
         return new ProjectFeedItemDTO(
                 project.getId(),
                 project.getTitle(),
@@ -408,27 +605,29 @@ public class ProjectService {
                 project.getThumbnail(),
                 project.getTags(),
                 project.getModifiedDate(),
-                projectVoteRepository.countByProjectId(project.getId()),
-                projectVoteRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
-                projectBookmarkRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
-                project.getViewCount()
+                ctx.voteCounts().getOrDefault(project.getId(), 0L),
+                ctx.votedProjectIds().contains(project.getId()),
+                ctx.bookmarkedProjectIds().contains(project.getId()),
+                project.getViewCount(),
+                ctx.forkCounts().getOrDefault(project.getId(), 0L)
         );
     }
 
-    private ForkFeedItemDTO toForkFeedItem(Project project, User requester) {
+    private ForkFeedItemDTO toForkFeedItem(Project project, String ownerUsername, FeedContext ctx) {
         Project source = project.getForkedFrom();
         return new ForkFeedItemDTO(
                 project.getId(),
                 project.getTitle(),
                 project.getDescription(),
-                project.getOwner().getUsername(),
+                ownerUsername,
                 project.getThumbnail(),
                 project.getTags(),
                 project.getModifiedDate(),
-                projectVoteRepository.countByProjectId(project.getId()),
-                projectVoteRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
-                projectBookmarkRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).isPresent(),
+                ctx.voteCounts().getOrDefault(project.getId(), 0L),
+                ctx.votedProjectIds().contains(project.getId()),
+                ctx.bookmarkedProjectIds().contains(project.getId()),
                 project.getViewCount(),
+                ctx.forkCounts().getOrDefault(project.getId(), 0L),
                 source != null ? source.getId() : null,
                 source != null ? source.getTitle() : null,
                 source != null ? source.getOwner().getUsername() : null

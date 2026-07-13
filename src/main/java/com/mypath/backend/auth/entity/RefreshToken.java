@@ -9,10 +9,14 @@ import lombok.Setter;
 import java.time.Instant;
 import java.util.UUID;
 
+// Speeds up deleteByUserId (logout / account cleanup revoking all of a
+// user's refresh tokens) — token itself is already indexed via its unique
+// constraint.
 @Entity
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = @Index(name = "idx_refresh_token_user", columnList = "user_id"))
 public class RefreshToken {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

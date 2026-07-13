@@ -10,10 +10,22 @@ import lombok.Setter;
 import java.util.Date;
 import java.util.List;
 
+// user_id+visibility covers the common owner-scoped-by-visibility lookups
+// (countByOwnerIdAndVisibility, findByOwnerIdAndVisibilityOrderBy...,
+// sumViewCountByOwnerIdAndPublished) and, as a leftmost-prefix, plain
+// owner-only lookups too (findByOwnerIdAndForkedFromNotNull*, the self-join
+// in findByForkedFromOwnerIdAndOwnerIdNot*). visibility alone covers the
+// global published-feed scan (findByVisibilityOrderByModifiedDateDesc, no
+// owner filter). forked_from_id covers the fork-direction joins/filters.
 @Entity
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = {
+        @Index(name = "idx_project_owner_visibility", columnList = "user_id, visibility"),
+        @Index(name = "idx_project_visibility", columnList = "visibility"),
+        @Index(name = "idx_project_forked_from", columnList = "forked_from_id"),
+})
 public class Project {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
