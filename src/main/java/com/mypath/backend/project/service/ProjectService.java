@@ -430,7 +430,7 @@ public class ProjectService {
     }
 
     public UserProfileDTO getProfile(User user) {
-        return new UserProfileDTO(user.getUsername(), user.getBio(), user.getImageUrl(), user.getCreatedAt());
+        return new UserProfileDTO(user.getUsername(), user.getBio(), user.getImageUrl(), user.getCreatedAt(), user.getRole().name());
     }
 
     @Transactional
@@ -442,7 +442,7 @@ public class ProjectService {
             user.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl());
         }
         User saved = userRepository.save(user);
-        return new UserProfileDTO(saved.getUsername(), saved.getBio(), saved.getImageUrl(), saved.getCreatedAt());
+        return new UserProfileDTO(saved.getUsername(), saved.getBio(), saved.getImageUrl(), saved.getCreatedAt(), saved.getRole().name());
     }
 
     private ProfileStatsDTO getProfileStats(User user) {

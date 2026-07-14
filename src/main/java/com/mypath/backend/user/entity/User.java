@@ -46,6 +46,9 @@ public class User implements UserDetails {
     @Column(columnDefinition = "boolean default true")
     private boolean emailVerified;
 
+    @Column(columnDefinition = "boolean default false")
+    private boolean banned;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority((role.name())));
@@ -58,7 +61,7 @@ public class User implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return !banned;
     }
 
     @Override

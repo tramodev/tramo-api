@@ -1,5 +1,7 @@
 package com.mypath.backend.project.controller;
 
+import com.mypath.backend.moderation.dto.ReportRequestDTO;
+import com.mypath.backend.moderation.service.ModerationService;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
 import com.mypath.backend.project.dto.ProjectResponseDTO;
@@ -17,9 +19,11 @@ import java.util.List;
 @RequestMapping("/api/project")
 public class ProjectController {
     private final ProjectService projectService;
+    private final ModerationService moderationService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, ModerationService moderationService) {
         this.projectService = projectService;
+        this.moderationService = moderationService;
     }
 
     @PostMapping
@@ -63,5 +67,12 @@ public class ProjectController {
     @PostMapping("/{id}/bookmark")
     public ResponseEntity<BookmarkResponseDTO> toggleBookmark(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.toggleBookmark(id, user));
+    }
+
+    @PostMapping("/{id}/report")
+    public ResponseEntity<Void> report(@PathVariable Long id, @Valid @RequestBody ReportRequestDTO request,
+                                        @AuthenticationPrincipal User user) {
+        moderationService.submitReport(id, user, request.getReason());
+        return ResponseEntity.ok().build();
     }
 }
