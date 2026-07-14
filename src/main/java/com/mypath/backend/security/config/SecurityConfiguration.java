@@ -4,6 +4,7 @@ import com.mypath.backend.security.jwt.JwtAuthEntryPoint;
 import com.mypath.backend.security.jwt.JwtAuthFilter;
 import com.mypath.backend.security.ratelimit.RateLimitFilter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -26,6 +27,13 @@ public class SecurityConfiguration {
     private RateLimitFilter rateLimitFilter;
     @Autowired
     private JwtAuthEntryPoint authEntryPoint;
+
+    @Bean
+    public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
+        FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception

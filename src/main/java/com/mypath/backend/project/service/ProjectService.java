@@ -1,6 +1,7 @@
 package com.mypath.backend.project.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.moderation.repository.ProjectReportRepository;
 import com.mypath.backend.notification.service.NotificationService;
 import com.mypath.backend.path.entity.Idea;
 import com.mypath.backend.path.entity.IdeaContent;
@@ -80,13 +81,15 @@ public class ProjectService {
     private final FollowRepository followRepository;
     private final UserBadgeRepository userBadgeRepository;
     private final NotificationService notificationService;
+    private final ProjectReportRepository projectReportRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
                            ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
                            UserRepository userRepository, FollowRepository followRepository,
-                           UserBadgeRepository userBadgeRepository, NotificationService notificationService) {
+                           UserBadgeRepository userBadgeRepository, NotificationService notificationService,
+                           ProjectReportRepository projectReportRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -99,6 +102,7 @@ public class ProjectService {
         this.followRepository = followRepository;
         this.userBadgeRepository = userBadgeRepository;
         this.notificationService = notificationService;
+        this.projectReportRepository = projectReportRepository;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -160,6 +164,7 @@ public class ProjectService {
                 Long ideaId = membership.getIdea().getId();
                 pathIdeaRepository.delete(membership);
                 if (pathIdeaRepository.findByIdeaId(ideaId).isEmpty()) {
+                    ideaLinkRepository.deleteBySourceIdeaIdOrTargetIdeaId(ideaId, ideaId);
                     ideaRepository.deleteById(ideaId);
                 }
             }
@@ -168,6 +173,8 @@ public class ProjectService {
         projectVoteRepository.deleteByProjectId(id);
         projectBookmarkRepository.deleteByProjectId(id);
         projectViewRepository.deleteByProjectId(id);
+        notificationService.deleteAllForProject(id);
+        projectReportRepository.deleteByProjectId(id);
         projectRepository.clearForkedFromReferences(id);
         projectRepository.delete(project);
     }
@@ -332,14 +339,12 @@ public class ProjectService {
                 ? Map.of()
                 : projectRepository.countGroupedByForkedFromIdIn(publishedIds).stream()
                 .collect(Collectors.toMap(ProjectRepository.ProjectForkCount::getProjectId, ProjectRepository.ProjectForkCount::getForkCount));
-        Set<Long> votedProjectIds = requester == null
+        Set<Long> votedProjectIds = requester == null || publishedIds.isEmpty()
                 ? Set.of()
-                : projectVoteRepository.findByUserIdAndProjectIdIn(requester.getId(), publishedIds)
-                .stream().map(vote -> vote.getProject().getId()).collect(Collectors.toSet());
-        Set<Long> bookmarkedProjectIds = requester == null
+                : Set.copyOf(projectVoteRepository.findVotedProjectIds(requester.getId(), publishedIds));
+        Set<Long> bookmarkedProjectIds = requester == null || publishedIds.isEmpty()
                 ? Set.of()
-                : projectBookmarkRepository.findByUserIdAndProjectIdIn(requester.getId(), publishedIds)
-                .stream().map(bookmark -> bookmark.getProject().getId()).collect(Collectors.toSet());
+                : Set.copyOf(projectBookmarkRepository.findBookmarkedProjectIds(requester.getId(), publishedIds));
 
         List<ProjectFeedItemDTO> feed = published.stream()
                 .map(project -> new ProjectFeedItemDTO(
@@ -447,6 +452,7 @@ public class ProjectService {
             projectVoteRepository.delete(existingVote.get());
             voted = false;
         } else {
+            assertViewable(project);
             ProjectVote vote = new ProjectVote();
             vote.setProject(project);
             vote.setUser(requester);
@@ -470,6 +476,7 @@ public class ProjectService {
             projectBookmarkRepository.delete(existingBookmark.get());
             bookmarked = false;
         } else {
+            assertViewable(project);
             ProjectBookmark bookmark = new ProjectBookmark();
             bookmark.setProject(project);
             bookmark.setUser(requester);
@@ -675,14 +682,10 @@ public class ProjectService {
             }
             Set<Long> votedProjectIds = requester == null
                     ? Set.of()
-                    : voteRepository.findByUserIdAndProjectIdIn(requester.getId(), ids).stream()
-                    .map(vote -> vote.getProject().getId())
-                    .collect(Collectors.toSet());
+                    : Set.copyOf(voteRepository.findVotedProjectIds(requester.getId(), ids));
             Set<Long> bookmarkedProjectIds = requester == null
                     ? Set.of()
-                    : bookmarkRepository.findByUserIdAndProjectIdIn(requester.getId(), ids).stream()
-                    .map(bookmark -> bookmark.getProject().getId())
-                    .collect(Collectors.toSet());
+                    : Set.copyOf(bookmarkRepository.findBookmarkedProjectIds(requester.getId(), ids));
             return new FeedContext(voteCounts, forkCounts, votedProjectIds, bookmarkedProjectIds);
         }
     }

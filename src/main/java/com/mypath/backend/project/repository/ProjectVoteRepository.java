@@ -13,11 +13,14 @@ import java.util.Optional;
 public interface ProjectVoteRepository extends JpaRepository<ProjectVote, Long> {
     Optional<ProjectVote> findByProjectIdAndUserId(Long projectId, Long userId);
     long countByProjectId(Long projectId);
-    List<ProjectVote> findByUserIdAndProjectIdIn(Long userId, List<Long> projectIds);
-    @Query("SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC")
+    @Query("SELECT v.project.id FROM ProjectVote v WHERE v.user.id = :userId AND v.project.id IN :projectIds")
+    List<Long> findVotedProjectIds(@Param("userId") Long userId, @Param("projectIds") List<Long> projectIds);
+
+    @Query("SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC")
     List<ProjectVote> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId);
 
-    List<ProjectVote> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(Long ownerId, Long userId);
+    @Query("SELECT v FROM ProjectVote v JOIN FETCH v.user LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND v.user.id <> :userId ORDER BY v.createdDate DESC")
+    List<ProjectVote> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);
     void deleteByProjectId(Long projectId);
 
     @Query("SELECT COUNT(v) FROM ProjectVote v WHERE v.project.owner.id = :ownerId AND v.project.visibility = 'published'")

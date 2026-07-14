@@ -13,6 +13,7 @@ import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.user.entity.User;
+import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -80,8 +81,15 @@ public class IdeaService {
         return toResponse(ideaRepository.save(idea));
     }
 
+    @Transactional
     public void delete(Long id, User requester) {
         Idea idea = getOwnedIdea(id, requester);
+        deleteIdeaCompletely(idea);
+    }
+
+    private void deleteIdeaCompletely(Idea idea) {
+        ideaLinkRepository.deleteBySourceIdeaIdOrTargetIdeaId(idea.getId(), idea.getId());
+        pathIdeaRepository.deleteAll(pathIdeaRepository.findByIdeaId(idea.getId()));
         ideaRepository.delete(idea);
     }
 
@@ -118,6 +126,7 @@ public class IdeaService {
         pathIdeaRepository.save(pathIdea);
     }
 
+    @Transactional
     public void detachFromPath(Long pathId, Long ideaId, User requester) {
         pathService.getOwnedPath(pathId, requester);
         Idea idea = getOwnedIdea(ideaId, requester);
@@ -128,7 +137,7 @@ public class IdeaService {
                 .ifPresent(pathIdeaRepository::delete);
 
         if (pathIdeaRepository.findByIdeaId(idea.getId()).isEmpty()) {
-            ideaRepository.delete(idea);
+            deleteIdeaCompletely(idea);
         }
     }
 

@@ -5,12 +5,14 @@ import com.mypath.backend.path.dto.PathRequestDTO;
 import com.mypath.backend.path.dto.PathResponseDTO;
 import com.mypath.backend.path.entity.Path;
 import com.mypath.backend.path.entity.PathIdea;
+import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.project.service.ProjectService;
 import com.mypath.backend.user.entity.User;
+import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -22,13 +24,16 @@ public class PathService {
     private final PathRepository pathRepository;
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaRepository ideaRepository;
+    private final IdeaLinkRepository ideaLinkRepository;
     private final ProjectService projectService;
 
     public PathService(PathRepository pathRepository, PathIdeaRepository pathIdeaRepository,
-                        IdeaRepository ideaRepository, ProjectService projectService) {
+                        IdeaRepository ideaRepository, IdeaLinkRepository ideaLinkRepository,
+                        ProjectService projectService) {
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaRepository = ideaRepository;
+        this.ideaLinkRepository = ideaLinkRepository;
         this.projectService = projectService;
     }
 
@@ -69,6 +74,7 @@ public class PathService {
         return toResponse(pathRepository.save(path));
     }
 
+    @Transactional
     public void delete(Long id, User requester) {
         Path path = getOwnedPath(id, requester);
         List<PathIdea> memberships = pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(id);
@@ -76,6 +82,7 @@ public class PathService {
             Long ideaId = membership.getIdea().getId();
             pathIdeaRepository.delete(membership);
             if (pathIdeaRepository.findByIdeaId(ideaId).isEmpty()) {
+                ideaLinkRepository.deleteBySourceIdeaIdOrTargetIdeaId(ideaId, ideaId);
                 ideaRepository.deleteById(ideaId);
             }
         }

@@ -10,5 +10,6 @@ import java.util.Optional;
 @Repository
 public interface IdeaLinkRepository extends JpaRepository<IdeaLink, Long> {
     List<IdeaLink> findBySourceIdeaIdOrTargetIdeaId(Long sourceIdeaId, Long targetIdeaId);
+    void deleteBySourceIdeaIdOrTargetIdeaId(Long sourceIdeaId, Long targetIdeaId);
     Optional<IdeaLink> findBySourceIdeaIdAndTargetIdeaId(Long sourceIdeaId, Long targetIdeaId);
 }

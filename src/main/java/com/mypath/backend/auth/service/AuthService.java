@@ -152,7 +152,7 @@ public class AuthService {
         });
     }
 
-    @Transactional
+    @Transactional(dontRollbackOn = InvalidTokenException.class)
     public void resetPassword(String token, String newPassword) {
         PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
                 .orElseThrow(() -> new InvalidTokenException("Invalid or expired reset link"));
@@ -246,10 +246,10 @@ public class AuthService {
     public AuthResponse refresh(RefreshTokenRequestDTO request) {
         RefreshToken refreshToken = refreshTokenRepository
                 .findByToken(request.getRefreshToken())
-                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+                .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
 
         if (refreshToken.getExpiresAt().isBefore(Instant.now())) {
-            throw new RuntimeException("Refresh token expired");
+            throw new InvalidTokenException("Refresh token expired");
         }
 
         User user = refreshToken.getUser();

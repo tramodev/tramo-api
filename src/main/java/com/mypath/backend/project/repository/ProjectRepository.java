@@ -18,7 +18,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByVisibilityOrderByModifiedDateDesc(@Param("visibility") String visibility);
     long countByOwnerIdAndVisibility(Long ownerId, String visibility);
     long countByOwnerIdAndForkedFromNotNull(Long ownerId);
-    List<Project> findByOwnerIdAndVisibilityOrderByCreationDateDesc(Long ownerId, String visibility);
+    @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.visibility = :visibility ORDER BY p.creationDate DESC")
+    List<Project> findByOwnerIdAndVisibilityOrderByCreationDateDesc(@Param("ownerId") Long ownerId, @Param("visibility") String visibility);
     Optional<Project> findByFeaturedTrue();
 
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC")

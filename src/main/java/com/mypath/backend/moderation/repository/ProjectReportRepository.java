@@ -9,4 +9,6 @@ public interface ProjectReportRepository extends JpaRepository<ProjectReport, Lo
     List<ProjectReport> findByStatusOrderByCreatedDateDesc(String status);
 
     boolean existsByProjectIdAndReporterIdAndStatus(Long projectId, Long reporterId, String status);
+
+    void deleteByProjectId(Long projectId);
 }

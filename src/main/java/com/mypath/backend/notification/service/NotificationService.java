@@ -30,6 +30,11 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
     }
 
+    @Transactional
+    public void deleteAllForProject(Long projectId) {
+        notificationRepository.deleteByProjectId(projectId);
+    }
+
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         CopyOnWriteArrayList<SseEmitter> userEmitters =
