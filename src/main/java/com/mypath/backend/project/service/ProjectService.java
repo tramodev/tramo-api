@@ -63,6 +63,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
+    private static final long ON_THE_MAP_VIEW_THRESHOLD = 1000;
+    private static final long TRENDSETTER_VIEW_THRESHOLD = 10000;
+
     private final ProjectRepository projectRepository;
     private final PathRepository pathRepository;
     private final PathIdeaRepository pathIdeaRepository;
@@ -271,6 +274,13 @@ public class ProjectService {
             projectViewRepository.save(view);
             projectRepository.incrementViewCount(id);
             viewCount++;
+
+            if ("published".equals(project.getVisibility())) {
+                long viewsAfter = projectRepository.sumViewCountByOwnerIdAndPublished(project.getOwner().getId());
+                if (crossedViewBadgeThreshold(viewsAfter - 1, viewsAfter)) {
+                    checkAndAwardBadges(project.getOwner());
+                }
+            }
         }
 
         List<PublicPathDTO> paths = pathRepository.findByProjectId(id).stream()
@@ -485,6 +495,11 @@ public class ProjectService {
         awardNewlyEarnedBadges(user, buildBadges(stats));
     }
 
+    private boolean crossedViewBadgeThreshold(long before, long after) {
+        return (before < ON_THE_MAP_VIEW_THRESHOLD && after >= ON_THE_MAP_VIEW_THRESHOLD)
+                || (before < TRENDSETTER_VIEW_THRESHOLD && after >= TRENDSETTER_VIEW_THRESHOLD);
+    }
+
     public PublicProfileDTO getPublicProfile(String username, User requester) {
         User target = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -533,8 +548,8 @@ public class ProjectService {
         badges.add(badge("prolific", "Prolific", "Publish 10 paths", stats.getPathsPublished(), 10));
         badges.add(badge("rising_star", "Rising Star", "Earn 10 upvotes", stats.getUpvotesReceived(), 10));
         badges.add(badge("crowd_favorite", "Crowd Favorite", "Earn 100 upvotes", stats.getUpvotesReceived(), 100));
-        badges.add(badge("on_the_map", "On the Map", "Reach 1,000 total views", stats.getTotalViews(), 1000));
-        badges.add(badge("trendsetter", "Trendsetter", "Reach 10,000 total views", stats.getTotalViews(), 10000));
+        badges.add(badge("on_the_map", "On the Map", "Reach 1,000 total views", stats.getTotalViews(), ON_THE_MAP_VIEW_THRESHOLD));
+        badges.add(badge("trendsetter", "Trendsetter", "Reach 10,000 total views", stats.getTotalViews(), TRENDSETTER_VIEW_THRESHOLD));
         badges.add(badge("forked_once", "Forked Once", "Get forked by another user", stats.getForksCount(), 1));
         badges.add(badge("remix_king", "Remix King", "Get forked 25 times", stats.getForksCount(), 25));
         return badges;

@@ -2,23 +2,67 @@ package com.mypath.backend.notification.service;
 
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.notification.dto.NotificationDTO;
+import com.mypath.backend.notification.dto.UnreadCountDTO;
 import com.mypath.backend.notification.entity.Notification;
 import com.mypath.backend.notification.repository.NotificationRepository;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 public class NotificationService {
+    private static final long SSE_TIMEOUT_MS = 30L * 60 * 1000;
+
     private final NotificationRepository notificationRepository;
+    private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
 
     public NotificationService(NotificationRepository notificationRepository) {
         this.notificationRepository = notificationRepository;
+    }
+
+    public SseEmitter subscribe(User user) {
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
+        CopyOnWriteArrayList<SseEmitter> userEmitters =
+                emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>());
+        userEmitters.add(emitter);
+
+        Runnable cleanup = () -> userEmitters.remove(emitter);
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(e -> cleanup.run());
+
+        try {
+            emitter.send(SseEmitter.event().name("unread-count").data(new UnreadCountDTO(getUnreadCount(user))));
+        } catch (IOException e) {
+            cleanup.run();
+        }
+
+        return emitter;
+    }
+
+    private void publishUnreadCount(User recipient) {
+        CopyOnWriteArrayList<SseEmitter> userEmitters = emitters.get(recipient.getId());
+        if (userEmitters == null || userEmitters.isEmpty()) return;
+
+        UnreadCountDTO payload = new UnreadCountDTO(getUnreadCount(recipient));
+        for (SseEmitter emitter : userEmitters) {
+            try {
+                emitter.send(SseEmitter.event().name("unread-count").data(payload));
+            } catch (IOException e) {
+                emitter.complete();
+                userEmitters.remove(emitter);
+            }
+        }
     }
 
     @Transactional
@@ -46,6 +90,7 @@ public class NotificationService {
             notification.setUpdatedDate(now);
             notificationRepository.save(notification);
         }
+        publishUnreadCount(recipient);
     }
 
     @Transactional
@@ -59,6 +104,7 @@ public class NotificationService {
         notification.setCreatedDate(now);
         notification.setUpdatedDate(now);
         notificationRepository.save(notification);
+        publishUnreadCount(recipient);
     }
 
     @Transactional
@@ -71,6 +117,7 @@ public class NotificationService {
         notification.setCreatedDate(now);
         notification.setUpdatedDate(now);
         notificationRepository.save(notification);
+        publishUnreadCount(recipient);
     }
 
     public List<NotificationDTO> getNotifications(User user) {
