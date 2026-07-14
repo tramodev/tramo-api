@@ -169,7 +169,7 @@ public class IdeaService {
     private Idea getOwnedIdea(Long id, User requester) {
         Idea idea = ideaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Idea not found"));
-        boolean owns = idea.getPathIdea().stream()
+        boolean owns = pathIdeaRepository.findByIdeaId(id).stream()
                 .anyMatch(pi -> pi.getPath().getProject().getOwner().getId().equals(requester.getId()));
         if (!owns) {
             throw new AccessDeniedException("Not allowed to access this idea");
