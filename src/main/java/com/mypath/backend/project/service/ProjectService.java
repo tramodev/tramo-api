@@ -12,8 +12,10 @@ import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.path.repository.PathRepository;
 import com.mypath.backend.project.dto.ActivityItemDTO;
+import com.mypath.backend.project.dto.AuthorCountDTO;
 import com.mypath.backend.project.dto.BadgeDTO;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
+import com.mypath.backend.project.dto.ExploreBundleDTO;
 import com.mypath.backend.project.dto.FollowResponseDTO;
 import com.mypath.backend.project.dto.ForkFeedItemDTO;
 import com.mypath.backend.project.dto.ProfileBundleDTO;
@@ -283,12 +285,19 @@ public class ProjectService {
             }
         }
 
-        List<PublicPathDTO> paths = pathRepository.findByProjectId(id).stream()
+        List<Path> projectPaths = pathRepository.findByProjectId(id);
+        Map<Long, List<PathIdea>> ideasByPathId = projectPaths.isEmpty()
+                ? Map.of()
+                : pathIdeaRepository.findByPathIdInWithIdeaAndContent(projectPaths.stream().map(Path::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(pathIdea -> pathIdea.getPath().getId()));
+
+        List<PublicPathDTO> paths = projectPaths.stream()
                 .map(path -> new PublicPathDTO(
                         path.getId(),
                         path.getTitle(),
-                        pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(path.getId()).stream()
-                                .map(pathIdea -> pathIdea.getIdea())
+                        ideasByPathId.getOrDefault(path.getId(), List.of()).stream()
+                                .map(PathIdea::getIdea)
                                 .map(this::toPublicIdea)
                                 .toList()
                 ))
@@ -355,6 +364,48 @@ public class ProjectService {
                     .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
         }
         return feed;
+    }
+
+    public ExploreBundleDTO getExploreBundle(String query, String sort, User requester) {
+        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc("published");
+        FeedContext ctx = FeedContext.forProjects(published, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+
+        String q = query == null ? "" : query.trim().toLowerCase();
+        List<ProjectFeedItemDTO> feed = published.stream()
+                .filter(project -> q.isEmpty() || matchesSearch(project, q))
+                .map(project -> toFeedItem(project, ctx))
+                .collect(Collectors.toList());
+        if ("hot".equals(sort)) {
+            feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
+                    .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
+        }
+
+        ProjectFeedItemDTO featured = published.stream()
+                .filter(Project::isFeatured)
+                .findFirst()
+                .map(project -> toFeedItem(project, ctx))
+                .orElse(null);
+
+        Map<String, Long> tagCounts = new LinkedHashMap<>();
+        Map<String, Long> authorCounts = new LinkedHashMap<>();
+        for (Project project : published) {
+            for (String tag : splitTags(project.getTags())) {
+                tagCounts.merge(tag, 1L, Long::sum);
+            }
+            authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
+        }
+        List<TagCountDTO> hotTopics = tagCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(10)
+                .map(entry -> new TagCountDTO(entry.getKey(), entry.getValue()))
+                .toList();
+        List<AuthorCountDTO> activeAuthors = authorCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(5)
+                .map(entry -> new AuthorCountDTO(entry.getKey(), entry.getValue()))
+                .toList();
+
+        return new ExploreBundleDTO(feed, featured, hotTopics, activeAuthors);
     }
 
     @Scheduled(cron = "0 0 0 * * *")

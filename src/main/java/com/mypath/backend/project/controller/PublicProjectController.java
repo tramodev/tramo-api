@@ -1,5 +1,6 @@
 package com.mypath.backend.project.controller;
 
+import com.mypath.backend.project.dto.ExploreBundleDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.PublicProfileDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
@@ -39,6 +40,14 @@ public class PublicProjectController {
             @RequestParam(required = false, defaultValue = "recent") String sort,
             @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getPublishedFeed(q, sort, user));
+    }
+
+    @GetMapping("/explore")
+    public ResponseEntity<ExploreBundleDTO> getExploreBundle(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false, defaultValue = "recent") String sort,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getExploreBundle(q, sort, user));
     }
 
     @GetMapping("/tags")
