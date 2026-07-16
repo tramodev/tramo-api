@@ -44,10 +44,19 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     long countByOwnerIdAndForkedFromNotNull(Long ownerId);
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.visibility = :visibility ORDER BY p.creationDate DESC")
     List<Project> findByOwnerIdAndVisibilityOrderByCreationDateDesc(@Param("ownerId") Long ownerId, @Param("visibility") String visibility);
+
+    @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.visibility = :visibility ORDER BY p.creationDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId AND p.visibility = :visibility")
+    Page<Project> findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(@Param("ownerId") Long ownerId, @Param("visibility") String visibility, Pageable pageable);
+
     Optional<Project> findByFeaturedTrue();
 
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC")
     List<Project> findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(@Param("ownerId") Long ownerId);
+
+    @Query(value = "SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL")
+    Page<Project> findByOwnerIdAndForkedFromNotNullOrderByCreationDateDescPaged(@Param("ownerId") Long ownerId, Pageable pageable);
 
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH p.owner WHERE fo.owner.id = :forkedFromOwnerId AND p.owner.id <> :ownerId ORDER BY p.creationDate DESC")
     List<Project> findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(@Param("forkedFromOwnerId") Long forkedFromOwnerId, @Param("ownerId") Long ownerId);

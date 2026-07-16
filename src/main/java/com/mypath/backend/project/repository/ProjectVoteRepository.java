@@ -1,6 +1,8 @@
 package com.mypath.backend.project.repository;
 
 import com.mypath.backend.project.entity.ProjectVote;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,10 @@ public interface ProjectVoteRepository extends JpaRepository<ProjectVote, Long> 
 
     @Query("SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC")
     List<ProjectVote> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId);
+
+    @Query(value = "SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC",
+            countQuery = "SELECT COUNT(v) FROM ProjectVote v WHERE v.user.id = :userId")
+    Page<ProjectVote> findByUserIdOrderByCreatedDateDescPaged(@Param("userId") Long userId, Pageable pageable);
 
     @Query("SELECT v FROM ProjectVote v JOIN FETCH v.user LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND v.user.id <> :userId ORDER BY v.createdDate DESC")
     List<ProjectVote> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);

@@ -19,7 +19,8 @@ import com.mypath.backend.project.dto.BookmarkResponseDTO;
 import com.mypath.backend.project.dto.ExploreBundleDTO;
 import com.mypath.backend.project.dto.FollowResponseDTO;
 import com.mypath.backend.project.dto.ForkFeedItemDTO;
-import com.mypath.backend.project.dto.ProfileBundleDTO;
+import com.mypath.backend.project.dto.PageResponseDTO;
+import com.mypath.backend.project.dto.ProfileStatsBundleDTO;
 import com.mypath.backend.project.dto.ProfileStatsDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.ProjectRequestDTO;
@@ -529,23 +530,49 @@ public class ProjectService {
         return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount);
     }
 
-    public ProfileBundleDTO getProfileBundle(User user) {
+    public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
         List<BadgeDTO> badges = buildBadges(stats);
         awardNewlyEarnedBadges(user, badges);
+        return new ProfileStatsBundleDTO(stats, badges);
+    }
 
+    public PageResponseDTO<ProjectFeedItemDTO> getPublishedPage(User user, int page, int size) {
+        Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
+                user.getId(), "published", PageRequest.of(page, size));
+        return new PageResponseDTO<>(toFeedItems(result.getContent(), user), result.hasNext());
+    }
+
+    public PageResponseDTO<ProjectFeedItemDTO> getBookmarksPage(User user, int page, int size) {
+        Page<ProjectBookmark> result = projectBookmarkRepository.findByUserIdOrderByCreatedDateDescPaged(
+                user.getId(), PageRequest.of(page, size));
+        List<Project> projects = result.getContent().stream().map(ProjectBookmark::getProject).toList();
+        return new PageResponseDTO<>(toFeedItems(projects, user), result.hasNext());
+    }
+
+    public PageResponseDTO<ProjectFeedItemDTO> getUpvotedPage(User user, int page, int size) {
+        Page<ProjectVote> result = projectVoteRepository.findByUserIdOrderByCreatedDateDescPaged(
+                user.getId(), PageRequest.of(page, size));
+        List<Project> projects = result.getContent().stream().map(ProjectVote::getProject).toList();
+        return new PageResponseDTO<>(toFeedItems(projects, user), result.hasNext());
+    }
+
+    public PageResponseDTO<ForkFeedItemDTO> getForksPage(User user, int page, int size) {
+        Page<Project> result = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDescPaged(
+                user.getId(), PageRequest.of(page, size));
+        return new PageResponseDTO<>(toForkFeedItems(result.getContent(), user), result.hasNext());
+    }
+
+    public PageResponseDTO<ActivityItemDTO> getActivityPage(User user, int page, int size) {
         List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
         List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
         List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId());
         List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), "published");
+        List<ActivityItemDTO> all = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
 
-        List<ProjectFeedItemDTO> bookmarks = toFeedItems(myBookmarks.stream().map(ProjectBookmark::getProject).toList(), user);
-        List<ProjectFeedItemDTO> upvoted = toFeedItems(myVotes.stream().map(ProjectVote::getProject).toList(), user);
-        List<ForkFeedItemDTO> forks = toForkFeedItems(myForkedProjects, user);
-        List<ProjectFeedItemDTO> published = toFeedItems(myPublishedProjects, user);
-        List<ActivityItemDTO> activity = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
-
-        return new ProfileBundleDTO(stats, badges, bookmarks, upvoted, forks, published, activity);
+        int from = Math.min(page * size, all.size());
+        int to = Math.min(from + size, all.size());
+        return new PageResponseDTO<>(all.subList(from, to), to < all.size());
     }
 
     private void awardNewlyEarnedBadges(User user, List<BadgeDTO> badges) {

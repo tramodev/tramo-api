@@ -1,6 +1,8 @@
 package com.mypath.backend.project.repository;
 
 import com.mypath.backend.project.entity.ProjectBookmark;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +19,10 @@ public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark
 
     @Query("SELECT b FROM ProjectBookmark b LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE b.user.id = :userId ORDER BY b.createdDate DESC")
     List<ProjectBookmark> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId);
+
+    @Query(value = "SELECT b FROM ProjectBookmark b LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE b.user.id = :userId ORDER BY b.createdDate DESC",
+            countQuery = "SELECT COUNT(b) FROM ProjectBookmark b WHERE b.user.id = :userId")
+    Page<ProjectBookmark> findByUserIdOrderByCreatedDateDescPaged(@Param("userId") Long userId, Pageable pageable);
 
     @Query("SELECT b FROM ProjectBookmark b JOIN FETCH b.user LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND b.user.id <> :userId ORDER BY b.createdDate DESC")
     List<ProjectBookmark> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);

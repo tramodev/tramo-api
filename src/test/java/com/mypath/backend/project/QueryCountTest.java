@@ -212,7 +212,7 @@ class QueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void profileBundleQueryCountDoesNotScaleWithActivity() throws Exception {
+    void profileStatsQueryCountDoesNotScaleWithActivity() throws Exception {
         User me = createUser("qcbundleuser");
         User other = createUser("qcbundleother");
 
@@ -224,10 +224,10 @@ class QueryCountTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         postForId(me, "/api/project/" + theirsFirst.getId() + "/fork", "");
 
-        mockMvc.perform(get("/api/profile/bundle").header("Authorization", bearer(me)))
+        mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(me)))
                 .andExpect(status().isOk());
 
-        long small = queryCount(() -> mockMvc.perform(get("/api/profile/bundle").header("Authorization", bearer(me)))
+        long small = queryCount(() -> mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(me)))
                 .andExpect(status().isOk()));
 
         for (int i = 0; i < 4; i++) {
@@ -239,7 +239,100 @@ class QueryCountTest extends AbstractIntegrationTest {
                     .andExpect(status().isOk());
         }
 
-        long large = queryCount(() -> mockMvc.perform(get("/api/profile/bundle").header("Authorization", bearer(me)))
+        long large = queryCount(() -> mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void profilePublishedPageQueryCountDoesNotScaleWithPageSize() throws Exception {
+        User me = createUser("qcpubuser");
+        for (int i = 0; i < 3; i++) {
+            seedPublishedProject(me, "Pub " + i, 1, 1, null);
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/profile/published?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 4; i++) {
+            seedPublishedProject(me, "Pub more " + i, 1, 1, null);
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/profile/published?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void profileBookmarksPageQueryCountDoesNotScaleWithPageSize() throws Exception {
+        User me = createUser("qcbookuser");
+        User other = createUser("qcbookother");
+        for (int i = 0; i < 2; i++) {
+            Project p = seedPublishedProject(other, "Book " + i, 1, 1, null);
+            mockMvc.perform(post("/api/project/" + p.getId() + "/bookmark").header("Authorization", bearer(me)))
+                    .andExpect(status().isOk());
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/profile/bookmarks?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 4; i++) {
+            Project p = seedPublishedProject(other, "Book more " + i, 1, 1, null);
+            mockMvc.perform(post("/api/project/" + p.getId() + "/bookmark").header("Authorization", bearer(me)))
+                    .andExpect(status().isOk());
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/profile/bookmarks?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void profileUpvotedPageQueryCountDoesNotScaleWithPageSize() throws Exception {
+        User me = createUser("qcupvuser");
+        User other = createUser("qcupvother");
+        for (int i = 0; i < 2; i++) {
+            Project p = seedPublishedProject(other, "Upv " + i, 1, 1, null);
+            mockMvc.perform(post("/api/project/" + p.getId() + "/vote").header("Authorization", bearer(me)))
+                    .andExpect(status().isOk());
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/profile/upvoted?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 4; i++) {
+            Project p = seedPublishedProject(other, "Upv more " + i, 1, 1, null);
+            mockMvc.perform(post("/api/project/" + p.getId() + "/vote").header("Authorization", bearer(me)))
+                    .andExpect(status().isOk());
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/profile/upvoted?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void profileForksPageQueryCountDoesNotScaleWithPageSize() throws Exception {
+        User me = createUser("qcforkuser");
+        User other = createUser("qcforkother");
+        for (int i = 0; i < 2; i++) {
+            Project p = seedPublishedProject(other, "Fork " + i, 1, 1, null);
+            postForId(me, "/api/project/" + p.getId() + "/fork", "");
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/profile/forks?page=0&size=2").header("Authorization", bearer(me)))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 4; i++) {
+            Project p = seedPublishedProject(other, "Fork more " + i, 1, 1, null);
+            postForId(me, "/api/project/" + p.getId() + "/fork", "");
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/profile/forks?page=0&size=2").header("Authorization", bearer(me)))
                 .andExpect(status().isOk()));
 
         assertThat(large).isEqualTo(small);
