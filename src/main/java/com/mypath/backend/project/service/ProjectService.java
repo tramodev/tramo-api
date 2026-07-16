@@ -18,6 +18,7 @@ import com.mypath.backend.project.dto.BadgeDTO;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
 import com.mypath.backend.project.dto.ExploreBundleDTO;
 import com.mypath.backend.project.dto.FollowResponseDTO;
+import com.mypath.backend.project.dto.FollowUserDTO;
 import com.mypath.backend.project.dto.ForkFeedItemDTO;
 import com.mypath.backend.project.dto.PageResponseDTO;
 import com.mypath.backend.project.dto.ProfileStatsBundleDTO;
@@ -527,7 +528,8 @@ public class ProjectService {
         long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
         long forksCount = projectRepository.countByOwnerIdAndForkedFromNotNull(user.getId());
         long followersCount = followRepository.countByFollowedId(user.getId());
-        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount);
+        long followingCount = followRepository.countByFollowerId(user.getId());
+        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount, followingCount);
     }
 
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
@@ -642,6 +644,33 @@ public class ProjectService {
             notificationService.recordEvent(target, "FOLLOW", null, requester);
         }
         return new FollowResponseDTO(following, followRepository.countByFollowedId(target.getId()));
+    }
+
+    public PageResponseDTO<FollowUserDTO> getFollowers(String username, User requester, int page, int size) {
+        User target = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Page<Follow> result = followRepository.findByFollowedIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
+        List<User> users = result.getContent().stream().map(Follow::getFollower).toList();
+        return toFollowUserPage(users, requester, result.hasNext());
+    }
+
+    public PageResponseDTO<FollowUserDTO> getFollowing(String username, User requester, int page, int size) {
+        User target = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Page<Follow> result = followRepository.findByFollowerIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
+        List<User> users = result.getContent().stream().map(Follow::getFollowed).toList();
+        return toFollowUserPage(users, requester, result.hasNext());
+    }
+
+    private PageResponseDTO<FollowUserDTO> toFollowUserPage(List<User> users, User requester, boolean hasMore) {
+        List<Long> ids = users.stream().map(User::getId).toList();
+        Set<Long> followingIds = requester == null || ids.isEmpty()
+                ? Set.of()
+                : Set.copyOf(followRepository.findFollowedIdsIn(requester.getId(), ids));
+        List<FollowUserDTO> items = users.stream()
+                .map(u -> new FollowUserDTO(u.getUsername(), u.getImageUrl(), u.getBio(), followingIds.contains(u.getId())))
+                .toList();
+        return new PageResponseDTO<>(items, hasMore);
     }
 
     private List<BadgeDTO> buildBadges(ProfileStatsDTO stats) {

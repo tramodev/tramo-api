@@ -1,6 +1,8 @@
 package com.mypath.backend.project.controller;
 
 import com.mypath.backend.project.dto.ExploreBundleDTO;
+import com.mypath.backend.project.dto.FollowUserDTO;
+import com.mypath.backend.project.dto.PageResponseDTO;
 import com.mypath.backend.project.dto.ProjectFeedItemDTO;
 import com.mypath.backend.project.dto.PublicProfileDTO;
 import com.mypath.backend.project.dto.PublicProjectResponseDTO;
@@ -61,5 +63,21 @@ public class PublicProjectController {
     public ResponseEntity<PublicProfileDTO> getPublicProfile(@PathVariable String username,
                                                               @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getPublicProfile(username, user));
+    }
+
+    @GetMapping("/users/{username}/followers")
+    public ResponseEntity<PageResponseDTO<FollowUserDTO>> getFollowers(@PathVariable String username,
+                                                                         @RequestParam(defaultValue = "0") int page,
+                                                                         @RequestParam(defaultValue = "20") int size,
+                                                                         @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getFollowers(username, user, page, size));
+    }
+
+    @GetMapping("/users/{username}/following")
+    public ResponseEntity<PageResponseDTO<FollowUserDTO>> getFollowing(@PathVariable String username,
+                                                                         @RequestParam(defaultValue = "0") int page,
+                                                                         @RequestParam(defaultValue = "20") int size,
+                                                                         @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getFollowing(username, user, page, size));
     }
 }

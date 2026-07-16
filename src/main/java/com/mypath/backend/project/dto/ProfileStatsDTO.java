@@ -13,4 +13,5 @@ public class ProfileStatsDTO {
     private long totalViews;
     private long forksCount;
     private long followersCount;
+    private long followingCount;
 }

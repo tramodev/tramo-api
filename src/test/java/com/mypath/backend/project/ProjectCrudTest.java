@@ -258,6 +258,44 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void followersAndFollowingListsArePaginatedAndReflectRequesterState() throws Exception {
+        User alice = createUser("flalice");
+        User bob = createUser("flbob");
+        User carol = createUser("flcarol");
+
+        mockMvc.perform(post("/api/users/flalice/follow").header("Authorization", bearer(bob)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/users/flalice/follow").header("Authorization", bearer(carol)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/users/flbob/follow").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/public/users/flalice/followers?page=0&size=1").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.hasMore").value(true));
+
+        mockMvc.perform(get("/api/public/users/flalice/followers?page=1&size=1").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.hasMore").value(false));
+
+        mockMvc.perform(get("/api/public/users/flalice/following").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].username").value("flbob"));
+
+        mockMvc.perform(get("/api/public/users/flbob/following").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].username").value("flalice"));
+
+        mockMvc.perform(get("/api/public/users/flalice/followers").header("Authorization", bearer(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.username == 'flcarol')].followingByRequester").value(org.hamcrest.Matchers.contains(false)));
+    }
+
+    @Test
     void updateProfileChangesBioAndImage() throws Exception {
         User user = createUser("profileupdater");
 
