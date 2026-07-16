@@ -137,6 +137,7 @@ public class ProjectService {
 
     public ProjectResponseDTO update(Long id, ProjectRequestDTO request, User requester) {
         Project project = getOwnedProject(id, requester);
+        String previousVisibility = project.getVisibility();
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             project.setTitle(request.getTitle());
         }
@@ -156,8 +157,25 @@ public class ProjectService {
         ProjectResponseDTO response = toResponse(projectRepository.save(project));
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
+            if (!"published".equals(previousVisibility)) {
+                notifyFollowers(project.getOwner(), "PUBLISH", project);
+            }
         }
         return response;
+    }
+
+    @Transactional
+    public void shareProject(Long id, User sharer) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        assertViewable(project);
+        notifyFollowers(sharer, "SHARE", project);
+    }
+
+    private void notifyFollowers(User actor, String type, Project project) {
+        for (User follower : followRepository.findFollowersByFollowedId(actor.getId())) {
+            notificationService.recordEvent(follower, type, project, actor);
+        }
     }
 
     @Transactional
@@ -609,16 +627,20 @@ public class ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         ProfileStatsDTO stats = getProfileStats(target);
-        List<ProjectFeedItemDTO> published = toFeedItems(
-                projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(target.getId(), "published"),
-                requester
-        );
         boolean self = requester != null && requester.getId().equals(target.getId());
         boolean following = !self && requester != null
                 && followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId()).isPresent();
 
         return new PublicProfileDTO(target.getUsername(), target.getBio(), target.getImageUrl(), target.getCreatedAt(),
-                stats, buildBadges(stats), published, following, self);
+                stats, buildBadges(stats), following, self);
+    }
+
+    public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {
+        User target = userRepository.findByUsernameIgnoreCase(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
+                target.getId(), "published", PageRequest.of(page, size));
+        return new PageResponseDTO<>(toFeedItems(result.getContent(), requester), result.hasNext());
     }
 
     @Transactional

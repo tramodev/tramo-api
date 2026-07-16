@@ -80,4 +80,12 @@ public class PublicProjectController {
                                                                          @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getFollowing(username, user, page, size));
     }
+
+    @GetMapping("/users/{username}/published")
+    public ResponseEntity<PageResponseDTO<ProjectFeedItemDTO>> getPublished(@PathVariable String username,
+                                                                              @RequestParam(defaultValue = "0") int page,
+                                                                              @RequestParam(defaultValue = "10") int size,
+                                                                              @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublishedPageForUser(username, user, page, size));
+    }
 }

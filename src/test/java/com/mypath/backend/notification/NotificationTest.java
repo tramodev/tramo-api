@@ -144,6 +144,74 @@ class NotificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void publishingNotifiesFollowersButNotOnRepublish() throws Exception {
+        User owner = createUser("notifpublisher");
+        User follower = createUser("notifpublisherfollower");
+        mockMvc.perform(post("/api/users/notifpublisher/follow").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk());
+
+        Project project = createProject(owner, "Publish me", "private");
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("PUBLISH"))
+                .andExpect(jsonPath("$[0].latestActorUsername").value("notifpublisher"))
+                .andExpect(jsonPath("$[0].projectTitle").value("Publish me"));
+
+        // re-saving while already published (e.g. renaming) must not re-fire the follower notification
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Publish me v2","visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void sharingNotifiesSharersFollowersNotProjectOwner() throws Exception {
+        User owner = createUser("notifshareowner");
+        User sharer = createUser("notifsharer");
+        User sharerFollower = createUser("notifsharerfollower");
+        mockMvc.perform(post("/api/users/notifsharer/follow").header("Authorization", bearer(sharerFollower)))
+                .andExpect(status().isOk());
+
+        Project project = publishedProject(owner, "Share me");
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/share").header("Authorization", bearer(sharer)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(sharerFollower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("SHARE"))
+                .andExpect(jsonPath("$[0].latestActorUsername").value("notifsharer"))
+                .andExpect(jsonPath("$[0].projectTitle").value("Share me"));
+
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void sharingUnviewableProjectFails() throws Exception {
+        User owner = createUser("notifshareowner2");
+        User sharer = createUser("notifsharer2");
+        Project project = createProject(owner, "Private project", "private");
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/share").header("Authorization", bearer(sharer)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void streamEndpointStartsAsyncAndReceivesLiveUpdate() throws Exception {
         User owner = createUser("notifstream");
         User fan = createUser("notifstreamfan");

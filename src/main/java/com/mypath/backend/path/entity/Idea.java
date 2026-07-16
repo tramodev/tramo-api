@@ -18,6 +18,7 @@ public class Idea {
     private Long id;
     private String title;
     private String type;
+    private String titleAlign;
     private Date createdDate;
     private Date modifiedDate;
     @OneToOne(cascade = CascadeType.ALL)

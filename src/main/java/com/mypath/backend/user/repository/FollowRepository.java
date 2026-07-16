@@ -1,6 +1,7 @@
 package com.mypath.backend.user.repository;
 
 import com.mypath.backend.user.entity.Follow;
+import com.mypath.backend.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -28,4 +29,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     @Query("SELECT f.followed.id FROM Follow f WHERE f.follower.id = :followerId AND f.followed.id IN :followedIds")
     List<Long> findFollowedIdsIn(@Param("followerId") Long followerId, @Param("followedIds") List<Long> followedIds);
+
+    @Query("SELECT f.follower FROM Follow f WHERE f.followed.id = :followedId")
+    List<User> findFollowersByFollowedId(@Param("followedId") Long followedId);
 }

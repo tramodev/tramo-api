@@ -48,6 +48,7 @@ public class IdeaService {
         Idea idea = new Idea();
         idea.setTitle(request.getTitle());
         idea.setType(request.getType());
+        idea.setTitleAlign("center");
         idea.setContent(content);
         idea.setCreatedDate(new Date());
         idea.setModifiedDate(new Date());
@@ -76,6 +77,9 @@ public class IdeaService {
         }
         if (request.getType() != null) {
             idea.setType(request.getType());
+        }
+        if (request.getTitleAlign() != null) {
+            idea.setTitleAlign(request.getTitleAlign());
         }
         idea.setModifiedDate(new Date());
         return toResponse(ideaRepository.save(idea));
@@ -191,6 +195,7 @@ public class IdeaService {
                 idea.getId(),
                 idea.getTitle(),
                 idea.getType(),
+                idea.getTitleAlign(),
                 idea.getCreatedDate(),
                 idea.getModifiedDate()
         );

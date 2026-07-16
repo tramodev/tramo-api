@@ -296,6 +296,24 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void publicProfilePublishedListIsPaginated() throws Exception {
+        User author = createUser("pubpubauthor");
+        for (int i = 0; i < 3; i++) {
+            createProject(author, "Public Pub " + i, "published");
+        }
+
+        mockMvc.perform(get("/api/public/users/pubpubauthor/published?page=0&size=2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.hasMore").value(true));
+
+        mockMvc.perform(get("/api/public/users/pubpubauthor/published?page=1&size=2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.hasMore").value(false));
+    }
+
+    @Test
     void updateProfileChangesBioAndImage() throws Exception {
         User user = createUser("profileupdater");
 

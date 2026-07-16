@@ -75,4 +75,10 @@ public class ProjectController {
         moderationService.submitReport(id, user, request.getReason());
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/{id}/share")
+    public ResponseEntity<Void> share(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        projectService.shareProject(id, user);
+        return ResponseEntity.ok().build();
+    }
 }
