@@ -4,6 +4,7 @@ import com.mypath.backend.AbstractIntegrationTest;
 import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
+import com.mypath.backend.path.repository.PathRepository;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,9 @@ class PathIdeaTest extends AbstractIntegrationTest {
 
     @Autowired
     IdeaLinkRepository ideaLinkRepository;
+
+    @Autowired
+    PathRepository pathRepository;
 
     private long createPath(User owner, Project project, String title) throws Exception {
         return postForId(owner, "/api/project/" + project.getId() + "/path", """
@@ -336,5 +340,66 @@ class PathIdeaTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/idea/" + myIdea + "/link/" + theirIdea).header("Authorization", bearer(owner)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listPathsForProjectReturnsAllOfThem() throws Exception {
+        User owner = createUser("pathlister");
+        Project project = createProject(owner, "Listable", "private");
+        createPath(owner, project, "First");
+        createPath(owner, project, "Second");
+
+        mockMvc.perform(get("/api/project/" + project.getId() + "/path").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void updatePathChangesTitleAndVisibility() throws Exception {
+        User owner = createUser("pathupdater");
+        Project project = createProject(owner, "Updatable", "private");
+        long pathId = createPath(owner, project, "Original");
+
+        mockMvc.perform(put("/api/path/" + pathId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Renamed","visibility":"public"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Renamed"));
+
+        assertThat(pathRepository.findById(pathId).orElseThrow().getVisibility()).isEqualTo("public");
+    }
+
+    @Test
+    void listIdeasForPathReturnsAllOfThem() throws Exception {
+        User owner = createUser("idealister");
+        Project project = createProject(owner, "IdeaContainer", "private");
+        long pathId = createPath(owner, project, "Path with ideas");
+        createIdea(owner, pathId, "Idea one");
+        createIdea(owner, pathId, "Idea two");
+
+        mockMvc.perform(get("/api/path/" + pathId + "/idea").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void updateContentCreatesContentWhenNoneExistsYet() throws Exception {
+        User owner = createUser("contentcreator");
+        Project project = createProject(owner, "ContentContainer", "private");
+        long pathId = createPath(owner, project, "Path");
+        long ideaId = createIdea(owner, pathId, "Fresh idea");
+
+        mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"Hello world"}"""))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/idea/" + ideaId + "/content").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("Hello world"));
     }
 }

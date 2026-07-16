@@ -1,0 +1,197 @@
+package com.mypath.backend.notification;
+
+import com.mypath.backend.AbstractIntegrationTest;
+import com.mypath.backend.project.entity.Project;
+import com.mypath.backend.project.service.ProjectService;
+import com.mypath.backend.user.entity.User;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+class NotificationTest extends AbstractIntegrationTest {
+
+    @Autowired
+    ProjectService projectService;
+
+    // Publishing via the real update() flow (not the createProject(..., "published", ...) test
+    // helper, which inserts directly) fires the first_publish badge check right away instead of
+    // leaving it to fire lazily on whatever the next checkAndAwardBadges call happens to be —
+    // otherwise the first vote a project ever receives ends up producing a BADGE notification on
+    // top of the UPVOTE one, throwing off the notification-list/unread-count assertions below.
+    // Mark-as-read isn't enough since getNotifications() returns read ones too; delete it outright.
+    private Project publishedProject(User owner, String title) throws Exception {
+        Project project = createProject(owner, title, "private", "d", null);
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long badgeNotificationId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$[0].id")).longValue();
+        mockMvc.perform(delete("/api/notifications/" + badgeNotificationId).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        return project;
+    }
+
+    @Test
+    void voteGeneratesNotificationAndUpdatesUnreadCount() throws Exception {
+        User owner = createUser("notifowner");
+        User fan = createUser("notiffan");
+        Project project = publishedProject(owner, "Notify me");
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("UPVOTE"))
+                .andExpect(jsonPath("$[0].latestActorUsername").value("notiffan"))
+                .andExpect(jsonPath("$[0].count").value(1))
+                .andExpect(jsonPath("$[0].read").value(false));
+    }
+
+    @Test
+    void repeatedVotesFromDifferentUsersIncrementSameNotification() throws Exception {
+        User owner = createUser("notifowner2");
+        User fan1 = createUser("notiffan2a");
+        User fan2 = createUser("notiffan2b");
+        Project project = publishedProject(owner, "Notify me too");
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan1)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan2)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].count").value(2));
+    }
+
+    @Test
+    void votingOnOwnProjectDoesNotNotifySelf() throws Exception {
+        User owner = createUser("notifself");
+        Project project = publishedProject(owner, "Mine");
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void markAllReadClearsUnreadCount() throws Exception {
+        User owner = createUser("notifreader");
+        User fan = createUser("notifreaderfan");
+        Project project = publishedProject(owner, "Read me");
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void deleteNotificationRemovesIt() throws Exception {
+        User owner = createUser("notifdeleter");
+        User fan = createUser("notifdeleterfan");
+        Project project = publishedProject(owner, "Delete me");
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+
+        String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$[0].id")).longValue();
+
+        mockMvc.perform(delete("/api/notifications/" + id).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void deletingUnknownOrOthersNotificationReturnsNotFound() throws Exception {
+        User owner = createUser("notifdeleter2");
+        mockMvc.perform(delete("/api/notifications/999999").header("Authorization", bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void streamEndpointStartsAsyncAndReceivesLiveUpdate() throws Exception {
+        User owner = createUser("notifstream");
+        User fan = createUser("notifstreamfan");
+        Project project = publishedProject(owner, "Stream me");
+
+        mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted());
+
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+    }
+
+    @Test
+    void publishingFirstProjectAwardsBadgeNotification() throws Exception {
+        User author = createUser("notifbadge");
+        Project project = createProject(author, "Badge me", "private");
+
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type=='BADGE')]").exists());
+    }
+
+    @Test
+    void refreshFeaturedProjectNotifiesNewlyFeaturedOwner() throws Exception {
+        User owner = createUser("notiffeatured");
+        User fan = createUser("notiffeaturedfan");
+        Project project = publishedProject(owner, "Feature me");
+        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+
+        projectService.refreshFeaturedProject();
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type=='FEATURED')]").exists());
+
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().isFeatured()).isTrue();
+    }
+}

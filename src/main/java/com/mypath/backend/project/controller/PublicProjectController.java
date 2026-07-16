@@ -46,8 +46,10 @@ public class PublicProjectController {
     public ResponseEntity<ExploreBundleDTO> getExploreBundle(
             @RequestParam(required = false) String q,
             @RequestParam(required = false, defaultValue = "recent") String sort,
+            @RequestParam(required = false, defaultValue = "0") int page,
+            @RequestParam(required = false, defaultValue = "10") int size,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getExploreBundle(q, sort, user));
+        return ResponseEntity.ok(projectService.getExploreBundle(q, sort, page, size, user));
     }
 
     @GetMapping("/tags")

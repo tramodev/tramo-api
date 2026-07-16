@@ -1,6 +1,8 @@
 package com.mypath.backend.project.repository;
 
 import com.mypath.backend.project.entity.Project;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +18,28 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.modifiedDate DESC")
     List<Project> findByVisibilityOrderByModifiedDateDesc(@Param("visibility") String visibility);
+
+    @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
+            + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%'))) "
+            + "ORDER BY p.modifiedDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p "
+            + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<Project> findPublishedRecent(@Param("visibility") String visibility, @Param("query") String query, Pageable pageable);
+
+    @Query(value = "SELECT p.id FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
+            + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%'))) "
+            + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.modifiedDate) DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p "
+            + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<Long> findPublishedHotIds(@Param("visibility") String visibility, @Param("query") String query, Pageable pageable);
+
+    @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.id IN :ids")
+    List<Project> findAllByIdInWithFetch(@Param("ids") List<Long> ids);
+
     long countByOwnerIdAndVisibility(Long ownerId, String visibility);
     long countByOwnerIdAndForkedFromNotNull(Long ownerId);
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.visibility = :visibility ORDER BY p.creationDate DESC")

@@ -222,4 +222,51 @@ class ProjectCrudTest extends AbstractIntegrationTest {
 
         assertThat(projectRepository.findById(project.getId())).isPresent();
     }
+
+    @Test
+    void publicFeedReturnsPublishedProjects() throws Exception {
+        User author = createUser("feedauthor");
+        createProject(author, "Feed item", "published", "d", "tag");
+
+        mockMvc.perform(get("/api/public/projects"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("Feed item"));
+    }
+
+    @Test
+    void publicTagsReturnsHotTopics() throws Exception {
+        User author = createUser("tagauthor");
+        createProject(author, "Tagged", "published", "d", "popular");
+
+        mockMvc.perform(get("/api/public/tags"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].tag").value("popular"));
+    }
+
+    @Test
+    void followTogglesOnAndOff() throws Exception {
+        User follower = createUser("followerx");
+        createUser("followedx");
+
+        mockMvc.perform(post("/api/users/followedx/follow").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.following").value(true));
+
+        mockMvc.perform(post("/api/users/followedx/follow").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.following").value(false));
+    }
+
+    @Test
+    void updateProfileChangesBioAndImage() throws Exception {
+        User user = createUser("profileupdater");
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bio":"New bio","imageUrl":"https://example.com/a.png"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bio").value("New bio"));
+    }
 }

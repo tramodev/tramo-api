@@ -47,6 +47,9 @@ import com.mypath.backend.user.repository.FollowRepository;
 import com.mypath.backend.user.repository.UserBadgeRepository;
 import com.mypath.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -352,6 +355,7 @@ public class ProjectService {
                         project.getTitle(),
                         project.getDescription(),
                         project.getOwner().getUsername(),
+                        project.getOwner().getImageUrl(),
                         project.getThumbnail(),
                         project.getTags(),
                         project.getModifiedDate(),
@@ -371,46 +375,59 @@ public class ProjectService {
         return feed;
     }
 
-    public ExploreBundleDTO getExploreBundle(String query, String sort, User requester) {
-        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc("published");
-        FeedContext ctx = FeedContext.forProjects(published, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
-
+    public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        List<ProjectFeedItemDTO> feed = published.stream()
-                .filter(project -> q.isEmpty() || matchesSearch(project, q))
-                .map(project -> toFeedItem(project, ctx))
-                .collect(Collectors.toList());
+        Pageable pageable = PageRequest.of(page, size);
+
+        List<Project> pageProjects;
+        boolean hasMore;
         if ("hot".equals(sort)) {
-            feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
-                    .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
+            Page<Long> idPage = projectRepository.findPublishedHotIds("published", q, pageable);
+            List<Long> ids = idPage.getContent();
+            Map<Long, Project> byId = ids.isEmpty()
+                    ? Map.of()
+                    : projectRepository.findAllByIdInWithFetch(ids).stream()
+                        .collect(Collectors.toMap(Project::getId, p -> p));
+            pageProjects = ids.stream().map(byId::get).toList();
+            hasMore = idPage.hasNext();
+        } else {
+            Page<Project> projectPage = projectRepository.findPublishedRecent("published", q, pageable);
+            pageProjects = projectPage.getContent();
+            hasMore = projectPage.hasNext();
         }
 
-        ProjectFeedItemDTO featured = published.stream()
-                .filter(Project::isFeatured)
-                .findFirst()
+        FeedContext ctx = FeedContext.forProjects(pageProjects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        List<ProjectFeedItemDTO> feed = pageProjects.stream()
                 .map(project -> toFeedItem(project, ctx))
-                .orElse(null);
+                .toList();
 
-        Map<String, Long> tagCounts = new LinkedHashMap<>();
-        Map<String, Long> authorCounts = new LinkedHashMap<>();
-        for (Project project : published) {
-            for (String tag : splitTags(project.getTags())) {
-                tagCounts.merge(tag, 1L, Long::sum);
-            }
-            authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
+        ProjectFeedItemDTO featured = null;
+        List<TagCountDTO> hotTopics = List.of();
+        List<AuthorCountDTO> activeAuthors = List.of();
+        if (page == 0) {
+            featured = projectRepository.findByFeaturedTrue()
+                    .filter(project -> "published".equals(project.getVisibility()))
+                    .map(project -> toFeedItem(project, FeedContext.forProjects(List.of(project), requester, projectRepository, projectVoteRepository, projectBookmarkRepository)))
+                    .orElse(null);
+            hotTopics = getHotTopics(10);
+            activeAuthors = getActiveAuthors(5);
         }
-        List<TagCountDTO> hotTopics = tagCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(10)
-                .map(entry -> new TagCountDTO(entry.getKey(), entry.getValue()))
-                .toList();
-        List<AuthorCountDTO> activeAuthors = authorCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
-                .map(entry -> new AuthorCountDTO(entry.getKey(), entry.getValue()))
-                .toList();
 
-        return new ExploreBundleDTO(feed, featured, hotTopics, activeAuthors);
+        return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors);
+    }
+
+    public List<AuthorCountDTO> getActiveAuthors(int limit) {
+        Map<String, Long> authorCounts = new LinkedHashMap<>();
+        Map<String, String> authorAvatars = new HashMap<>();
+        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc("published")) {
+            authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
+            authorAvatars.putIfAbsent(project.getOwner().getUsername(), project.getOwner().getImageUrl());
+        }
+        return authorCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(limit)
+                .map(entry -> new AuthorCountDTO(entry.getKey(), authorAvatars.get(entry.getKey()), entry.getValue()))
+                .toList();
     }
 
     @Scheduled(cron = "0 0 0 * * *")
@@ -696,6 +713,7 @@ public class ProjectService {
                 project.getTitle(),
                 project.getDescription(),
                 project.getOwner().getUsername(),
+                project.getOwner().getImageUrl(),
                 project.getThumbnail(),
                 project.getTags(),
                 project.getModifiedDate(),

@@ -1,5 +1,7 @@
 package com.mypath.backend.project;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mypath.backend.AbstractIntegrationTest;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.user.entity.User;
@@ -8,6 +10,9 @@ import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -89,6 +94,84 @@ class QueryCountTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk()));
 
         assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void exploreHotSortQueryCountDoesNotScaleWithFeedSize() throws Exception {
+        User author1 = createUser("qchotauthor1");
+        User fan = createUser("qchotfan");
+        seedPublishedProject(author1, "Hot A", 1, 1, fan);
+        seedPublishedProject(author1, "Hot B", 1, 1, null);
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/explore?sort=hot"))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 6; i++) {
+            User author = createUser("qchotauthor" + (i + 2));
+            seedPublishedProject(author, "Hot " + i, 1, 2, fan);
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/explore?sort=hot"))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void explorePageTwoQueryCountDoesNotScaleWithTotalFeedSize() throws Exception {
+        // Seed enough that page 1 is a full page of 10 in both runs (a short final page lets
+        // Spring Data infer "last page" and skip the count query, which would make the query
+        // count differ for a reason unrelated to scaling — keep both runs on the same code path).
+        User author = createUser("qcpageauthor");
+        User fan = createUser("qcpagefan");
+        for (int i = 0; i < 22; i++) {
+            seedPublishedProject(author, "Page " + i, 1, 1, fan);
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/explore?page=1&size=10"))
+                .andExpect(status().isOk()));
+
+        for (int i = 0; i < 8; i++) {
+            seedPublishedProject(author, "Page extra " + i, 1, 1, fan);
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/explore?page=1&size=10"))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void explorePaginationCoversWholeFeedWithoutDuplicates() throws Exception {
+        User author = createUser("qcpagcoverauthor");
+        for (int i = 0; i < 12; i++) {
+            seedPublishedProject(author, "Cover " + i, 1, 1, null);
+        }
+
+        String firstPageJson = mockMvc.perform(get("/api/public/explore?page=0&size=10"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String secondPageJson = mockMvc.perform(get("/api/public/explore?page=1&size=10"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode firstFeed = mapper.readTree(firstPageJson).get("feed");
+        JsonNode secondFeed = mapper.readTree(secondPageJson).get("feed");
+
+        assertThat(mapper.readTree(firstPageJson).get("hasMore").asBoolean()).isTrue();
+        assertThat(mapper.readTree(secondPageJson).get("hasMore").asBoolean()).isFalse();
+        assertThat(firstFeed).hasSize(10);
+        assertThat(secondFeed).hasSize(2);
+
+        Set<Long> firstIds = new HashSet<>();
+        firstFeed.forEach(node -> firstIds.add(node.get("id").asLong()));
+        Set<Long> secondIds = new HashSet<>();
+        secondFeed.forEach(node -> secondIds.add(node.get("id").asLong()));
+
+        assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
+        assertThat(firstIds).hasSize(10);
+        assertThat(secondIds).hasSize(2);
     }
 
     @Test

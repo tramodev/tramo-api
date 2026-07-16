@@ -9,5 +9,6 @@ import lombok.Setter;
 @AllArgsConstructor
 public class AuthorCountDTO {
     private String username;
+    private String avatar;
     private long count;
 }

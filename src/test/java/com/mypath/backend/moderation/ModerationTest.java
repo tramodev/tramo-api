@@ -242,4 +242,27 @@ class ModerationTest extends AbstractIntegrationTest {
 
         assertThat(projectReportRepository.count()).isZero();
     }
+
+    @Test
+    void adminUserSearchWithNoQueryReturnsAllUsers() throws Exception {
+        User admin = createAdmin("searchadmin");
+        createUser("searchuserone");
+        createUser("searchusertwo");
+
+        mockMvc.perform(get("/api/admin/users").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
+    void adminUserSearchFiltersByUsernameOrEmail() throws Exception {
+        User admin = createAdmin("searchadmin2");
+        createUser("findme", "findme@example.com", true, false, com.mypath.backend.user.Role.USER);
+        createUser("nomatch", "nomatch@example.com", true, false, com.mypath.backend.user.Role.USER);
+
+        mockMvc.perform(get("/api/admin/users").param("q", "findme").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].username").value("findme"));
+    }
 }

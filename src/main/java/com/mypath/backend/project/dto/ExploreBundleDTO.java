@@ -11,6 +11,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ExploreBundleDTO {
     private List<ProjectFeedItemDTO> feed;
+    private boolean hasMore;
     private ProjectFeedItemDTO featured;
     private List<TagCountDTO> hotTopics;
     private List<AuthorCountDTO> activeAuthors;
