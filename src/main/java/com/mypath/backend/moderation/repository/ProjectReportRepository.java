@@ -11,4 +11,5 @@ public interface ProjectReportRepository extends JpaRepository<ProjectReport, Lo
     boolean existsByProjectIdAndReporterIdAndStatus(Long projectId, Long reporterId, String status);
 
     void deleteByProjectId(Long projectId);
+    void deleteByReporterId(Long reporterId);
 }

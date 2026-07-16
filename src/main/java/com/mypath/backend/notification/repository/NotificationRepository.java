@@ -28,4 +28,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     long deleteByIdAndRecipientId(Long id, Long recipientId);
 
     void deleteByProjectId(Long projectId);
+
+    void deleteByRecipientId(Long recipientId);
+
+    @Modifying
+    @Query("UPDATE Notification n SET n.latestActor = null WHERE n.latestActor.id = :actorId")
+    void clearLatestActorReferences(@Param("actorId") Long actorId);
 }

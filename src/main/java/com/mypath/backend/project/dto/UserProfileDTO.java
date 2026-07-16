@@ -11,6 +11,7 @@ import java.util.Date;
 @AllArgsConstructor
 public class UserProfileDTO {
     private String username;
+    private String email;
     private String bio;
     private String imageUrl;
     private Date createdAt;

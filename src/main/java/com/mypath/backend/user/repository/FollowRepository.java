@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface FollowRepository extends JpaRepository<Follow, Long> {
     long countByFollowedId(Long followedId);
     Optional<Follow> findByFollowerIdAndFollowedId(Long followerId, Long followedId);
+    void deleteByFollowerIdOrFollowedId(Long followerId, Long followedId);
 }

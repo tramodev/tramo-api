@@ -35,6 +35,16 @@ public class NotificationService {
         notificationRepository.deleteByProjectId(projectId);
     }
 
+    @Transactional
+    public void deleteAllForRecipient(Long recipientId) {
+        notificationRepository.deleteByRecipientId(recipientId);
+    }
+
+    @Transactional
+    public void clearLatestActorReferences(Long actorId) {
+        notificationRepository.clearLatestActorReferences(actorId);
+    }
+
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         CopyOnWriteArrayList<SseEmitter> userEmitters =

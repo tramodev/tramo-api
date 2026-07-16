@@ -21,4 +21,5 @@ public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark
     @Query("SELECT b FROM ProjectBookmark b JOIN FETCH b.user LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND b.user.id <> :userId ORDER BY b.createdDate DESC")
     List<ProjectBookmark> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);
     void deleteByProjectId(Long projectId);
+    void deleteByUserId(Long userId);
 }

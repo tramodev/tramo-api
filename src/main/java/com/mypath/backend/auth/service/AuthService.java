@@ -170,6 +170,16 @@ public class AuthService {
         refreshTokenRepository.deleteByUserId(user.getId());
     }
 
+    @Transactional
+    public void changePassword(User user, String currentPassword, String newPassword) {
+        if (user.getPassword() == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        refreshTokenRepository.deleteByUserId(user.getId());
+    }
+
     private PasswordResetToken createPasswordResetToken(User user) {
         PasswordResetToken token = new PasswordResetToken();
         token.setUser(user);
