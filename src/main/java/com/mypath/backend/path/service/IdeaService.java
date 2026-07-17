@@ -17,6 +17,8 @@ import com.mypath.backend.project.repository.ProjectRepository;
 import com.mypath.backend.upload.R2Client;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,8 @@ import java.util.Set;
 
 @Service
 public class IdeaService {
+    private static final Logger log = LoggerFactory.getLogger(IdeaService.class);
+
     private final IdeaRepository ideaRepository;
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaLinkRepository ideaLinkRepository;
@@ -130,13 +134,13 @@ public class IdeaService {
     private void deleteOrphanedEditorImages(Long ideaId, User requester, String previousContent, String newContent) {
         Set<String> oldUrls = r2Client.extractReferencedUrls(previousContent);
         Set<String> newUrls = r2Client.extractReferencedUrls(newContent);
+        log.info("deleteOrphanedEditorImages idea={} oldUrls={} newUrls={}", ideaId, oldUrls, newUrls);
         for (String url : oldUrls) {
             if (newUrls.contains(url)) {
                 continue;
             }
-            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId)) {
-                r2Client.deleteByPublicUrl(url);
-            }
+            boolean stillReferenced = pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId);
+            log.info("deleteOrphanedEditorImages candidate url={} stillReferencedElsewhere={} (DRY RUN, not deleting)", url, stillReferenced);
         }
     }
 
