@@ -145,6 +145,10 @@ public class ProjectService {
             project.setDescription(request.getDescription());
         }
         if (request.getVisibility() != null) {
+            if ("published".equals(request.getVisibility())
+                    && (project.getDescription() == null || project.getDescription().isBlank())) {
+                throw new IllegalArgumentException("Add a description before publishing");
+            }
             project.setVisibility(request.getVisibility());
         }
         if (request.getThumbnail() != null) {

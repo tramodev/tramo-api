@@ -150,7 +150,7 @@ class NotificationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/users/notifpublisher/follow").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk());
 
-        Project project = createProject(owner, "Publish me", "private");
+        Project project = createProject(owner, "Publish me", "private", "A description", null);
         mockMvc.perform(put("/api/project/" + project.getId())
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -232,7 +232,7 @@ class NotificationTest extends AbstractIntegrationTest {
     @Test
     void publishingFirstProjectAwardsBadgeNotification() throws Exception {
         User author = createUser("notifbadge");
-        Project project = createProject(author, "Badge me", "private");
+        Project project = createProject(author, "Badge me", "private", "A description", null);
 
         mockMvc.perform(put("/api/project/" + project.getId())
                         .header("Authorization", bearer(author))

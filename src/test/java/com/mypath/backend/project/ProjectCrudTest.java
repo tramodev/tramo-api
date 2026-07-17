@@ -157,7 +157,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Test
     void publishMakesProjectVisibleInExplore() throws Exception {
         User owner = createUser("publisher");
-        Project project = createProject(owner, "Going public", "private");
+        Project project = createProject(owner, "Going public", "private", "A description", null);
 
         mockMvc.perform(put("/api/project/" + project.getId())
                         .header("Authorization", bearer(owner))
@@ -311,6 +311,34 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.hasMore").value(false));
+    }
+
+    @Test
+    void publishingWithoutDescriptionIsRejected() throws Exception {
+        User owner = createUser("nodescowner");
+        Project project = createProject(owner, "No description yet", "private");
+
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"description":"A real description now"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/project/" + project.getId())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.visibility").value("published"));
     }
 
     @Test
