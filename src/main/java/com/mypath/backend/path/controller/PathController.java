@@ -1,5 +1,6 @@
 package com.mypath.backend.path.controller;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.path.dto.PathRequestDTO;
 import com.mypath.backend.path.dto.PathResponseDTO;
 import com.mypath.backend.path.service.PathService;
@@ -15,20 +16,22 @@ import java.util.List;
 @RequestMapping("/api")
 public class PathController {
     private final PathService pathService;
+    private final ProjectIdCodec projectIdCodec;
 
-    public PathController(PathService pathService) {
+    public PathController(PathService pathService, ProjectIdCodec projectIdCodec) {
         this.pathService = pathService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @PostMapping("/project/{projectId}/path")
-    public ResponseEntity<PathResponseDTO> create(@PathVariable Long projectId, @Valid @RequestBody PathRequestDTO request,
+    public ResponseEntity<PathResponseDTO> create(@PathVariable String projectId, @Valid @RequestBody PathRequestDTO request,
                                                     @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(pathService.create(projectId, request, user));
+        return ResponseEntity.ok(pathService.create(projectIdCodec.decode(projectId), request, user));
     }
 
     @GetMapping("/project/{projectId}/path")
-    public ResponseEntity<List<PathResponseDTO>> getAllForProject(@PathVariable Long projectId, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(pathService.getAllForProject(projectId, user));
+    public ResponseEntity<List<PathResponseDTO>> getAllForProject(@PathVariable String projectId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(pathService.getAllForProject(projectIdCodec.decode(projectId), user));
     }
 
     @GetMapping("/path/{id}")

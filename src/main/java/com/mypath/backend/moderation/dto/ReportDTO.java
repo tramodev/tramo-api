@@ -12,7 +12,7 @@ import java.util.Date;
 public class ReportDTO {
     private Long id;
     private String type;
-    private Long projectId;
+    private String projectId;
     private String projectTitle;
     private Long commentId;
     private String commentContent;

@@ -30,7 +30,7 @@ class NotificationTest extends AbstractIntegrationTest {
     // Mark-as-read isn't enough since getNotifications() returns read ones too; delete it outright.
     private Project publishedProject(User owner, String title) throws Exception {
         Project project = createProject(owner, title, "private", "d", null);
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -53,7 +53,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User fan = createUser("notiffan");
         Project project = publishedProject(owner, "Notify me");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
@@ -75,9 +75,9 @@ class NotificationTest extends AbstractIntegrationTest {
         User fan2 = createUser("notiffan2b");
         Project project = publishedProject(owner, "Notify me too");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan1)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan1)))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan2)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan2)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
@@ -91,7 +91,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User owner = createUser("notifself");
         Project project = publishedProject(owner, "Mine");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(owner)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
@@ -104,7 +104,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User owner = createUser("notifreader");
         User fan = createUser("notifreaderfan");
         Project project = publishedProject(owner, "Read me");
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
@@ -120,7 +120,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User owner = createUser("notifdeleter");
         User fan = createUser("notifdeleterfan");
         Project project = publishedProject(owner, "Delete me");
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
         String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
@@ -151,7 +151,7 @@ class NotificationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         Project project = createProject(owner, "Publish me", "private", "A description", null);
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -165,7 +165,7 @@ class NotificationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].projectTitle").value("Publish me"));
 
         // re-saving while already published (e.g. renaming) must not re-fire the follower notification
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -187,7 +187,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         Project project = publishedProject(owner, "Share me");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/share").header("Authorization", bearer(sharer)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/share").header("Authorization", bearer(sharer)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(sharerFollower)))
@@ -207,7 +207,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User sharer = createUser("notifsharer2");
         Project project = createProject(owner, "Private project", "private");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/share").header("Authorization", bearer(sharer)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/share").header("Authorization", bearer(sharer)))
                 .andExpect(status().isNotFound());
     }
 
@@ -221,7 +221,7 @@ class NotificationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted());
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
@@ -234,7 +234,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User author = createUser("notifbadge");
         Project project = createProject(author, "Badge me", "private", "A description", null);
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(author))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -251,7 +251,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User owner = createUser("notiffeatured");
         User fan = createUser("notiffeaturedfan");
         Project project = publishedProject(owner, "Feature me");
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
         projectService.refreshFeaturedProject();

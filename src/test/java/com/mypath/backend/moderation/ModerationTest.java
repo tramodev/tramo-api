@@ -56,7 +56,7 @@ class ModerationTest extends AbstractIntegrationTest {
         User admin = createAdmin("admin1");
         Project project = createProject(owner, "Sketchy", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -77,7 +77,7 @@ class ModerationTest extends AbstractIntegrationTest {
         User reporter = createUser("reporter5");
         Project project = createProject(owner, "Fine", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -90,7 +90,7 @@ class ModerationTest extends AbstractIntegrationTest {
         User owner = createUser("selfreporter");
         Project project = createProject(owner, "Mine", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -105,7 +105,7 @@ class ModerationTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "Twice", "published");
 
         for (int i = 0; i < 2; i++) {
-            mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+            mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                             .header("Authorization", bearer(reporter))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -123,7 +123,7 @@ class ModerationTest extends AbstractIntegrationTest {
         User admin = createAdmin("admin7");
         Project project = createProject(owner, "Dismissable", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -191,14 +191,14 @@ class ModerationTest extends AbstractIntegrationTest {
         User admin = createAdmin("admin10");
         Project project = createProject(owner, "Takedown", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"reason":"stolen content"}"""))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/admin/projects/" + project.getId() + "/unpublish")
+        mockMvc.perform(post("/api/admin/projects/" + pid(project) + "/unpublish")
                         .header("Authorization", bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -228,7 +228,7 @@ class ModerationTest extends AbstractIntegrationTest {
         User reporter = createUser("reporter12");
         Project project = createProject(owner, "Reported then deleted", "published");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/report")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -236,7 +236,7 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .delete("/api/project/" + project.getId())
+                        .delete("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 

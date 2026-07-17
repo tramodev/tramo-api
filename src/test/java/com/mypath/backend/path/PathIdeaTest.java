@@ -34,7 +34,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
     PathRepository pathRepository;
 
     private long createPath(User owner, Project project, String title) throws Exception {
-        return postForId(owner, "/api/project/" + project.getId() + "/path", """
+        return postForId(owner, "/api/project/" + pid(project) + "/path", """
                 {"title":"%s"}""".formatted(title));
     }
 
@@ -48,14 +48,14 @@ class PathIdeaTest extends AbstractIntegrationTest {
         User owner = createUser("pathmaker");
         Project project = createProject(owner, "Container", "private");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/path")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/path")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"My path"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("My path"))
-                .andExpect(jsonPath("$.projectId").value(project.getId()));
+                .andExpect(jsonPath("$.projectId").value(pid(project)));
     }
 
     @Test
@@ -63,7 +63,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
         User owner = createUser("pathmaker2");
         Project project = createProject(owner, "Container2", "private");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/path")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/path")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -77,7 +77,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
         User intruder = createUser("pathintruder");
         Project project = createProject(owner, "NotYours", "private");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/path")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/path")
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -102,7 +102,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(delete("/api/path/" + pathId).header("Authorization", bearer(intruder)))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/project/" + project.getId() + "/path").header("Authorization", bearer(intruder)))
+        mockMvc.perform(get("/api/project/" + pid(project) + "/path").header("Authorization", bearer(intruder)))
                 .andExpect(status().isForbidden());
     }
 
@@ -349,7 +349,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
         createPath(owner, project, "First");
         createPath(owner, project, "Second");
 
-        mockMvc.perform(get("/api/project/" + project.getId() + "/path").header("Authorization", bearer(owner)))
+        mockMvc.perform(get("/api/project/" + pid(project) + "/path").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
     }

@@ -11,7 +11,7 @@ import java.util.Date;
 @Setter
 @AllArgsConstructor
 public class ProjectFeedItemDTO {
-    private Long id;
+    private String id;
     private String title;
     private String description;
     private String ownerUsername;

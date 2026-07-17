@@ -1,5 +1,6 @@
 package com.mypath.backend.notification.service;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.notification.dto.NotificationDTO;
 import com.mypath.backend.notification.dto.UnreadCountDTO;
@@ -24,10 +25,12 @@ public class NotificationService {
     private static final long SSE_TIMEOUT_MS = 30L * 60 * 1000;
 
     private final NotificationRepository notificationRepository;
+    private final ProjectIdCodec projectIdCodec;
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
 
-    public NotificationService(NotificationRepository notificationRepository) {
+    public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec) {
         this.notificationRepository = notificationRepository;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @Transactional
@@ -140,7 +143,7 @@ public class NotificationService {
                 .map(n -> new NotificationDTO(
                         n.getId(),
                         n.getType(),
-                        n.getProject() != null ? n.getProject().getId() : null,
+                        n.getProject() != null ? projectIdCodec.encode(n.getProject().getId()) : null,
                         n.getProject() != null ? n.getProject().getTitle() : null,
                         n.getBadgeCode(),
                         n.getBadgeName(),

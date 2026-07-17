@@ -15,5 +15,5 @@ public class PathResponseDTO {
     private String visibility;
     private Date creationDate;
     private Date modifiedDate;
-    private Long projectId;
+    private String projectId;
 }

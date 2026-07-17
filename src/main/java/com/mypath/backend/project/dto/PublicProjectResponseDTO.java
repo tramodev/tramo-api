@@ -11,7 +11,7 @@ import java.util.List;
 @Setter
 @AllArgsConstructor
 public class PublicProjectResponseDTO {
-    private Long id;
+    private String id;
     private String title;
     private String description;
     private String ownerUsername;

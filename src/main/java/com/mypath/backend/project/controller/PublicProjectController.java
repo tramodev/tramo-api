@@ -1,5 +1,6 @@
 package com.mypath.backend.project.controller;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.project.dto.ExploreBundleDTO;
 import com.mypath.backend.project.dto.FollowUserDTO;
 import com.mypath.backend.project.dto.PageResponseDTO;
@@ -24,16 +25,18 @@ import java.util.List;
 @RequestMapping("/api/public")
 public class PublicProjectController {
     private final ProjectService projectService;
+    private final ProjectIdCodec projectIdCodec;
 
-    public PublicProjectController(ProjectService projectService) {
+    public PublicProjectController(ProjectService projectService, ProjectIdCodec projectIdCodec) {
         this.projectService = projectService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @GetMapping("/project/{id}")
-    public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable Long id,
+    public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable String id,
                                                                 @AuthenticationPrincipal User user,
                                                                 @RequestHeader(value = "X-Anon-Id", required = false) String anonId) {
-        return ResponseEntity.ok(projectService.getPublicProject(id, user, anonId));
+        return ResponseEntity.ok(projectService.getPublicProject(projectIdCodec.decode(id), user, anonId));
     }
 
     @GetMapping("/projects")

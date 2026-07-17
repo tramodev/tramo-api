@@ -2,6 +2,7 @@ package com.mypath.backend.moderation.service;
 
 import com.mypath.backend.comment.entity.Comment;
 import com.mypath.backend.comment.repository.CommentRepository;
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.moderation.dto.AdminUserDTO;
 import com.mypath.backend.moderation.dto.ReportDTO;
@@ -32,19 +33,22 @@ public class ModerationService {
     private final ProjectRepository projectRepository;
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
+    private final ProjectIdCodec projectIdCodec;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
                               CommentReportRepository commentReportRepository,
                               ModerationLogRepository moderationLogRepository,
                               ProjectRepository projectRepository,
                               CommentRepository commentRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              ProjectIdCodec projectIdCodec) {
         this.projectReportRepository = projectReportRepository;
         this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
         this.projectRepository = projectRepository;
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @Transactional
@@ -94,7 +98,7 @@ public class ModerationService {
                 .map(r -> new ReportDTO(
                         r.getId(),
                         "PROJECT",
-                        r.getProject().getId(),
+                        projectIdCodec.encode(r.getProject().getId()),
                         r.getProject().getTitle(),
                         null,
                         null,
@@ -107,7 +111,7 @@ public class ModerationService {
                 .map(r -> new ReportDTO(
                         r.getId(),
                         "COMMENT",
-                        r.getComment().getProject().getId(),
+                        projectIdCodec.encode(r.getComment().getProject().getId()),
                         r.getComment().getProject().getTitle(),
                         r.getComment().getId(),
                         r.getComment().getContent(),

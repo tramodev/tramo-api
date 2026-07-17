@@ -1,5 +1,6 @@
 package com.mypath.backend.path.service;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.path.dto.PathRequestDTO;
 import com.mypath.backend.path.dto.PathResponseDTO;
@@ -26,15 +27,17 @@ public class PathService {
     private final IdeaRepository ideaRepository;
     private final IdeaLinkRepository ideaLinkRepository;
     private final ProjectService projectService;
+    private final ProjectIdCodec projectIdCodec;
 
     public PathService(PathRepository pathRepository, PathIdeaRepository pathIdeaRepository,
                         IdeaRepository ideaRepository, IdeaLinkRepository ideaLinkRepository,
-                        ProjectService projectService) {
+                        ProjectService projectService, ProjectIdCodec projectIdCodec) {
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaRepository = ideaRepository;
         this.ideaLinkRepository = ideaLinkRepository;
         this.projectService = projectService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     public PathResponseDTO create(Long projectId, PathRequestDTO request, User requester) {
@@ -105,7 +108,7 @@ public class PathService {
                 path.getVisibility(),
                 path.getCreationDate(),
                 path.getModifiedDate(),
-                path.getProject().getId()
+                projectIdCodec.encode(path.getProject().getId())
         );
     }
 }

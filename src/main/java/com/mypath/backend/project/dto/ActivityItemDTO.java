@@ -12,7 +12,7 @@ import java.util.Date;
 public class ActivityItemDTO {
     private String type;
     private Date timestamp;
-    private Long projectId;
+    private String projectId;
     private String projectTitle;
     private String otherUsername;
 }

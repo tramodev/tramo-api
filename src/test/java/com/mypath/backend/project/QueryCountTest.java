@@ -39,7 +39,7 @@ class QueryCountTest extends AbstractIntegrationTest {
     private Project seedPublishedProject(User owner, String title, int paths, int ideasPerPath, User voter) throws Exception {
         Project project = createProject(owner, title, "published", "A description", "java,testing");
         for (int p = 0; p < paths; p++) {
-            long pathId = postForId(owner, "/api/project/" + project.getId() + "/path", """
+            long pathId = postForId(owner, "/api/project/" + pid(project) + "/path", """
                     {"title":"Path %d"}""".formatted(p));
             for (int i = 0; i < ideasPerPath; i++) {
                 postForId(owner, "/api/path/" + pathId + "/idea", """
@@ -47,7 +47,7 @@ class QueryCountTest extends AbstractIntegrationTest {
             }
         }
         if (voter != null) {
-            mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(voter)))
+            mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(voter)))
                     .andExpect(status().isOk());
         }
         return project;
@@ -164,10 +164,10 @@ class QueryCountTest extends AbstractIntegrationTest {
         assertThat(firstFeed).hasSize(10);
         assertThat(secondFeed).hasSize(2);
 
-        Set<Long> firstIds = new HashSet<>();
-        firstFeed.forEach(node -> firstIds.add(node.get("id").asLong()));
-        Set<Long> secondIds = new HashSet<>();
-        secondFeed.forEach(node -> secondIds.add(node.get("id").asLong()));
+        Set<String> firstIds = new HashSet<>();
+        firstFeed.forEach(node -> firstIds.add(node.get("id").asText()));
+        Set<String> secondIds = new HashSet<>();
+        secondFeed.forEach(node -> secondIds.add(node.get("id").asText()));
 
         assertThat(firstIds).doesNotContainAnyElementsOf(secondIds);
         assertThat(firstIds).hasSize(10);
@@ -180,11 +180,11 @@ class QueryCountTest extends AbstractIntegrationTest {
         Project smallProject = seedPublishedProject(owner, "Small", 1, 1, null);
         Project largeProject = seedPublishedProject(owner, "Large", 3, 4, null);
 
-        long small = queryCount(() -> mockMvc.perform(get("/api/public/project/" + smallProject.getId())
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/project/" + pid(smallProject))
                         .header("X-Anon-Id", "qc-anon-1"))
                 .andExpect(status().isOk()));
 
-        long large = queryCount(() -> mockMvc.perform(get("/api/public/project/" + largeProject.getId())
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/project/" + pid(largeProject))
                         .header("X-Anon-Id", "qc-anon-2"))
                 .andExpect(status().isOk()));
 
@@ -218,11 +218,11 @@ class QueryCountTest extends AbstractIntegrationTest {
 
         seedPublishedProject(me, "Mine A", 1, 1, other);
         Project theirsFirst = seedPublishedProject(other, "Theirs A", 1, 1, null);
-        mockMvc.perform(post("/api/project/" + theirsFirst.getId() + "/vote").header("Authorization", bearer(me)))
+        mockMvc.perform(post("/api/project/" + pid(theirsFirst) + "/vote").header("Authorization", bearer(me)))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/project/" + theirsFirst.getId() + "/bookmark").header("Authorization", bearer(me)))
+        mockMvc.perform(post("/api/project/" + pid(theirsFirst) + "/bookmark").header("Authorization", bearer(me)))
                 .andExpect(status().isOk());
-        postForId(me, "/api/project/" + theirsFirst.getId() + "/fork", "");
+        postForProjectId(me, "/api/project/" + pid(theirsFirst) + "/fork", "");
 
         mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(me)))
                 .andExpect(status().isOk());
@@ -233,9 +233,9 @@ class QueryCountTest extends AbstractIntegrationTest {
         for (int i = 0; i < 4; i++) {
             seedPublishedProject(me, "Mine " + i, 1, 1, other);
             Project theirs = seedPublishedProject(other, "Theirs " + i, 1, 1, null);
-            mockMvc.perform(post("/api/project/" + theirs.getId() + "/vote").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(theirs) + "/vote").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
-            mockMvc.perform(post("/api/project/" + theirs.getId() + "/bookmark").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(theirs) + "/bookmark").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
         }
 
@@ -271,7 +271,7 @@ class QueryCountTest extends AbstractIntegrationTest {
         User other = createUser("qcbookother");
         for (int i = 0; i < 2; i++) {
             Project p = seedPublishedProject(other, "Book " + i, 1, 1, null);
-            mockMvc.perform(post("/api/project/" + p.getId() + "/bookmark").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(p) + "/bookmark").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
         }
 
@@ -280,7 +280,7 @@ class QueryCountTest extends AbstractIntegrationTest {
 
         for (int i = 0; i < 4; i++) {
             Project p = seedPublishedProject(other, "Book more " + i, 1, 1, null);
-            mockMvc.perform(post("/api/project/" + p.getId() + "/bookmark").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(p) + "/bookmark").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
         }
 
@@ -296,7 +296,7 @@ class QueryCountTest extends AbstractIntegrationTest {
         User other = createUser("qcupvother");
         for (int i = 0; i < 2; i++) {
             Project p = seedPublishedProject(other, "Upv " + i, 1, 1, null);
-            mockMvc.perform(post("/api/project/" + p.getId() + "/vote").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(p) + "/vote").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
         }
 
@@ -305,7 +305,7 @@ class QueryCountTest extends AbstractIntegrationTest {
 
         for (int i = 0; i < 4; i++) {
             Project p = seedPublishedProject(other, "Upv more " + i, 1, 1, null);
-            mockMvc.perform(post("/api/project/" + p.getId() + "/vote").header("Authorization", bearer(me)))
+            mockMvc.perform(post("/api/project/" + pid(p) + "/vote").header("Authorization", bearer(me)))
                     .andExpect(status().isOk());
         }
 
@@ -321,7 +321,7 @@ class QueryCountTest extends AbstractIntegrationTest {
         User other = createUser("qcforkother");
         for (int i = 0; i < 2; i++) {
             Project p = seedPublishedProject(other, "Fork " + i, 1, 1, null);
-            postForId(me, "/api/project/" + p.getId() + "/fork", "");
+            postForProjectId(me, "/api/project/" + pid(p) + "/fork", "");
         }
 
         long small = queryCount(() -> mockMvc.perform(get("/api/profile/forks?page=0&size=2").header("Authorization", bearer(me)))
@@ -329,7 +329,7 @@ class QueryCountTest extends AbstractIntegrationTest {
 
         for (int i = 0; i < 4; i++) {
             Project p = seedPublishedProject(other, "Fork more " + i, 1, 1, null);
-            postForId(me, "/api/project/" + p.getId() + "/fork", "");
+            postForProjectId(me, "/api/project/" + pid(p) + "/fork", "");
         }
 
         long large = queryCount(() -> mockMvc.perform(get("/api/profile/forks?page=0&size=2").header("Authorization", bearer(me)))

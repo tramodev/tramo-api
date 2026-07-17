@@ -12,4 +12,5 @@ public class PublicIdeaDTO {
     private String title;
     private String type;
     private String content;
+    private String titleAlign;
 }

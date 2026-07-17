@@ -10,7 +10,7 @@ import java.util.Date;
 @Setter
 @AllArgsConstructor
 public class ForkFeedItemDTO {
-    private Long id;
+    private String id;
     private String title;
     private String description;
     private String ownerUsername;
@@ -24,7 +24,7 @@ public class ForkFeedItemDTO {
     private long forkCount;
     private long commentCount;
     private boolean featured;
-    private Long forkedFromProjectId;
+    private String forkedFromProjectId;
     private String forkedFromTitle;
     private String forkedFromOwnerUsername;
 }

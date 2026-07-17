@@ -60,10 +60,10 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Test
     void createNormalizesTags() throws Exception {
         User owner = createUser("tagger");
-        long id = postForId(owner, "/api/project", """
+        String id = postForProjectId(owner, "/api/project", """
                 {"title":"Tagged","tags":"Java, SQL , java, "}""");
 
-        assertThat(projectRepository.findById(id).orElseThrow().getTags()).isEqualTo("java,sql");
+        assertThat(projectRepository.findById(projectIdCodec.decode(id)).orElseThrow().getTags()).isEqualTo("java,sql");
     }
 
     @Test
@@ -84,7 +84,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("reader");
         Project project = createProject(owner, "Readable", "private", "desc", "tag1");
 
-        mockMvc.perform(get("/api/project/" + project.getId()).header("Authorization", bearer(owner)))
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Readable"))
                 .andExpect(jsonPath("$.description").value("desc"))
@@ -97,7 +97,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User intruder = createUser("intruder1");
         Project project = createProject(owner, "Secret", "private");
 
-        mockMvc.perform(get("/api/project/" + project.getId()).header("Authorization", bearer(intruder)))
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(intruder)))
                 .andExpect(status().isForbidden());
     }
 
@@ -113,7 +113,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("editor");
         Project project = createProject(owner, "Original", "private", "old desc", null);
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -128,7 +128,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("editor2");
         Project project = createProject(owner, "Keep me", "private");
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -143,7 +143,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User intruder = createUser("intruder2");
         Project project = createProject(owner, "Untouchable", "private");
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -159,7 +159,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("publisher");
         Project project = createProject(owner, "Going public", "private", "A description", null);
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -202,17 +202,17 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("demolisher");
         User fan = createUser("fan");
         Project project = createProject(owner, "Doomed", "published");
-        long pathId = postForId(owner, "/api/project/" + project.getId() + "/path", """
+        long pathId = postForId(owner, "/api/project/" + pid(project) + "/path", """
                 {"title":"Doomed path"}""");
         long ideaId = postForId(owner, "/api/path/" + pathId + "/idea", """
                 {"title":"Doomed idea"}""");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/vote").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/project/" + project.getId() + "/bookmark").header("Authorization", bearer(fan)))
+        mockMvc.perform(post("/api/project/" + pid(project) + "/bookmark").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(delete("/api/project/" + project.getId()).header("Authorization", bearer(owner)))
+        mockMvc.perform(delete("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
         assertThat(projectRepository.findById(project.getId())).isEmpty();
@@ -228,12 +228,12 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User forker = createUser("forker0");
         Project source = createProject(owner, "Forkable", "published");
 
-        long forkId = postForId(forker, "/api/project/" + source.getId() + "/fork", "");
+        String forkId = postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
 
-        mockMvc.perform(delete("/api/project/" + source.getId()).header("Authorization", bearer(owner)))
+        mockMvc.perform(delete("/api/project/" + pid(source)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
-        Project fork = projectRepository.findById(forkId).orElseThrow();
+        Project fork = projectRepository.findById(projectIdCodec.decode(forkId)).orElseThrow();
         assertThat(fork.getForkedFrom()).isNull();
     }
 
@@ -243,7 +243,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User intruder = createUser("intruder3");
         Project project = createProject(owner, "Protected", "private");
 
-        mockMvc.perform(delete("/api/project/" + project.getId()).header("Authorization", bearer(intruder)))
+        mockMvc.perform(delete("/api/project/" + pid(project)).header("Authorization", bearer(intruder)))
                 .andExpect(status().isForbidden());
 
         assertThat(projectRepository.findById(project.getId())).isPresent();
@@ -344,21 +344,21 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("nodescowner");
         Project project = createProject(owner, "No description yet", "private");
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"visibility":"published"}"""))
                 .andExpect(status().isBadRequest());
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"description":"A real description now"}"""))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(put("/api/project/" + project.getId())
+        mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

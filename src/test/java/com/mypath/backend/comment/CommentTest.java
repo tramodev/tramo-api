@@ -20,17 +20,17 @@ class CommentTest extends AbstractIntegrationTest {
         User fan = createUser("commentfan");
         Project project = createProject(owner, "Discuss me", "published", "A description", null);
 
-        long topLevelId = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long topLevelId = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Great project!"}""");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/comments")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content":"Thanks!","parentId":%d}""".formatted(topLevelId)))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/api/public/project/" + project.getId() + "/comments"))
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].content").value("Great project!"))
@@ -45,7 +45,7 @@ class CommentTest extends AbstractIntegrationTest {
         User fan = createUser("notifcommentfan");
         Project project = createProject(owner, "Notify me", "published", "A description", null);
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/comments")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
                         .header("Authorization", bearer(fan))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -57,7 +57,7 @@ class CommentTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].type").value("COMMENT"))
                 .andExpect(jsonPath("$[0].latestActorUsername").value("notifcommentfan"));
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/comments")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -75,15 +75,15 @@ class CommentTest extends AbstractIntegrationTest {
         User fan = createUser("softdelfan");
         Project project = createProject(owner, "Thread me", "published", "A description", null);
 
-        long parentId = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long parentId = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Parent comment"}""");
-        postForId(owner, "/api/project/" + project.getId() + "/comments", """
+        postForId(owner, "/api/project/" + pid(project) + "/comments", """
                 {"content":"A reply","parentId":%d}""".formatted(parentId));
 
         mockMvc.perform(delete("/api/comment/" + parentId).header("Authorization", bearer(fan)))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/public/project/" + project.getId() + "/comments"))
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].deleted").value(true))
@@ -99,7 +99,7 @@ class CommentTest extends AbstractIntegrationTest {
         User admin = createAdmin("permadmin");
         Project project = createProject(owner, "Locked down", "published", "A description", null);
 
-        long commentId = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long commentId = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"My comment"}""");
 
         mockMvc.perform(delete("/api/comment/" + commentId).header("Authorization", bearer(stranger)))
@@ -108,7 +108,7 @@ class CommentTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/comment/" + commentId).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
-        long commentId2 = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long commentId2 = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Another one"}""");
         mockMvc.perform(delete("/api/comment/" + commentId2).header("Authorization", bearer(admin)))
                 .andExpect(status().isNoContent());
@@ -121,7 +121,7 @@ class CommentTest extends AbstractIntegrationTest {
         User admin = createAdmin("reportcommentadmin");
         Project project = createProject(owner, "Reportable", "published", "A description", null);
 
-        long commentId = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long commentId = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Spam or something"}""");
 
         mockMvc.perform(post("/api/comment/" + commentId + "/report")
@@ -148,7 +148,7 @@ class CommentTest extends AbstractIntegrationTest {
         User fan = createUser("privatefan");
         Project project = createProject(owner, "Secret", "private");
 
-        mockMvc.perform(post("/api/project/" + project.getId() + "/comments")
+        mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
                         .header("Authorization", bearer(fan))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -162,12 +162,12 @@ class CommentTest extends AbstractIntegrationTest {
         User fan = createUser("cleanupfan");
         Project project = createProject(owner, "Ephemeral", "published", "A description", null);
 
-        long parentId = postForId(fan, "/api/project/" + project.getId() + "/comments", """
+        long parentId = postForId(fan, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Parent"}""");
-        postForId(owner, "/api/project/" + project.getId() + "/comments", """
+        postForId(owner, "/api/project/" + pid(project) + "/comments", """
                 {"content":"Reply","parentId":%d}""".formatted(parentId));
 
-        mockMvc.perform(delete("/api/project/" + project.getId()).header("Authorization", bearer(owner)))
+        mockMvc.perform(delete("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
     }
 }

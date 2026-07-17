@@ -1,5 +1,6 @@
 package com.mypath.backend.project.controller;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.moderation.dto.ReportRequestDTO;
 import com.mypath.backend.moderation.service.ModerationService;
 import com.mypath.backend.project.dto.BookmarkResponseDTO;
@@ -20,10 +21,12 @@ import java.util.List;
 public class ProjectController {
     private final ProjectService projectService;
     private final ModerationService moderationService;
+    private final ProjectIdCodec projectIdCodec;
 
-    public ProjectController(ProjectService projectService, ModerationService moderationService) {
+    public ProjectController(ProjectService projectService, ModerationService moderationService, ProjectIdCodec projectIdCodec) {
         this.projectService = projectService;
         this.moderationService = moderationService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @PostMapping
@@ -38,47 +41,47 @@ public class ProjectController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ProjectResponseDTO> getById(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getById(id, user));
+    public ResponseEntity<ProjectResponseDTO> getById(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getById(projectIdCodec.decode(id), user));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProjectResponseDTO> update(@PathVariable Long id, @Valid @RequestBody ProjectRequestDTO request,
+    public ResponseEntity<ProjectResponseDTO> update(@PathVariable String id, @Valid @RequestBody ProjectRequestDTO request,
                                                        @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.update(id, request, user));
+        return ResponseEntity.ok(projectService.update(projectIdCodec.decode(id), request, user));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        projectService.delete(id, user);
+    public ResponseEntity<Void> delete(@PathVariable String id, @AuthenticationPrincipal User user) {
+        projectService.delete(projectIdCodec.decode(id), user);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/vote")
-    public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.toggleVote(id, user));
+    public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/fork")
-    public ResponseEntity<ProjectResponseDTO> fork(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.fork(id, user));
+    public ResponseEntity<ProjectResponseDTO> fork(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.fork(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/bookmark")
-    public ResponseEntity<BookmarkResponseDTO> toggleBookmark(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.toggleBookmark(id, user));
+    public ResponseEntity<BookmarkResponseDTO> toggleBookmark(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.toggleBookmark(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/report")
-    public ResponseEntity<Void> report(@PathVariable Long id, @Valid @RequestBody ReportRequestDTO request,
+    public ResponseEntity<Void> report(@PathVariable String id, @Valid @RequestBody ReportRequestDTO request,
                                         @AuthenticationPrincipal User user) {
-        moderationService.submitReport(id, user, request.getReason());
+        moderationService.submitReport(projectIdCodec.decode(id), user, request.getReason());
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{id}/share")
-    public ResponseEntity<Void> share(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        projectService.shareProject(id, user);
+    public ResponseEntity<Void> share(@PathVariable String id, @AuthenticationPrincipal User user) {
+        projectService.shareProject(projectIdCodec.decode(id), user);
         return ResponseEntity.ok().build();
     }
 }

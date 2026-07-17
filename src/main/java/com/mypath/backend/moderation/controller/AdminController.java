@@ -1,5 +1,6 @@
 package com.mypath.backend.moderation.controller;
 
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.moderation.dto.AdminUserDTO;
 import com.mypath.backend.moderation.dto.ModerationActionRequestDTO;
 import com.mypath.backend.moderation.dto.ReportDTO;
@@ -17,9 +18,11 @@ import java.util.List;
 @PreAuthorize("hasAuthority('ADMIN')")
 public class AdminController {
     private final ModerationService moderationService;
+    private final ProjectIdCodec projectIdCodec;
 
-    public AdminController(ModerationService moderationService) {
+    public AdminController(ModerationService moderationService, ProjectIdCodec projectIdCodec) {
         this.moderationService = moderationService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @GetMapping("/reports")
@@ -54,9 +57,9 @@ public class AdminController {
     }
 
     @PostMapping("/projects/{id}/unpublish")
-    public ResponseEntity<Void> unpublishProject(@PathVariable Long id, @RequestBody(required = false) ModerationActionRequestDTO request,
+    public ResponseEntity<Void> unpublishProject(@PathVariable String id, @RequestBody(required = false) ModerationActionRequestDTO request,
                                                    @AuthenticationPrincipal User admin) {
-        moderationService.unpublishProject(id, admin, request != null ? request.getReason() : null);
+        moderationService.unpublishProject(projectIdCodec.decode(id), admin, request != null ? request.getReason() : null);
         return ResponseEntity.ok().build();
     }
 }

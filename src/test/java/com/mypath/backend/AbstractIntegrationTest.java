@@ -3,6 +3,7 @@ package com.mypath.backend;
 import com.jayway.jsonpath.JsonPath;
 import com.mypath.backend.auth.service.EmailService;
 import com.mypath.backend.auth.service.GoogleTokenVerifier;
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.project.repository.ProjectRepository;
 import com.mypath.backend.security.jwt.JwtService;
@@ -73,6 +74,9 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected ProjectRepository projectRepository;
 
+    @Autowired
+    protected ProjectIdCodec projectIdCodec;
+
     @BeforeEach
     void cleanDatabase() {
         List<String> tables = jdbcTemplate.queryForList(
@@ -106,6 +110,25 @@ public abstract class AbstractIntegrationTest {
 
     protected String bearer(User user) {
         return "Bearer " + jwtService.getToken(user);
+    }
+
+    protected String pid(Project project) {
+        return projectIdCodec.encode(project.getId());
+    }
+
+    protected String pid(Long id) {
+        return projectIdCodec.encode(id);
+    }
+
+    protected String postForProjectId(User asUser, String url, String body) throws Exception {
+        String response = mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url)
+                                .header("Authorization", bearer(asUser))
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(response, "$.id");
     }
 
     protected long postForId(User asUser, String url, String body) throws Exception {

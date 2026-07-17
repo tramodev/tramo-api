@@ -1,6 +1,7 @@
 package com.mypath.backend.project.service;
 
 import com.mypath.backend.comment.repository.CommentRepository;
+import com.mypath.backend.common.ProjectIdCodec;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.moderation.repository.CommentReportRepository;
 import com.mypath.backend.moderation.repository.ProjectReportRepository;
@@ -91,6 +92,7 @@ public class ProjectService {
     private final ProjectReportRepository projectReportRepository;
     private final CommentRepository commentRepository;
     private final CommentReportRepository commentReportRepository;
+    private final ProjectIdCodec projectIdCodec;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
@@ -99,7 +101,7 @@ public class ProjectService {
                            UserRepository userRepository, FollowRepository followRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
-                           CommentReportRepository commentReportRepository) {
+                           CommentReportRepository commentReportRepository, ProjectIdCodec projectIdCodec) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -115,6 +117,7 @@ public class ProjectService {
         this.commentRepository = commentRepository;
         this.commentReportRepository = commentReportRepository;
         this.projectReportRepository = projectReportRepository;
+        this.projectIdCodec = projectIdCodec;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -351,7 +354,7 @@ public class ProjectService {
                 .toList();
 
         return new PublicProjectResponseDTO(
-                project.getId(),
+                projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 project.getOwner().getUsername(),
@@ -396,7 +399,7 @@ public class ProjectService {
 
         List<ProjectFeedItemDTO> feed = published.stream()
                 .map(project -> new ProjectFeedItemDTO(
-                        project.getId(),
+                        projectIdCodec.encode(project.getId()),
                         project.getTitle(),
                         project.getDescription(),
                         project.getOwner().getUsername(),
@@ -755,27 +758,27 @@ public class ProjectService {
         List<ActivityItemDTO> items = new ArrayList<>();
 
         for (Project project : myPublishedProjects) {
-            items.add(new ActivityItemDTO("published", project.getCreationDate(), project.getId(), project.getTitle(), null));
+            items.add(new ActivityItemDTO("published", project.getCreationDate(), projectIdCodec.encode(project.getId()), project.getTitle(), null));
         }
         for (Project project : myForkedProjects) {
             String sourceOwner = project.getForkedFrom() != null ? project.getForkedFrom().getOwner().getUsername() : null;
-            items.add(new ActivityItemDTO("forked", project.getCreationDate(), project.getId(), project.getTitle(), sourceOwner));
+            items.add(new ActivityItemDTO("forked", project.getCreationDate(), projectIdCodec.encode(project.getId()), project.getTitle(), sourceOwner));
         }
         for (ProjectVote vote : myVotes) {
-            items.add(new ActivityItemDTO("voted", vote.getCreatedDate(), vote.getProject().getId(), vote.getProject().getTitle(), null));
+            items.add(new ActivityItemDTO("voted", vote.getCreatedDate(), projectIdCodec.encode(vote.getProject().getId()), vote.getProject().getTitle(), null));
         }
         for (ProjectBookmark bookmark : myBookmarks) {
-            items.add(new ActivityItemDTO("bookmarked", bookmark.getCreatedDate(), bookmark.getProject().getId(), bookmark.getProject().getTitle(), null));
+            items.add(new ActivityItemDTO("bookmarked", bookmark.getCreatedDate(), projectIdCodec.encode(bookmark.getProject().getId()), bookmark.getProject().getTitle(), null));
         }
         for (ProjectVote vote : projectVoteRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
-            items.add(new ActivityItemDTO("received_vote", vote.getCreatedDate(), vote.getProject().getId(), vote.getProject().getTitle(), vote.getUser().getUsername()));
+            items.add(new ActivityItemDTO("received_vote", vote.getCreatedDate(), projectIdCodec.encode(vote.getProject().getId()), vote.getProject().getTitle(), vote.getUser().getUsername()));
         }
         for (Project project : projectRepository.findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(userId, userId)) {
             Project source = project.getForkedFrom();
-            items.add(new ActivityItemDTO("received_fork", project.getCreationDate(), source.getId(), source.getTitle(), project.getOwner().getUsername()));
+            items.add(new ActivityItemDTO("received_fork", project.getCreationDate(), projectIdCodec.encode(source.getId()), source.getTitle(), project.getOwner().getUsername()));
         }
         for (ProjectBookmark bookmark : projectBookmarkRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
-            items.add(new ActivityItemDTO("received_bookmark", bookmark.getCreatedDate(), bookmark.getProject().getId(), bookmark.getProject().getTitle(), bookmark.getUser().getUsername()));
+            items.add(new ActivityItemDTO("received_bookmark", bookmark.getCreatedDate(), projectIdCodec.encode(bookmark.getProject().getId()), bookmark.getProject().getTitle(), bookmark.getUser().getUsername()));
         }
 
         return items.stream()
@@ -843,7 +846,7 @@ public class ProjectService {
 
     private ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx) {
         return new ProjectFeedItemDTO(
-                project.getId(),
+                projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 project.getOwner().getUsername(),
@@ -864,7 +867,7 @@ public class ProjectService {
     private ForkFeedItemDTO toForkFeedItem(Project project, String ownerUsername, FeedContext ctx) {
         Project source = project.getForkedFrom();
         return new ForkFeedItemDTO(
-                project.getId(),
+                projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 ownerUsername,
@@ -878,7 +881,7 @@ public class ProjectService {
                 ctx.forkCounts().getOrDefault(project.getId(), 0L),
                 ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured(),
-                source != null ? source.getId() : null,
+                source != null ? projectIdCodec.encode(source.getId()) : null,
                 source != null ? source.getTitle() : null,
                 source != null ? source.getOwner().getUsername() : null
         );
@@ -926,7 +929,7 @@ public class ProjectService {
 
     private PublicIdeaDTO toPublicIdea(Idea idea) {
         String content = idea.getContent() != null ? idea.getContent().getContent() : "";
-        return new PublicIdeaDTO(idea.getId(), idea.getTitle(), idea.getType(), content);
+        return new PublicIdeaDTO(idea.getId(), idea.getTitle(), idea.getType(), content, idea.getTitleAlign());
     }
 
     public Project getOwnedProject(Long id, User requester) {
@@ -940,7 +943,7 @@ public class ProjectService {
 
     private ProjectResponseDTO toResponse(Project project) {
         return new ProjectResponseDTO(
-                project.getId(),
+                projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 project.getVisibility(),
