@@ -134,13 +134,14 @@ public class IdeaService {
     private void deleteOrphanedEditorImages(Long ideaId, User requester, String previousContent, String newContent) {
         Set<String> oldUrls = r2Client.extractReferencedUrls(previousContent);
         Set<String> newUrls = r2Client.extractReferencedUrls(newContent);
-        log.info("deleteOrphanedEditorImages idea={} oldUrls={} newUrls={}", ideaId, oldUrls, newUrls);
         for (String url : oldUrls) {
             if (newUrls.contains(url)) {
                 continue;
             }
-            boolean stillReferenced = pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId);
-            log.info("deleteOrphanedEditorImages candidate url={} stillReferencedElsewhere={} (DRY RUN, not deleting)", url, stillReferenced);
+            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId)) {
+                log.info("deleteOrphanedEditorImages deleting url={} idea={}", url, ideaId);
+                r2Client.deleteByPublicUrl(url);
+            }
         }
     }
 
