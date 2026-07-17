@@ -52,6 +52,7 @@ import com.mypath.backend.user.entity.UserBadge;
 import com.mypath.backend.user.repository.FollowRepository;
 import com.mypath.backend.user.repository.UserBadgeRepository;
 import com.mypath.backend.user.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -77,6 +78,10 @@ import java.util.stream.Collectors;
 public class ProjectService {
     private static final long ON_THE_MAP_VIEW_THRESHOLD = 1000;
     private static final long TRENDSETTER_VIEW_THRESHOLD = 10000;
+    private static final long EXPLORE_CACHE_REFRESH_MS = 5 * 60 * 1000;
+
+    private volatile List<TagCountDTO> cachedHotTopics = List.of();
+    private volatile List<AuthorCountDTO> cachedActiveAuthors = List.of();
 
     private final ProjectRepository projectRepository;
     private final PathRepository pathRepository;
@@ -485,8 +490,8 @@ public class ProjectService {
                         .map(project -> toFeedItem(project, FeedContext.forProjects(List.of(project), requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)))
                         .orElse(null);
             }
-            hotTopics = getHotTopics(10);
-            activeAuthors = getActiveAuthors(5);
+            hotTopics = cachedHotTopics;
+            activeAuthors = cachedActiveAuthors;
         }
 
         return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors);
@@ -532,6 +537,13 @@ public class ProjectService {
         top.setFeatured(true);
         projectRepository.save(top);
         notificationService.recordFeatured(top.getOwner(), top);
+    }
+
+    @PostConstruct
+    @Scheduled(fixedRate = EXPLORE_CACHE_REFRESH_MS)
+    public void refreshExploreCache() {
+        cachedHotTopics = getHotTopics(10);
+        cachedActiveAuthors = getActiveAuthors(5);
     }
 
     @Transactional
