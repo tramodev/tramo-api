@@ -2,6 +2,7 @@ package com.mypath.backend.project.service;
 
 import com.mypath.backend.comment.repository.CommentRepository;
 import com.mypath.backend.common.ProjectIdCodec;
+import com.mypath.backend.upload.R2Client;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.moderation.repository.CommentReportRepository;
 import com.mypath.backend.moderation.repository.ProjectReportRepository;
@@ -93,6 +94,7 @@ public class ProjectService {
     private final CommentRepository commentRepository;
     private final CommentReportRepository commentReportRepository;
     private final ProjectIdCodec projectIdCodec;
+    private final R2Client r2Client;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
@@ -101,7 +103,8 @@ public class ProjectService {
                            UserRepository userRepository, FollowRepository followRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
-                           CommentReportRepository commentReportRepository, ProjectIdCodec projectIdCodec) {
+                           CommentReportRepository commentReportRepository, ProjectIdCodec projectIdCodec,
+                           R2Client r2Client) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -118,6 +121,7 @@ public class ProjectService {
         this.commentReportRepository = commentReportRepository;
         this.projectReportRepository = projectReportRepository;
         this.projectIdCodec = projectIdCodec;
+        this.r2Client = r2Client;
     }
 
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
@@ -165,6 +169,7 @@ public class ProjectService {
             project.setVisibility(request.getVisibility());
             touchesModifiedDate = true;
         }
+        String previousThumbnail = project.getThumbnail();
         if (request.getThumbnail() != null) {
             project.setThumbnail(request.getThumbnail());
         }
@@ -176,6 +181,9 @@ public class ProjectService {
             project.setModifiedDate(new Date());
         }
         ProjectResponseDTO response = toResponse(projectRepository.save(project));
+        if (request.getThumbnail() != null && !request.getThumbnail().equals(previousThumbnail)) {
+            r2Client.deleteByPublicUrl(previousThumbnail);
+        }
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
             if (!"published".equals(previousVisibility)) {
@@ -578,6 +586,7 @@ public class ProjectService {
 
     @Transactional
     public UserProfileDTO updateProfile(User user, UpdateProfileRequestDTO request) {
+        String previousImageUrl = user.getImageUrl();
         if (request.getBio() != null) {
             user.setBio(request.getBio().isBlank() ? null : request.getBio());
         }
@@ -585,6 +594,9 @@ public class ProjectService {
             user.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl());
         }
         User saved = userRepository.save(user);
+        if (request.getImageUrl() != null && !request.getImageUrl().equals(previousImageUrl)) {
+            r2Client.deleteByPublicUrl(previousImageUrl);
+        }
         return new UserProfileDTO(saved.getUsername(), saved.getEmail(), saved.getBio(), saved.getImageUrl(), saved.getCreatedAt(), saved.getRole().name());
     }
 
