@@ -1,5 +1,6 @@
 package com.mypath.backend.path;
 
+import com.jayway.jsonpath.JsonPath;
 import com.mypath.backend.AbstractIntegrationTest;
 import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
@@ -10,6 +11,9 @@ import com.mypath.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+
+import java.time.Instant;
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -401,5 +405,37 @@ class PathIdeaTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/idea/" + ideaId + "/content").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").value("Hello world"));
+    }
+
+    @Test
+    void updateContentBumpsDashboardLastModifiedButNotExploreModifiedDate() throws Exception {
+        User owner = createUser("contentmodifier");
+        Project project = createProject(owner, "ModifiedDateProject", "private");
+        long pathId = createPath(owner, project, "Path");
+        long ideaId = createIdea(owner, pathId, "Idea");
+
+        Date staleDate = new Date(System.currentTimeMillis() - 60_000);
+        project.setModifiedDate(staleDate);
+        projectRepository.save(project);
+
+        mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"Updated"}"""))
+                .andExpect(status().isNoContent());
+
+        Project reloaded = projectRepository.findById(project.getId()).orElseThrow();
+        assertThat(reloaded.getModifiedDate()).isEqualTo(staleDate);
+        assertThat(reloaded.getLastEditedDate()).isAfter(staleDate);
+
+        String response = mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        Object modifiedDate = JsonPath.read(response, "$.modifiedDate");
+        Instant afterEdit = modifiedDate instanceof Number
+                ? Instant.ofEpochMilli(((Number) modifiedDate).longValue())
+                : Instant.parse((String) modifiedDate);
+        assertThat(afterEdit).isAfter(staleDate.toInstant());
     }
 }

@@ -31,6 +31,7 @@ public class Project {
     private String tags;
     private Date creationDate;
     private Date modifiedDate;
+    private Date lastEditedDate;
 
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;

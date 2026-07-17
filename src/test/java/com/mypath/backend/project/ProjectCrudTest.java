@@ -368,6 +368,35 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void thumbnailOnlyUpdateDoesNotBumpModifiedDate() throws Exception {
+        User owner = createUser("thumbnailupdater");
+        Project project = createProject(owner, "ThumbnailProject", "private");
+        java.util.Date staleDate = new java.util.Date(System.currentTimeMillis() - 60_000);
+        project.setModifiedDate(staleDate);
+        projectRepository.save(project);
+
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"thumbnail":"data:image/png;base64,abc"}"""))
+                .andExpect(status().isOk());
+
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate())
+                .isEqualTo(staleDate);
+
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Renamed"}"""))
+                .andExpect(status().isOk());
+
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate())
+                .isAfter(staleDate);
+    }
+
+    @Test
     void updateProfileChangesBioAndImage() throws Exception {
         User user = createUser("profileupdater");
 

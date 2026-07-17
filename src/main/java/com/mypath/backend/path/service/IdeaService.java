@@ -12,6 +12,8 @@ import com.mypath.backend.path.entity.PathIdea;
 import com.mypath.backend.path.repository.IdeaLinkRepository;
 import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
+import com.mypath.backend.project.entity.Project;
+import com.mypath.backend.project.repository.ProjectRepository;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
@@ -26,13 +28,16 @@ public class IdeaService {
     private final PathIdeaRepository pathIdeaRepository;
     private final IdeaLinkRepository ideaLinkRepository;
     private final PathService pathService;
+    private final ProjectRepository projectRepository;
 
     public IdeaService(IdeaRepository ideaRepository, PathIdeaRepository pathIdeaRepository,
-                        IdeaLinkRepository ideaLinkRepository, PathService pathService) {
+                        IdeaLinkRepository ideaLinkRepository, PathService pathService,
+                        ProjectRepository projectRepository) {
         this.ideaRepository = ideaRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaLinkRepository = ideaLinkRepository;
         this.pathService = pathService;
+        this.projectRepository = projectRepository;
     }
 
     public IdeaResponseDTO create(Long pathId, IdeaRequestDTO request, User requester) {
@@ -113,6 +118,15 @@ public class IdeaService {
         ideaContent.setContent(content);
         ideaContent.setUpdatedDate(new Date());
         ideaRepository.save(idea);
+        bumpOwningProjectLastEditedDate(id);
+    }
+
+    private void bumpOwningProjectLastEditedDate(Long ideaId) {
+        pathIdeaRepository.findByIdeaId(ideaId).stream().findFirst().ifPresent(pathIdea -> {
+            Project project = pathIdea.getPath().getProject();
+            project.setLastEditedDate(new Date());
+            projectRepository.save(project);
+        });
     }
 
     public void attachToPath(Long pathId, Long ideaId, User requester) {

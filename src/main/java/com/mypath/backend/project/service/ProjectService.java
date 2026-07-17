@@ -148,11 +148,14 @@ public class ProjectService {
     public ProjectResponseDTO update(Long id, ProjectRequestDTO request, User requester) {
         Project project = getOwnedProject(id, requester);
         String previousVisibility = project.getVisibility();
+        boolean touchesModifiedDate = false;
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             project.setTitle(request.getTitle());
+            touchesModifiedDate = true;
         }
         if (request.getDescription() != null) {
             project.setDescription(request.getDescription());
+            touchesModifiedDate = true;
         }
         if (request.getVisibility() != null) {
             if ("published".equals(request.getVisibility())
@@ -160,14 +163,18 @@ public class ProjectService {
                 throw new IllegalArgumentException("Add a description before publishing");
             }
             project.setVisibility(request.getVisibility());
+            touchesModifiedDate = true;
         }
         if (request.getThumbnail() != null) {
             project.setThumbnail(request.getThumbnail());
         }
         if (request.getTags() != null) {
             project.setTags(normalizeTags(request.getTags()));
+            touchesModifiedDate = true;
         }
-        project.setModifiedDate(new Date());
+        if (touchesModifiedDate) {
+            project.setModifiedDate(new Date());
+        }
         ProjectResponseDTO response = toResponse(projectRepository.save(project));
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
@@ -950,7 +957,13 @@ public class ProjectService {
                 project.getThumbnail(),
                 project.getTags(),
                 project.getCreationDate(),
-                project.getModifiedDate()
+                latestOf(project.getModifiedDate(), project.getLastEditedDate())
         );
+    }
+
+    private Date latestOf(Date a, Date b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.after(b) ? a : b;
     }
 }
