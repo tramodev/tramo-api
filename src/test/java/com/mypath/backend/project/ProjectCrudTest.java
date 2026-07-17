@@ -172,6 +172,32 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void followingSortOnlyShowsFollowedAuthorsProjects() throws Exception {
+        User me = createUser("followsortme");
+        User followed = createUser("followsortfollowed");
+        User stranger = createUser("followsortstranger");
+
+        mockMvc.perform(post("/api/users/followsortfollowed/follow").header("Authorization", bearer(me)))
+                .andExpect(status().isOk());
+
+        createProject(followed, "From someone I follow", "published", "A description", null);
+        createProject(stranger, "From a stranger", "published", "A description", null);
+
+        mockMvc.perform(get("/api/public/explore?sort=following").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(1))
+                .andExpect(jsonPath("$.feed[0].title").value("From someone I follow"));
+
+        mockMvc.perform(get("/api/public/explore?sort=following").header("Authorization", bearer(stranger)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(0));
+
+        mockMvc.perform(get("/api/public/explore?sort=following"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(0));
+    }
+
+    @Test
     void deleteRemovesProjectWithPathsIdeasVotesAndBookmarks() throws Exception {
         User owner = createUser("demolisher");
         User fan = createUser("fan");

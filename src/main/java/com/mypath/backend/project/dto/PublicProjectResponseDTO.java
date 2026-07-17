@@ -21,4 +21,5 @@ public class PublicProjectResponseDTO {
     private boolean votedByRequester;
     private boolean bookmarkedByRequester;
     private long viewCount;
+    private long commentCount;
 }

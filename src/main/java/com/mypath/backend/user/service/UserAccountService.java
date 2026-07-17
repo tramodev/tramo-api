@@ -3,6 +3,8 @@ package com.mypath.backend.user.service;
 import com.mypath.backend.auth.repository.EmailVerificationTokenRepository;
 import com.mypath.backend.auth.repository.PasswordResetTokenRepository;
 import com.mypath.backend.auth.repository.RefreshTokenRepository;
+import com.mypath.backend.comment.repository.CommentRepository;
+import com.mypath.backend.moderation.repository.CommentReportRepository;
 import com.mypath.backend.moderation.repository.ModerationLogRepository;
 import com.mypath.backend.moderation.repository.ProjectReportRepository;
 import com.mypath.backend.notification.service.NotificationService;
@@ -33,6 +35,8 @@ public class UserAccountService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final CommentRepository commentRepository;
+    private final CommentReportRepository commentReportRepository;
 
     public UserAccountService(UserRepository userRepository, ProjectRepository projectRepository,
                                ProjectService projectService, ProjectVoteRepository projectVoteRepository,
@@ -41,7 +45,9 @@ public class UserAccountService {
                                ModerationLogRepository moderationLogRepository, NotificationService notificationService,
                                RefreshTokenRepository refreshTokenRepository,
                                PasswordResetTokenRepository passwordResetTokenRepository,
-                               EmailVerificationTokenRepository emailVerificationTokenRepository) {
+                               EmailVerificationTokenRepository emailVerificationTokenRepository,
+                               CommentRepository commentRepository,
+                               CommentReportRepository commentReportRepository) {
         this.userRepository = userRepository;
         this.projectRepository = projectRepository;
         this.projectService = projectService;
@@ -55,6 +61,8 @@ public class UserAccountService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.commentRepository = commentRepository;
+        this.commentReportRepository = commentReportRepository;
     }
 
     @Transactional
@@ -70,6 +78,8 @@ public class UserAccountService {
         userBadgeRepository.deleteByUserId(userId);
         followRepository.deleteByFollowerIdOrFollowedId(userId, userId);
         projectReportRepository.deleteByReporterId(userId);
+        commentRepository.softDeleteByAuthorId(userId);
+        commentReportRepository.deleteByReporterId(userId);
         notificationService.deleteAllForRecipient(userId);
         notificationService.clearLatestActorReferences(userId);
         moderationLogRepository.clearAdminReferences(userId);

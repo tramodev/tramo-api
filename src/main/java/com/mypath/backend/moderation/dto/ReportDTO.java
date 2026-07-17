@@ -11,8 +11,11 @@ import java.util.Date;
 @AllArgsConstructor
 public class ReportDTO {
     private Long id;
+    private String type;
     private Long projectId;
     private String projectTitle;
+    private Long commentId;
+    private String commentContent;
     private String reporterUsername;
     private String reason;
     private String status;

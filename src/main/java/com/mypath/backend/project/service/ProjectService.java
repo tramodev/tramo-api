@@ -1,6 +1,8 @@
 package com.mypath.backend.project.service;
 
+import com.mypath.backend.comment.repository.CommentRepository;
 import com.mypath.backend.exception.ResourceNotFoundException;
+import com.mypath.backend.moderation.repository.CommentReportRepository;
 import com.mypath.backend.moderation.repository.ProjectReportRepository;
 import com.mypath.backend.notification.service.NotificationService;
 import com.mypath.backend.path.entity.Idea;
@@ -87,6 +89,8 @@ public class ProjectService {
     private final UserBadgeRepository userBadgeRepository;
     private final NotificationService notificationService;
     private final ProjectReportRepository projectReportRepository;
+    private final CommentRepository commentRepository;
+    private final CommentReportRepository commentReportRepository;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
@@ -94,7 +98,8 @@ public class ProjectService {
                            ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
                            UserRepository userRepository, FollowRepository followRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
-                           ProjectReportRepository projectReportRepository) {
+                           ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
+                           CommentReportRepository commentReportRepository) {
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -107,6 +112,8 @@ public class ProjectService {
         this.followRepository = followRepository;
         this.userBadgeRepository = userBadgeRepository;
         this.notificationService = notificationService;
+        this.commentRepository = commentRepository;
+        this.commentReportRepository = commentReportRepository;
         this.projectReportRepository = projectReportRepository;
     }
 
@@ -202,6 +209,12 @@ public class ProjectService {
         projectViewRepository.deleteByProjectId(id);
         notificationService.deleteAllForProject(id);
         projectReportRepository.deleteByProjectId(id);
+        List<Long> commentIds = commentRepository.findIdsByProjectId(id);
+        if (!commentIds.isEmpty()) {
+            commentReportRepository.deleteByCommentIdIn(commentIds);
+        }
+        commentRepository.clearParentReferencesForProject(id);
+        commentRepository.deleteByProjectId(id);
         projectRepository.clearForkedFromReferences(id);
         projectRepository.delete(project);
     }
@@ -347,7 +360,11 @@ public class ProjectService {
                 projectVoteRepository.countByProjectId(id),
                 requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
                 requester != null && projectBookmarkRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
-                viewCount
+                viewCount,
+                commentRepository.countGroupedByProjectIdIn(List.of(id)).stream()
+                        .findFirst()
+                        .map(CommentRepository.ProjectCommentCount::getCommentCount)
+                        .orElse(0L)
         );
     }
 
@@ -372,6 +389,10 @@ public class ProjectService {
         Set<Long> bookmarkedProjectIds = requester == null || publishedIds.isEmpty()
                 ? Set.of()
                 : Set.copyOf(projectBookmarkRepository.findBookmarkedProjectIds(requester.getId(), publishedIds));
+        Map<Long, Long> commentCounts = publishedIds.isEmpty()
+                ? Map.of()
+                : commentRepository.countGroupedByProjectIdIn(publishedIds).stream()
+                .collect(Collectors.toMap(CommentRepository.ProjectCommentCount::getProjectId, CommentRepository.ProjectCommentCount::getCommentCount));
 
         List<ProjectFeedItemDTO> feed = published.stream()
                 .map(project -> new ProjectFeedItemDTO(
@@ -388,6 +409,7 @@ public class ProjectService {
                         bookmarkedProjectIds.contains(project.getId()),
                         project.getViewCount(),
                         forkCounts.getOrDefault(project.getId(), 0L),
+                        commentCounts.getOrDefault(project.getId(), 0L),
                         project.isFeatured()
                 ))
                 .collect(Collectors.toList());
@@ -414,13 +436,23 @@ public class ProjectService {
                         .collect(Collectors.toMap(Project::getId, p -> p));
             pageProjects = ids.stream().map(byId::get).toList();
             hasMore = idPage.hasNext();
+        } else if ("following".equals(sort)) {
+            List<Long> followedIds = requester == null ? List.of() : followRepository.findFollowedIds(requester.getId());
+            if (followedIds.isEmpty()) {
+                pageProjects = List.of();
+                hasMore = false;
+            } else {
+                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners("published", followedIds, q, pageable);
+                pageProjects = projectPage.getContent();
+                hasMore = projectPage.hasNext();
+            }
         } else {
             Page<Project> projectPage = projectRepository.findPublishedRecent("published", q, pageable);
             pageProjects = projectPage.getContent();
             hasMore = projectPage.hasNext();
         }
 
-        FeedContext ctx = FeedContext.forProjects(pageProjects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        FeedContext ctx = FeedContext.forProjects(pageProjects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository);
         List<ProjectFeedItemDTO> feed = pageProjects.stream()
                 .map(project -> toFeedItem(project, ctx))
                 .toList();
@@ -429,10 +461,12 @@ public class ProjectService {
         List<TagCountDTO> hotTopics = List.of();
         List<AuthorCountDTO> activeAuthors = List.of();
         if (page == 0) {
-            featured = projectRepository.findByFeaturedTrue()
-                    .filter(project -> "published".equals(project.getVisibility()))
-                    .map(project -> toFeedItem(project, FeedContext.forProjects(List.of(project), requester, projectRepository, projectVoteRepository, projectBookmarkRepository)))
-                    .orElse(null);
+            if (!"following".equals(sort)) {
+                featured = projectRepository.findByFeaturedTrue()
+                        .filter(project -> "published".equals(project.getVisibility()))
+                        .map(project -> toFeedItem(project, FeedContext.forProjects(List.of(project), requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)))
+                        .orElse(null);
+            }
             hotTopics = getHotTopics(10);
             activeAuthors = getActiveAuthors(5);
         }
@@ -751,16 +785,16 @@ public class ProjectService {
     }
 
     private List<ProjectFeedItemDTO> toFeedItems(List<Project> projects, User requester) {
-        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository);
         return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
     }
 
     private List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
-        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository);
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository);
         return projects.stream().map(project -> toForkFeedItem(project, requester.getUsername(), ctx)).toList();
     }
 
-    private record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds) {
+    private record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Map<Long, Long> commentCounts, Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds) {
         static FeedContext forProjects(
                 List<Project> projects,
                 User requester,
@@ -769,7 +803,7 @@ public class ProjectService {
                 ProjectBookmarkRepository bookmarkRepository
         ) {
             List<Long> ids = projects.stream().map(Project::getId).toList();
-            if (ids.isEmpty()) return new FeedContext(Map.of(), Map.of(), Set.of(), Set.of());
+            if (ids.isEmpty()) return new FeedContext(Map.of(), Map.of(), Map.of(), Set.of(), Set.of());
 
             Map<Long, Long> voteCounts = new HashMap<>();
             for (ProjectVoteRepository.ProjectVoteCount row : voteRepository.countGroupedByProjectIdIn(ids)) {
@@ -785,7 +819,25 @@ public class ProjectService {
             Set<Long> bookmarkedProjectIds = requester == null
                     ? Set.of()
                     : Set.copyOf(bookmarkRepository.findBookmarkedProjectIds(requester.getId(), ids));
-            return new FeedContext(voteCounts, forkCounts, votedProjectIds, bookmarkedProjectIds);
+            return new FeedContext(voteCounts, forkCounts, Map.of(), votedProjectIds, bookmarkedProjectIds);
+        }
+
+        static FeedContext forProjects(
+                List<Project> projects,
+                User requester,
+                ProjectRepository projectRepository,
+                ProjectVoteRepository voteRepository,
+                ProjectBookmarkRepository bookmarkRepository,
+                CommentRepository commentRepository
+        ) {
+            FeedContext base = forProjects(projects, requester, projectRepository, voteRepository, bookmarkRepository);
+            List<Long> ids = projects.stream().map(Project::getId).toList();
+            if (ids.isEmpty()) return base;
+            Map<Long, Long> commentCounts = new HashMap<>();
+            for (CommentRepository.ProjectCommentCount row : commentRepository.countGroupedByProjectIdIn(ids)) {
+                commentCounts.put(row.getProjectId(), row.getCommentCount());
+            }
+            return new FeedContext(base.voteCounts(), base.forkCounts(), commentCounts, base.votedProjectIds(), base.bookmarkedProjectIds());
         }
     }
 
@@ -804,6 +856,7 @@ public class ProjectService {
                 ctx.bookmarkedProjectIds().contains(project.getId()),
                 project.getViewCount(),
                 ctx.forkCounts().getOrDefault(project.getId(), 0L),
+                ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured()
         );
     }
@@ -823,6 +876,7 @@ public class ProjectService {
                 ctx.bookmarkedProjectIds().contains(project.getId()),
                 project.getViewCount(),
                 ctx.forkCounts().getOrDefault(project.getId(), 0L),
+                ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured(),
                 source != null ? source.getId() : null,
                 source != null ? source.getTitle() : null,

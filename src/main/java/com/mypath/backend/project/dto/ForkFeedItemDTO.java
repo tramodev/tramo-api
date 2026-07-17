@@ -22,6 +22,7 @@ public class ForkFeedItemDTO {
     private boolean bookmarkedByRequester;
     private long viewCount;
     private long forkCount;
+    private long commentCount;
     private boolean featured;
     private Long forkedFromProjectId;
     private String forkedFromTitle;

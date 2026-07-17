@@ -28,6 +28,16 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
     Page<Project> findPublishedRecent(@Param("visibility") String visibility, @Param("query") String query, Pageable pageable);
 
+    @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
+            + "WHERE p.visibility = :visibility AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%'))) "
+            + "ORDER BY p.modifiedDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p "
+            + "WHERE p.visibility = :visibility AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%')))")
+    Page<Project> findPublishedRecentByOwners(@Param("visibility") String visibility, @Param("ownerIds") List<Long> ownerIds,
+                                                @Param("query") String query, Pageable pageable);
+
     @Query(value = "SELECT p.id FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
             + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(p.tags) LIKE LOWER(CONCAT('%', :query, '%'))) "

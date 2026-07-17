@@ -1,10 +1,14 @@
 package com.mypath.backend.moderation.service;
 
+import com.mypath.backend.comment.entity.Comment;
+import com.mypath.backend.comment.repository.CommentRepository;
 import com.mypath.backend.exception.ResourceNotFoundException;
 import com.mypath.backend.moderation.dto.AdminUserDTO;
 import com.mypath.backend.moderation.dto.ReportDTO;
+import com.mypath.backend.moderation.entity.CommentReport;
 import com.mypath.backend.moderation.entity.ModerationLog;
 import com.mypath.backend.moderation.entity.ProjectReport;
+import com.mypath.backend.moderation.repository.CommentReportRepository;
 import com.mypath.backend.moderation.repository.ModerationLogRepository;
 import com.mypath.backend.moderation.repository.ProjectReportRepository;
 import com.mypath.backend.project.entity.Project;
@@ -15,23 +19,31 @@ import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 public class ModerationService {
     private final ProjectReportRepository projectReportRepository;
+    private final CommentReportRepository commentReportRepository;
     private final ModerationLogRepository moderationLogRepository;
     private final ProjectRepository projectRepository;
+    private final CommentRepository commentRepository;
     private final UserRepository userRepository;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
+                              CommentReportRepository commentReportRepository,
                               ModerationLogRepository moderationLogRepository,
                               ProjectRepository projectRepository,
+                              CommentRepository commentRepository,
                               UserRepository userRepository) {
         this.projectReportRepository = projectReportRepository;
+        this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
         this.projectRepository = projectRepository;
+        this.commentRepository = commentRepository;
         this.userRepository = userRepository;
     }
 
@@ -56,22 +68,68 @@ public class ModerationService {
         projectReportRepository.save(report);
     }
 
+    @Transactional
+    public void submitCommentReport(Long commentId, User reporter, String reason) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+
+        if (comment.getAuthor() != null && comment.getAuthor().getId().equals(reporter.getId())) {
+            throw new AccessDeniedException("Cannot report your own comment");
+        }
+        if (commentReportRepository.existsByCommentIdAndReporterIdAndStatus(commentId, reporter.getId(), "OPEN")) {
+            return;
+        }
+
+        CommentReport report = new CommentReport();
+        report.setComment(comment);
+        report.setReporter(reporter);
+        report.setReason(reason);
+        report.setStatus("OPEN");
+        report.setCreatedDate(new Date());
+        commentReportRepository.save(report);
+    }
+
     public List<ReportDTO> listOpenReports() {
-        return projectReportRepository.findByStatusOrderByCreatedDateDesc("OPEN").stream()
+        Stream<ReportDTO> projectReports = projectReportRepository.findByStatusOrderByCreatedDateDesc("OPEN").stream()
                 .map(r -> new ReportDTO(
                         r.getId(),
+                        "PROJECT",
                         r.getProject().getId(),
                         r.getProject().getTitle(),
+                        null,
+                        null,
                         r.getReporter().getUsername(),
                         r.getReason(),
                         r.getStatus(),
                         r.getCreatedDate()
-                ))
+                ));
+        Stream<ReportDTO> commentReports = commentReportRepository.findByStatusOrderByCreatedDateDesc("OPEN").stream()
+                .map(r -> new ReportDTO(
+                        r.getId(),
+                        "COMMENT",
+                        r.getComment().getProject().getId(),
+                        r.getComment().getProject().getTitle(),
+                        r.getComment().getId(),
+                        r.getComment().getContent(),
+                        r.getReporter().getUsername(),
+                        r.getReason(),
+                        r.getStatus(),
+                        r.getCreatedDate()
+                ));
+        return Stream.concat(projectReports, commentReports)
+                .sorted(Comparator.comparing(ReportDTO::getCreatedDate).reversed())
                 .toList();
     }
 
     @Transactional
-    public void dismissReport(Long reportId, User admin) {
+    public void dismissReport(Long reportId, String type, User admin) {
+        if ("COMMENT".equals(type)) {
+            CommentReport report = commentReportRepository.findById(reportId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
+            report.setStatus("DISMISSED");
+            logAction(admin, "DISMISS_REPORT", "COMMENT_REPORT", reportId, null);
+            return;
+        }
         ProjectReport report = projectReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
         report.setStatus("DISMISSED");

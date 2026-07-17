@@ -28,8 +28,10 @@ public class AdminController {
     }
 
     @PostMapping("/reports/{id}/dismiss")
-    public ResponseEntity<Void> dismissReport(@PathVariable Long id, @AuthenticationPrincipal User admin) {
-        moderationService.dismissReport(id, admin);
+    public ResponseEntity<Void> dismissReport(@PathVariable Long id,
+                                                @RequestParam(defaultValue = "PROJECT") String type,
+                                                @AuthenticationPrincipal User admin) {
+        moderationService.dismissReport(id, type, admin);
         return ResponseEntity.ok().build();
     }
 
