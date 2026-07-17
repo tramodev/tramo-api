@@ -10,6 +10,7 @@ import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 
 import java.time.Instant;
@@ -36,6 +37,9 @@ class PathIdeaTest extends AbstractIntegrationTest {
 
     @Autowired
     PathRepository pathRepository;
+
+    @Value("${app.r2.public-base-url}")
+    String r2PublicBaseUrl;
 
     private long createPath(User owner, Project project, String title) throws Exception {
         return postForId(owner, "/api/project/" + pid(project) + "/path", """
@@ -437,5 +441,63 @@ class PathIdeaTest extends AbstractIntegrationTest {
                 ? Instant.ofEpochMilli(((Number) modifiedDate).longValue())
                 : Instant.parse((String) modifiedDate);
         assertThat(afterEdit).isAfter(staleDate.toInstant());
+    }
+
+    @Test
+    void removingEditorImageFromContentDoesNotBreakSave() throws Exception {
+        User owner = createUser("imagecleaner1");
+        Project project = createProject(owner, "ImageCleanupProject", "private");
+        long pathId = createPath(owner, project, "Path");
+        long ideaId = createIdea(owner, pathId, "Idea with image");
+        String imageUrl = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
+
+        mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"has image %s here"}""".formatted(imageUrl)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"image removed now"}"""))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void existsOtherIdeaReferencingUrlDetectsSharedImageCorrectly() throws Exception {
+        User owner = createUser("imagecleaner2");
+        Project project = createProject(owner, "SharedImageProject", "private");
+        long pathId = createPath(owner, project, "Path");
+        long ideaAId = createIdea(owner, pathId, "Idea A");
+        long ideaBId = createIdea(owner, pathId, "Idea B");
+        String sharedUrl = r2PublicBaseUrl + "/editor-image/999999/sharedhash.jpg";
+        String contentWithImage = """
+                {"content":"shared %s here"}""".formatted(sharedUrl);
+
+        mockMvc.perform(put("/api/idea/" + ideaAId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(contentWithImage))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(put("/api/idea/" + ideaBId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(contentWithImage))
+                .andExpect(status().isNoContent());
+
+        assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), sharedUrl, ideaAId)).isTrue();
+
+        mockMvc.perform(put("/api/idea/" + ideaAId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"image removed from A"}"""))
+                .andExpect(status().isNoContent());
+
+        assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), sharedUrl, ideaAId)).isTrue();
+        assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), sharedUrl, ideaBId)).isFalse();
     }
 }

@@ -14,6 +14,7 @@ import com.mypath.backend.path.repository.IdeaRepository;
 import com.mypath.backend.path.repository.PathIdeaRepository;
 import com.mypath.backend.project.entity.Project;
 import com.mypath.backend.project.repository.ProjectRepository;
+import com.mypath.backend.upload.R2Client;
 import com.mypath.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class IdeaService {
@@ -29,15 +31,17 @@ public class IdeaService {
     private final IdeaLinkRepository ideaLinkRepository;
     private final PathService pathService;
     private final ProjectRepository projectRepository;
+    private final R2Client r2Client;
 
     public IdeaService(IdeaRepository ideaRepository, PathIdeaRepository pathIdeaRepository,
                         IdeaLinkRepository ideaLinkRepository, PathService pathService,
-                        ProjectRepository projectRepository) {
+                        ProjectRepository projectRepository, R2Client r2Client) {
         this.ideaRepository = ideaRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaLinkRepository = ideaLinkRepository;
         this.pathService = pathService;
         this.projectRepository = projectRepository;
+        this.r2Client = r2Client;
     }
 
     public IdeaResponseDTO create(Long pathId, IdeaRequestDTO request, User requester) {
@@ -111,6 +115,7 @@ public class IdeaService {
     public void updateContent(Long id, String content, User requester) {
         Idea idea = getOwnedIdea(id, requester);
         IdeaContent ideaContent = idea.getContent();
+        String previousContent = ideaContent != null ? ideaContent.getContent() : null;
         if (ideaContent == null) {
             ideaContent = new IdeaContent();
             idea.setContent(ideaContent);
@@ -119,6 +124,20 @@ public class IdeaService {
         ideaContent.setUpdatedDate(new Date());
         ideaRepository.save(idea);
         bumpOwningProjectLastEditedDate(id);
+        deleteOrphanedEditorImages(id, requester, previousContent, content);
+    }
+
+    private void deleteOrphanedEditorImages(Long ideaId, User requester, String previousContent, String newContent) {
+        Set<String> oldUrls = r2Client.extractReferencedUrls(previousContent);
+        Set<String> newUrls = r2Client.extractReferencedUrls(newContent);
+        for (String url : oldUrls) {
+            if (newUrls.contains(url)) {
+                continue;
+            }
+            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId)) {
+                r2Client.deleteByPublicUrl(url);
+            }
+        }
     }
 
     private void bumpOwningProjectLastEditedDate(Long ideaId) {

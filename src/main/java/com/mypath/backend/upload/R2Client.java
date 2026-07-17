@@ -16,6 +16,10 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class R2Client {
@@ -25,6 +29,7 @@ public class R2Client {
     private final S3Client client;
     private final String bucket;
     private final String publicBaseUrl;
+    private final Pattern editorImageUrlPattern;
 
     public R2Client(
             @Value("${app.r2.account-id}") String accountId,
@@ -47,6 +52,9 @@ public class R2Client {
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials)
                 .build();
+        this.editorImageUrlPattern = Pattern.compile(
+                Pattern.quote(this.publicBaseUrl + "/editor-image/") + "[\\w\\-/]+\\.(?:jpg|jpeg|png|webp|gif)"
+        );
     }
 
     public String presignPut(String key, String contentType) {
@@ -65,6 +73,18 @@ public class R2Client {
 
     public String publicUrlFor(String key) {
         return publicBaseUrl + "/" + key;
+    }
+
+    public Set<String> extractReferencedUrls(String content) {
+        Set<String> urls = new LinkedHashSet<>();
+        if (content == null || content.isBlank()) {
+            return urls;
+        }
+        Matcher matcher = editorImageUrlPattern.matcher(content);
+        while (matcher.find()) {
+            urls.add(matcher.group());
+        }
+        return urls;
     }
 
     public void deleteByPublicUrl(String url) {
