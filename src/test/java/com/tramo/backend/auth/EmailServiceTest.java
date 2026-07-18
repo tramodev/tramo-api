@@ -28,8 +28,9 @@ class EmailServiceTest {
     @BeforeEach
     void setUp() {
         emailService = new EmailService(mailSender);
-        ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@tramo.app");
-        ReflectionTestUtils.setField(emailService, "frontendUrl", "https://tramo.app");
+        ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@tramo.dev");
+        ReflectionTestUtils.setField(emailService, "frontendUrl", "https://tramo.dev");
+        ReflectionTestUtils.setField(emailService, "mailEnabled", true);
     }
 
     private User user(String username, String email) {
@@ -50,10 +51,10 @@ class EmailServiceTest {
         verify(mailSender).send(captor.capture());
         SimpleMailMessage sent = captor.getValue();
 
-        assertThat(sent.getFrom()).isEqualTo("noreply@tramo.app");
+        assertThat(sent.getFrom()).isEqualTo("noreply@tramo.dev");
         assertThat(sent.getTo()).containsExactly("alice@example.com");
         assertThat(sent.getSubject()).isEqualTo("Verify your Tramo account");
-        assertThat(sent.getText()).contains("alice").contains("https://tramo.app/verify-email?token=tok123");
+        assertThat(sent.getText()).contains("alice").contains("https://tramo.dev/verify-email?token=tok123");
     }
 
     @Test
@@ -66,7 +67,7 @@ class EmailServiceTest {
 
         assertThat(sent.getTo()).containsExactly("bob@example.com");
         assertThat(sent.getSubject()).isEqualTo("Reset your Tramo password");
-        assertThat(sent.getText()).contains("bob").contains("https://tramo.app/reset-password?token=reset456");
+        assertThat(sent.getText()).contains("bob").contains("https://tramo.dev/reset-password?token=reset456");
     }
 
     @Test

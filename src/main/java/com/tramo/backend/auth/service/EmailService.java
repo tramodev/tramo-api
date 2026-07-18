@@ -19,12 +19,21 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.mail.enabled:true}")
+    private boolean mailEnabled;
+
     public EmailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
 
     public void sendVerificationEmail(User user, String token) {
         String verificationLink = frontendUrl + "/verify-email?token=" + token;
+
+        if (!mailEnabled) {
+            log.info("app.mail.enabled=false, skipping send. Verification link for {}: {}",
+                    user.getEmail(), verificationLink);
+            return;
+        }
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
@@ -46,6 +55,12 @@ public class EmailService {
 
     public void sendPasswordResetEmail(User user, String token) {
         String resetLink = frontendUrl + "/reset-password?token=" + token;
+
+        if (!mailEnabled) {
+            log.info("app.mail.enabled=false, skipping send. Reset link for {}: {}",
+                    user.getEmail(), resetLink);
+            return;
+        }
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
