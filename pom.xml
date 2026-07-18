@@ -8,11 +8,11 @@
 		<version>4.0.0</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.mypath</groupId>
-	<artifactId>mypath-backend</artifactId>
+	<groupId>com.tramo</groupId>
+	<artifactId>tramo-backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>mypath-backend</name>
-	<description>Backend API for MyPath, a platform for learning paths and study tracking.</description>
+	<name>tramo-backend</name>
+	<description>Backend API for Tramo, a platform for learning paths and study tracking.</description>
 	<url/>
 	<licenses>
 		<license/>
