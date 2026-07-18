@@ -46,6 +46,12 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("app.google.client-id", () -> "test-client-id");
+        registry.add("app.project-id.salt", () -> "test-project-id-salt");
+        registry.add("app.r2.account-id", () -> "test-account-id");
+        registry.add("app.r2.access-key", () -> "test-access-key");
+        registry.add("app.r2.secret-key", () -> "test-secret-key");
+        registry.add("app.r2.bucket", () -> "test-bucket");
+        registry.add("app.r2.public-base-url", () -> "https://test-bucket.example.com");
         registry.add("spring.jpa.show-sql", () -> "false");
         registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }

@@ -430,7 +430,7 @@ class PathIdeaTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
 
         Project reloaded = projectRepository.findById(project.getId()).orElseThrow();
-        assertThat(reloaded.getModifiedDate()).isEqualTo(staleDate);
+        assertThat(reloaded.getModifiedDate().getTime()).isEqualTo(staleDate.getTime());
         assertThat(reloaded.getLastEditedDate()).isAfter(staleDate);
 
         String response = mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))

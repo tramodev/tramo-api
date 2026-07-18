@@ -382,8 +382,8 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                                 {"thumbnail":"data:image/png;base64,abc"}"""))
                 .andExpect(status().isOk());
 
-        assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate())
-                .isEqualTo(staleDate);
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate().getTime())
+                .isEqualTo(staleDate.getTime());
 
         mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))
