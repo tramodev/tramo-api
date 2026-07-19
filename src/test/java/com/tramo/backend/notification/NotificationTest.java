@@ -175,6 +175,69 @@ class NotificationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
+
+        // private -> published again must not re-notify either, even once the first
+        // notification is read (unread-dedup no longer applies): PUBLISH is first-publish-only
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"private"}"""))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void legacyPublishedProjectGetsStampedWithoutEverNotifying() throws Exception {
+        User owner = createUser("legacypublisher");
+        User follower = createUser("legacypublisherfan");
+        mockMvc.perform(post("/api/users/legacypublisher/follow").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk());
+
+        // direct DB insert while already published — firstPublishedDate stays null, exactly
+        // like rows published before first-publish tracking existed
+        Project project = createProject(owner, "Legacy project", "published", "A description", null);
+
+        // re-saving while published must stamp firstPublishedDate silently, not notify
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // and once stamped, a private -> published cycle must not notify either
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"private"}"""))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"visibility":"published"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test

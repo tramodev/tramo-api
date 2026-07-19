@@ -166,12 +166,17 @@ public class ProjectService {
             project.setDescription(request.getDescription());
             touchesModifiedDate = true;
         }
+        boolean firstPublish = false;
         if (request.getVisibility() != null) {
             if ("published".equals(request.getVisibility())
                     && (project.getDescription() == null || project.getDescription().isBlank())) {
                 throw new IllegalArgumentException("Add a description before publishing");
             }
             project.setVisibility(request.getVisibility());
+            if ("published".equals(request.getVisibility()) && project.getFirstPublishedDate() == null) {
+                project.setFirstPublishedDate(new Date());
+                firstPublish = true;
+            }
             touchesModifiedDate = true;
         }
         String previousThumbnail = project.getThumbnail();
@@ -191,7 +196,9 @@ public class ProjectService {
         }
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
-            if (!"published".equals(previousVisibility)) {
+            // first-ever publish only — republishing after a temporary private is not news
+            // (deliberate re-announcement is what SHARE is for)
+            if (!"published".equals(previousVisibility) && firstPublish) {
                 notifyFollowers(project.getOwner(), "PUBLISH", project);
             }
         }

@@ -32,6 +32,8 @@ public class Project {
     private Date creationDate;
     private Date modifiedDate;
     private Date lastEditedDate;
+    // null = never been published; PUBLISH follower notification fires only when stamping this
+    private Date firstPublishedDate;
 
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;
