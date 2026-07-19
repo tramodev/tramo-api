@@ -1,7 +1,9 @@
 package com.tramo.backend.upload.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -17,4 +19,10 @@ public class UploadPresignRequestDTO {
     @NotBlank
     @Pattern(regexp = "[a-f0-9]{64}", message = "contentHash must be a 64-char lowercase hex SHA-256 digest")
     private String contentHash;
+
+    // Client-declared size; presigned PUT can't enforce it server-side (accepted gap),
+    // but it powers the per-user storage quota accounting.
+    @NotNull
+    @Positive
+    private Long contentBytes;
 }

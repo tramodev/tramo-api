@@ -7,6 +7,7 @@ import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.notification.service.NotificationService;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.path.entity.Idea;
 import com.tramo.backend.path.entity.IdeaContent;
 import com.tramo.backend.path.entity.IdeaLink;
@@ -100,6 +101,7 @@ public class ProjectService {
     private final CommentReportRepository commentReportRepository;
     private final ProjectIdCodec projectIdCodec;
     private final R2Client r2Client;
+    private final SubscriptionService subscriptionService;
 
     public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
                            PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
@@ -109,7 +111,8 @@ public class ProjectService {
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
                            CommentReportRepository commentReportRepository, ProjectIdCodec projectIdCodec,
-                           R2Client r2Client) {
+                           R2Client r2Client, SubscriptionService subscriptionService) {
+        this.subscriptionService = subscriptionService;
         this.projectRepository = projectRepository;
         this.pathRepository = pathRepository;
         this.pathIdeaRepository = pathIdeaRepository;
@@ -174,6 +177,7 @@ public class ProjectService {
             }
             project.setVisibility(request.getVisibility());
             if ("published".equals(request.getVisibility()) && project.getFirstPublishedDate() == null) {
+                subscriptionService.assertCanPublish(requester);
                 project.setFirstPublishedDate(new Date());
                 firstPublish = true;
             }
@@ -631,7 +635,7 @@ public class ProjectService {
 
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
-        List<BadgeDTO> badges = buildBadges(stats);
+        List<BadgeDTO> badges = buildBadges(stats, subscriptionService.isPremium(user));
         awardNewlyEarnedBadges(user, badges);
         return new ProfileStatsBundleDTO(stats, badges);
     }
@@ -693,7 +697,7 @@ public class ProjectService {
 
     private void checkAndAwardBadges(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
-        awardNewlyEarnedBadges(user, buildBadges(stats));
+        awardNewlyEarnedBadges(user, buildBadges(stats, subscriptionService.isPremium(user)));
     }
 
     private boolean crossedViewBadgeThreshold(long before, long after) {
@@ -711,7 +715,7 @@ public class ProjectService {
                 && followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId()).isPresent();
 
         return new PublicProfileDTO(target.getUsername(), target.getBio(), target.getImageUrl(), target.getCreatedAt(),
-                stats, buildBadges(stats), following, self);
+                stats, buildBadges(stats, subscriptionService.isPremium(target)), following, self);
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {
@@ -774,8 +778,9 @@ public class ProjectService {
         return new PageResponseDTO<>(items, hasMore);
     }
 
-    private List<BadgeDTO> buildBadges(ProfileStatsDTO stats) {
+    private List<BadgeDTO> buildBadges(ProfileStatsDTO stats, boolean supporter) {
         List<BadgeDTO> badges = new ArrayList<>();
+        badges.add(badge(SubscriptionService.SUPPORTER_BADGE_CODE, "Supporter", "Support Tramo with a subscription", supporter ? 1 : 0, 1));
         badges.add(badge("first_publish", "First Publish", "Publish your first path", stats.getPathsPublished(), 1));
         badges.add(badge("prolific", "Prolific", "Publish 10 paths", stats.getPathsPublished(), 10));
         badges.add(badge("rising_star", "Rising Star", "Earn 10 upvotes", stats.getUpvotesReceived(), 10));

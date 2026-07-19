@@ -19,7 +19,7 @@ class UploadTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/uploads/presign")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -31,7 +31,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"application/pdf","kind":"avatar","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"application/pdf","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -43,7 +43,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"banana","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"banana","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -55,7 +55,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"not-a-hash"}"""))
+                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"not-a-hash","contentBytes":1000}"""))
                 .andExpect(status().isBadRequest());
     }
 
@@ -67,7 +67,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.uploadUrl").exists())
                 .andExpect(jsonPath("$.publicUrl").exists())
@@ -85,7 +85,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
@@ -93,7 +93,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s"}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 

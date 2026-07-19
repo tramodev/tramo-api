@@ -1,5 +1,6 @@
 package com.tramo.backend.upload;
 
+import com.tramo.backend.upload.repository.UploadRecordRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,14 +31,17 @@ public class R2Client {
     private final String bucket;
     private final String publicBaseUrl;
     private final Pattern editorImageUrlPattern;
+    private final UploadRecordRepository uploadRecordRepository;
 
     public R2Client(
             @Value("${app.r2.account-id}") String accountId,
             @Value("${app.r2.access-key}") String accessKey,
             @Value("${app.r2.secret-key}") String secretKey,
             @Value("${app.r2.bucket}") String bucket,
-            @Value("${app.r2.public-base-url}") String publicBaseUrl
+            @Value("${app.r2.public-base-url}") String publicBaseUrl,
+            UploadRecordRepository uploadRecordRepository
     ) {
+        this.uploadRecordRepository = uploadRecordRepository;
         this.bucket = bucket;
         this.publicBaseUrl = publicBaseUrl.endsWith("/") ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1) : publicBaseUrl;
         URI endpoint = URI.create("https://" + accountId + ".r2.cloudflarestorage.com");
@@ -94,6 +98,8 @@ public class R2Client {
         String key = url.substring(publicBaseUrl.length() + 1);
         try {
             client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+            // freed space returns to the owner's storage quota
+            uploadRecordRepository.deleteByObjectKey(key);
         } catch (Exception e) {
             log.warn("Failed to delete orphaned R2 object {}", key, e);
         }
