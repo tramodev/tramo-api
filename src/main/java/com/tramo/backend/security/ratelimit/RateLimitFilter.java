@@ -1,6 +1,7 @@
 package com.tramo.backend.security.ratelimit;
 
 
+import com.tramo.backend.security.ClientIp;
 import io.github.bucket4j.Bucket;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,7 +27,7 @@ public class RateLimitFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
 
-        String ip = req.getRemoteAddr();
+        String ip = ClientIp.from(req);
         String path = req.getRequestURI();
 
         if (path.startsWith("/api/auth/")) {

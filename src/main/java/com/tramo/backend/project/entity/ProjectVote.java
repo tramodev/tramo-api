@@ -30,4 +30,8 @@ public class ProjectVote {
     private User user;
 
     private Date createdDate;
+
+    private String voterIp;
+
+    private String deviceId;
 }

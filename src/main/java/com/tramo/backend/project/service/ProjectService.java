@@ -55,6 +55,8 @@ import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -77,6 +79,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
+    private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
     private static final long ON_THE_MAP_VIEW_THRESHOLD = 1000;
     private static final long TRENDSETTER_VIEW_THRESHOLD = 10000;
     private static final long EXPLORE_CACHE_REFRESH_MS = 5 * 60 * 1000;
@@ -529,12 +532,27 @@ public class ProjectService {
         if (published.isEmpty()) return;
 
         List<Long> ids = published.stream().map(Project::getId).toList();
-        Map<Long, Long> voteCounts = projectVoteRepository.countGroupedByProjectIdIn(ids).stream()
-                .collect(Collectors.toMap(ProjectVoteRepository.ProjectVoteCount::getProjectId, ProjectVoteRepository.ProjectVoteCount::getVoteCount));
+        Map<Long, Long> rawCounts = new HashMap<>();
+        Map<Long, Long> trustedCounts = new HashMap<>();
+        Map<Long, Set<String>> seenIps = new HashMap<>();
+        Map<Long, Set<String>> seenDevices = new HashMap<>();
+        for (ProjectVoteRepository.VoteMeta vote : projectVoteRepository.findMetaByProjectIdIn(ids)) {
+            Long projectId = vote.getProjectId();
+            rawCounts.merge(projectId, 1L, Long::sum);
+            boolean freshIp = vote.getVoterIp() == null
+                    || seenIps.computeIfAbsent(projectId, k -> new HashSet<>()).add(vote.getVoterIp());
+            boolean freshDevice = vote.getDeviceId() == null
+                    || seenDevices.computeIfAbsent(projectId, k -> new HashSet<>()).add(vote.getDeviceId());
+            if (freshIp && freshDevice) {
+                trustedCounts.merge(projectId, 1L, Long::sum);
+            }
+        }
 
         Project top = published.stream()
-                .max(Comparator.comparingLong(p -> voteCounts.getOrDefault(p.getId(), 0L)))
+                .max(Comparator.comparingLong(p -> trustedCounts.getOrDefault(p.getId(), 0L)))
                 .orElseThrow();
+        log.info("Featured pick: project {} with {} trusted votes ({} raw)",
+                top.getId(), trustedCounts.getOrDefault(top.getId(), 0L), rawCounts.getOrDefault(top.getId(), 0L));
 
         Optional<Project> currentlyFeatured = projectRepository.findByFeaturedTrue();
         if (currentlyFeatured.isPresent() && currentlyFeatured.get().getId().equals(top.getId())) {
@@ -558,7 +576,7 @@ public class ProjectService {
     }
 
     @Transactional
-    public VoteResponseDTO toggleVote(Long projectId, User requester) {
+    public VoteResponseDTO toggleVote(Long projectId, User requester, String voterIp, String deviceId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
@@ -573,6 +591,8 @@ public class ProjectService {
             vote.setProject(project);
             vote.setUser(requester);
             vote.setCreatedDate(new Date());
+            vote.setVoterIp(voterIp);
+            vote.setDeviceId(deviceId);
             projectVoteRepository.save(vote);
             voted = true;
             notificationService.recordEvent(project.getOwner(), "UPVOTE", project, requester);

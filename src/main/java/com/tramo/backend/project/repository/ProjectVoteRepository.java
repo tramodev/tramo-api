@@ -40,4 +40,13 @@ public interface ProjectVoteRepository extends JpaRepository<ProjectVote, Long> 
         Long getProjectId();
         Long getVoteCount();
     }
+
+    @Query("SELECT v.project.id AS projectId, v.voterIp AS voterIp, v.deviceId AS deviceId FROM ProjectVote v WHERE v.project.id IN :projectIds ORDER BY v.createdDate ASC")
+    List<VoteMeta> findMetaByProjectIdIn(@Param("projectIds") List<Long> projectIds);
+
+    interface VoteMeta {
+        Long getProjectId();
+        String getVoterIp();
+        String getDeviceId();
+    }
 }

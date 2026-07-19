@@ -8,7 +8,9 @@ import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.VoteResponseDTO;
 import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.security.ClientIp;
 import com.tramo.backend.user.entity.User;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -58,8 +60,10 @@ public class ProjectController {
     }
 
     @PostMapping("/{id}/vote")
-    public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user));
+    public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable String id, @AuthenticationPrincipal User user,
+                                                      @RequestHeader(value = "X-Anon-Id", required = false) String anonId,
+                                                      HttpServletRequest request) {
+        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user, ClientIp.from(request), anonId));
     }
 
     @PostMapping("/{id}/fork")
