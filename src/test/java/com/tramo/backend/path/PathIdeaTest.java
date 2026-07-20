@@ -6,7 +6,9 @@ import com.tramo.backend.path.repository.IdeaLinkRepository;
 import com.tramo.backend.path.repository.IdeaRepository;
 import com.tramo.backend.path.repository.PathIdeaRepository;
 import com.tramo.backend.path.repository.PathRepository;
+import com.tramo.backend.path.service.IdeaService;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +39,12 @@ class PathIdeaTest extends AbstractIntegrationTest {
 
     @Autowired
     PathRepository pathRepository;
+
+    @Autowired
+    PendingImageDeletionRepository pendingImageDeletionRepository;
+
+    @Autowired
+    IdeaService ideaService;
 
     @Value("${app.r2.public-base-url}")
     String r2PublicBaseUrl;
@@ -464,6 +472,53 @@ class PathIdeaTest extends AbstractIntegrationTest {
                         .content("""
                                 {"content":"image removed now"}"""))
                 .andExpect(status().isNoContent());
+
+        assertThat(pendingImageDeletionRepository.existsByUrl(imageUrl)).isTrue();
+    }
+
+    @Test
+    void purgeDeletesOnlyStaleUnreferencedPendingImages() throws Exception {
+        User owner = createUser("imagepurger");
+        Project project = createProject(owner, "PurgeProject", "private");
+        long pathId = createPath(owner, project, "Path");
+        long ideaId = createIdea(owner, pathId, "Idea");
+        String staleUrl = r2PublicBaseUrl + "/editor-image/999999/stalehash.jpg";
+        String restoredUrl = r2PublicBaseUrl + "/editor-image/999999/restoredhash.jpg";
+        String freshUrl = r2PublicBaseUrl + "/editor-image/999999/freshhash.jpg";
+
+        for (String url : new String[]{staleUrl, restoredUrl, freshUrl}) {
+            mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                            .header("Authorization", bearer(owner))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"content":"has %s"}""".formatted(url)))
+                    .andExpect(status().isNoContent());
+            mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                            .header("Authorization", bearer(owner))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"content":"removed"}"""))
+                    .andExpect(status().isNoContent());
+        }
+        assertThat(pendingImageDeletionRepository.count()).isEqualTo(3);
+
+        Date twoDaysAgo = new Date(System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L);
+        jdbcTemplate.update("UPDATE pending_image_deletion SET requested_at = ? WHERE url IN (?, ?)",
+                twoDaysAgo, staleUrl, restoredUrl);
+
+        mockMvc.perform(put("/api/idea/" + ideaId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"pasted back %s"}""".formatted(restoredUrl)))
+                .andExpect(status().isNoContent());
+
+        ideaService.purgePendingImageDeletions();
+
+        assertThat(pendingImageDeletionRepository.existsByUrl(staleUrl)).isFalse();
+        assertThat(pendingImageDeletionRepository.existsByUrl(restoredUrl)).isFalse();
+        assertThat(pendingImageDeletionRepository.existsByUrl(freshUrl)).isTrue();
+        assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), restoredUrl, -1L)).isTrue();
     }
 
     @Test
@@ -499,5 +554,6 @@ class PathIdeaTest extends AbstractIntegrationTest {
 
         assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), sharedUrl, ideaAId)).isTrue();
         assertThat(pathIdeaRepository.existsOtherIdeaReferencingUrl(owner.getId(), sharedUrl, ideaBId)).isFalse();
+        assertThat(pendingImageDeletionRepository.existsByUrl(sharedUrl)).isFalse();
     }
 }

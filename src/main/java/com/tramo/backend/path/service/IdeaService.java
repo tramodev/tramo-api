@@ -15,10 +15,13 @@ import com.tramo.backend.path.repository.PathIdeaRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.upload.R2Client;
+import com.tramo.backend.upload.entity.PendingImageDeletion;
+import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +32,8 @@ import java.util.Set;
 @Service
 public class IdeaService {
     private static final Logger log = LoggerFactory.getLogger(IdeaService.class);
+    private static final long IMAGE_DELETION_GRACE_MS = 24 * 60 * 60 * 1000L;
+    private static final long IMAGE_DELETION_PURGE_INTERVAL_MS = 60 * 60 * 1000L;
 
     private final IdeaRepository ideaRepository;
     private final PathIdeaRepository pathIdeaRepository;
@@ -36,16 +41,19 @@ public class IdeaService {
     private final PathService pathService;
     private final ProjectRepository projectRepository;
     private final R2Client r2Client;
+    private final PendingImageDeletionRepository pendingImageDeletionRepository;
 
     public IdeaService(IdeaRepository ideaRepository, PathIdeaRepository pathIdeaRepository,
                         IdeaLinkRepository ideaLinkRepository, PathService pathService,
-                        ProjectRepository projectRepository, R2Client r2Client) {
+                        ProjectRepository projectRepository, R2Client r2Client,
+                        PendingImageDeletionRepository pendingImageDeletionRepository) {
         this.ideaRepository = ideaRepository;
         this.pathIdeaRepository = pathIdeaRepository;
         this.ideaLinkRepository = ideaLinkRepository;
         this.pathService = pathService;
         this.projectRepository = projectRepository;
         this.r2Client = r2Client;
+        this.pendingImageDeletionRepository = pendingImageDeletionRepository;
     }
 
     public IdeaResponseDTO create(Long pathId, IdeaRequestDTO request, User requester) {
@@ -138,10 +146,28 @@ public class IdeaService {
             if (newUrls.contains(url)) {
                 continue;
             }
-            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId)) {
-                log.info("deleteOrphanedEditorImages deleting url={} idea={}", url, ideaId);
-                r2Client.deleteByPublicUrl(url);
+            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(requester.getId(), url, ideaId)
+                    && !pendingImageDeletionRepository.existsByUrl(url)) {
+                log.info("deleteOrphanedEditorImages queued url={} idea={}", url, ideaId);
+                PendingImageDeletion pending = new PendingImageDeletion();
+                pending.setUrl(url);
+                pending.setOwnerId(requester.getId());
+                pending.setRequestedAt(new Date());
+                pendingImageDeletionRepository.save(pending);
             }
+        }
+    }
+
+    @Scheduled(fixedRate = IMAGE_DELETION_PURGE_INTERVAL_MS)
+    @Transactional
+    public void purgePendingImageDeletions() {
+        Date cutoff = new Date(System.currentTimeMillis() - IMAGE_DELETION_GRACE_MS);
+        for (PendingImageDeletion pending : pendingImageDeletionRepository.findByRequestedAtBefore(cutoff)) {
+            if (!pathIdeaRepository.existsOtherIdeaReferencingUrl(pending.getOwnerId(), pending.getUrl(), -1L)) {
+                log.info("purgePendingImageDeletions deleting url={}", pending.getUrl());
+                r2Client.deleteByPublicUrl(pending.getUrl());
+            }
+            pendingImageDeletionRepository.delete(pending);
         }
     }
 
