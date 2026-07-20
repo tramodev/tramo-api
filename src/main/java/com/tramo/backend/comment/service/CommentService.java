@@ -10,6 +10,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.user.repository.BlockedUserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -22,12 +23,14 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final ProjectRepository projectRepository;
     private final NotificationService notificationService;
+    private final BlockedUserRepository blockedUserRepository;
 
     public CommentService(CommentRepository commentRepository, ProjectRepository projectRepository,
-                           NotificationService notificationService) {
+                           NotificationService notificationService, BlockedUserRepository blockedUserRepository) {
         this.commentRepository = commentRepository;
         this.projectRepository = projectRepository;
         this.notificationService = notificationService;
+        this.blockedUserRepository = blockedUserRepository;
     }
 
     @Transactional
@@ -35,6 +38,9 @@ public class CommentService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         assertViewable(project);
+        if (blockedUserRepository.existsEitherDirection(author.getId(), project.getOwner().getId())) {
+            throw new AccessDeniedException("Cannot comment on this project");
+        }
 
         Comment parent = null;
         if (request.getParentId() != null) {

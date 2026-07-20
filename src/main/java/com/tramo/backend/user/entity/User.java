@@ -49,6 +49,11 @@ public class User implements UserDetails {
     @Column(columnDefinition = "boolean default false")
     private boolean banned;
 
+    private String emailDigestFrequency;
+    private Boolean showUpvotes;
+    private Boolean allowForks;
+    private String commentsPolicy;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority((role.name())));

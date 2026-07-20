@@ -14,6 +14,7 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.project.service.ProjectService;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.FollowRepository;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
@@ -29,6 +30,7 @@ public class UserAccountService {
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final UserBadgeRepository userBadgeRepository;
     private final FollowRepository followRepository;
+    private final BlockedUserRepository blockedUserRepository;
     private final ProjectReportRepository projectReportRepository;
     private final ModerationLogRepository moderationLogRepository;
     private final NotificationService notificationService;
@@ -41,7 +43,8 @@ public class UserAccountService {
     public UserAccountService(UserRepository userRepository, ProjectRepository projectRepository,
                                ProjectService projectService, ProjectVoteRepository projectVoteRepository,
                                ProjectBookmarkRepository projectBookmarkRepository, UserBadgeRepository userBadgeRepository,
-                               FollowRepository followRepository, ProjectReportRepository projectReportRepository,
+                               FollowRepository followRepository, BlockedUserRepository blockedUserRepository,
+                               ProjectReportRepository projectReportRepository,
                                ModerationLogRepository moderationLogRepository, NotificationService notificationService,
                                RefreshTokenRepository refreshTokenRepository,
                                PasswordResetTokenRepository passwordResetTokenRepository,
@@ -55,6 +58,7 @@ public class UserAccountService {
         this.projectBookmarkRepository = projectBookmarkRepository;
         this.userBadgeRepository = userBadgeRepository;
         this.followRepository = followRepository;
+        this.blockedUserRepository = blockedUserRepository;
         this.projectReportRepository = projectReportRepository;
         this.moderationLogRepository = moderationLogRepository;
         this.notificationService = notificationService;
@@ -77,6 +81,7 @@ public class UserAccountService {
         projectBookmarkRepository.deleteByUserId(userId);
         userBadgeRepository.deleteByUserId(userId);
         followRepository.deleteByFollowerIdOrFollowedId(userId, userId);
+        blockedUserRepository.deleteByBlockerIdOrBlockedId(userId, userId);
         projectReportRepository.deleteByReporterId(userId);
         commentRepository.softDeleteByAuthorId(userId);
         commentReportRepository.deleteByReporterId(userId);

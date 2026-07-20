@@ -19,4 +19,5 @@ public class PublicProfileDTO {
     private List<BadgeDTO> badges;
     private boolean following;
     private boolean self;
+    private boolean blocked;
 }

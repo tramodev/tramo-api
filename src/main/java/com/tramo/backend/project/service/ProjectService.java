@@ -51,6 +51,7 @@ import com.tramo.backend.user.entity.Follow;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.entity.UserBadge;
 import com.tramo.backend.user.repository.FollowRepository;
+import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
@@ -97,6 +98,7 @@ public class ProjectService {
     private final IdeaLinkRepository ideaLinkRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
+    private final BlockedUserRepository blockedUserRepository;
     private final UserBadgeRepository userBadgeRepository;
     private final NotificationService notificationService;
     private final ProjectReportRepository projectReportRepository;
@@ -111,6 +113,7 @@ public class ProjectService {
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
                            ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
                            UserRepository userRepository, FollowRepository followRepository,
+                           BlockedUserRepository blockedUserRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
                            CommentReportRepository commentReportRepository, ProjectIdCodec projectIdCodec,
@@ -126,6 +129,7 @@ public class ProjectService {
         this.projectBookmarkRepository = projectBookmarkRepository;
         this.userRepository = userRepository;
         this.followRepository = followRepository;
+        this.blockedUserRepository = blockedUserRepository;
         this.userBadgeRepository = userBadgeRepository;
         this.notificationService = notificationService;
         this.commentRepository = commentRepository;
@@ -270,6 +274,9 @@ public class ProjectService {
         assertViewable(source);
         if (source.getOwner().getId().equals(requester.getId())) {
             throw new AccessDeniedException("Cannot fork your own project");
+        }
+        if (blockedUserRepository.existsEitherDirection(requester.getId(), source.getOwner().getId())) {
+            throw new AccessDeniedException("Cannot fork this project");
         }
 
         Project fork = new Project();
@@ -733,9 +740,11 @@ public class ProjectService {
         boolean self = requester != null && requester.getId().equals(target.getId());
         boolean following = !self && requester != null
                 && followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId()).isPresent();
+        boolean blocked = !self && requester != null
+                && blockedUserRepository.findByBlockerIdAndBlockedId(requester.getId(), target.getId()).isPresent();
 
         return new PublicProfileDTO(target.getUsername(), target.getBio(), target.getImageUrl(), target.getCreatedAt(),
-                stats, buildBadges(stats, subscriptionService.isPremium(target)), following, self);
+                stats, buildBadges(stats, subscriptionService.isPremium(target)), following, self, blocked);
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {
@@ -752,6 +761,9 @@ public class ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (target.getId().equals(requester.getId())) {
             throw new AccessDeniedException("Cannot follow yourself");
+        }
+        if (blockedUserRepository.existsEitherDirection(requester.getId(), target.getId())) {
+            throw new AccessDeniedException("Cannot follow this user");
         }
 
         var existing = followRepository.findByFollowerIdAndFollowedId(requester.getId(), target.getId());
