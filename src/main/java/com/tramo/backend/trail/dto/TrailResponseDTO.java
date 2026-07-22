@@ -16,4 +16,6 @@ public class TrailResponseDTO {
     private Date creationDate;
     private Date modifiedDate;
     private String projectId;
+    private int version;
+    private Long forkedFromId;
 }

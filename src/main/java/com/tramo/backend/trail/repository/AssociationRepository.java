@@ -1,6 +1,7 @@
 package com.tramo.backend.trail.repository;
 
 import com.tramo.backend.trail.entity.Association;
+import com.tramo.backend.trail.entity.AssociationTargetType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -9,7 +10,14 @@ import java.util.Optional;
 
 @Repository
 public interface AssociationRepository extends JpaRepository<Association, Long> {
-    List<Association> findBySourceItemIdOrTargetItemId(Long sourceItemId, Long targetItemId);
-    void deleteBySourceItemIdOrTargetItemId(Long sourceItemId, Long targetItemId);
-    Optional<Association> findBySourceItemIdAndTargetItemId(Long sourceItemId, Long targetItemId);
+    List<Association> findBySourceItemId(Long sourceItemId);
+
+    List<Association> findByTargetTypeAndTargetId(AssociationTargetType targetType, Long targetId);
+
+    Optional<Association> findBySourceItemIdAndTargetTypeAndTargetId(
+            Long sourceItemId, AssociationTargetType targetType, Long targetId);
+
+    void deleteBySourceItemId(Long sourceItemId);
+
+    void deleteByTargetTypeAndTargetId(AssociationTargetType targetType, Long targetId);
 }

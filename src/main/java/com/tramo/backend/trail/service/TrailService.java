@@ -6,6 +6,7 @@ import com.tramo.backend.trail.dto.TrailRequestDTO;
 import com.tramo.backend.trail.dto.TrailResponseDTO;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
+import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -85,10 +86,13 @@ public class TrailService {
             Long itemId = membership.getItem().getId();
             trailItemRepository.delete(membership);
             if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                itemLinkRepository.deleteBySourceItemIdOrTargetItemId(itemId, itemId);
+                itemLinkRepository.deleteBySourceItemId(itemId);
+                itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
                 itemRepository.deleteById(itemId);
             }
         }
+        // Drop associations that pointed at this trail as a whole.
+        itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, id);
         trailRepository.delete(trail);
     }
 
@@ -108,7 +112,9 @@ public class TrailService {
                 trail.getVisibility(),
                 trail.getCreationDate(),
                 trail.getModifiedDate(),
-                projectIdCodec.encode(trail.getProject().getId())
+                projectIdCodec.encode(trail.getProject().getId()),
+                trail.getVersion(),
+                trail.getForkedFrom() != null ? trail.getForkedFrom().getId() : null
         );
     }
 }

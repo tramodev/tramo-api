@@ -20,6 +20,16 @@ public class Trail {
     private String visibility;
     private Date creationDate;
     private Date modifiedDate;
+
+    // Bumped when the owner publishes/iterates, so old versions aren't broken.
+    @Column(nullable = false)
+    private int version = 1;
+
+    // Lineage: the original trail this one was forked from (null if not a fork).
+    @ManyToOne
+    @JoinColumn(name = "forked_from_trail_id")
+    private Trail forkedFrom;
+
     @ManyToOne
     @JoinColumn(name="project_id")
     private Project project;

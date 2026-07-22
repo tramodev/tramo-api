@@ -6,6 +6,7 @@ import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
+import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
 import java.util.Date;
@@ -293,58 +295,85 @@ class TrailItemTest extends AbstractIntegrationTest {
         assertThat(itemRepository.findById(itemId)).isEmpty();
     }
 
+    private ResultActions tie(User owner, long sourceItem, String type, String targetType, long targetId) throws Exception {
+        return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
+                .header("Authorization", bearer(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"type\":\"" + type + "\",\"targetType\":\"" + targetType + "\",\"targetId\":" + targetId + "}"));
+    }
+
     @Test
-    void linkingItemsIsSymmetricAndIdempotent() throws Exception {
+    void tyingItemsIsDirectionalAndIdempotent() throws Exception {
         User owner = createUser("linker");
         Project project = createProject(owner, "Linking", "private");
         long trailId = createTrail(owner, project, "Linking trail");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
 
-        mockMvc.perform(post("/api/item/" + itemA + "/link/" + itemB).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
-        mockMvc.perform(post("/api/item/" + itemA + "/link/" + itemB).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
-        mockMvc.perform(post("/api/item/" + itemB + "/link/" + itemA).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
+        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent());
+        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent()); // idempotent
 
         assertThat(itemLinkRepository.count()).isEqualTo(1);
 
-        mockMvc.perform(get("/api/item/" + itemB + "/link").header("Authorization", bearer(owner)))
+        mockMvc.perform(get("/api/item/" + itemA + "/association").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].title").value("A"));
+                .andExpect(jsonPath("$[0].targetType").value("ITEM"))
+                .andExpect(jsonPath("$[0].type").value("RELATED"))
+                .andExpect(jsonPath("$[0].targetTitle").value("B"));
+
+        // directional: B has no outgoing association back to A
+        mockMvc.perform(get("/api/item/" + itemB + "/association").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
-    void selfLinkIsRejected() throws Exception {
+    void canTieItemToTrail() throws Exception {
+        User owner = createUser("trailtier");
+        Project project = createProject(owner, "TrailTie", "private");
+        long trailId = createTrail(owner, project, "Target trail");
+        long otherTrail = createTrail(owner, project, "Source trail");
+        long itemId = createItem(owner, otherTrail, "Pointer");
+
+        tie(owner, itemId, "ELABORATES", "TRAIL", trailId).andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/item/" + itemId + "/association").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].targetType").value("TRAIL"))
+                .andExpect(jsonPath("$[0].type").value("ELABORATES"))
+                .andExpect(jsonPath("$[0].targetTitle").value("Target trail"));
+    }
+
+    @Test
+    void selfTieIsRejected() throws Exception {
         User owner = createUser("selflinker");
         Project project = createProject(owner, "Selfish", "private");
         long trailId = createTrail(owner, project, "Selfish trail");
         long itemId = createItem(owner, trailId, "Alone");
 
-        mockMvc.perform(post("/api/item/" + itemId + "/link/" + itemId).header("Authorization", bearer(owner)))
-                .andExpect(status().isBadRequest());
+        tie(owner, itemId, "RELATED", "ITEM", itemId).andExpect(status().isBadRequest());
     }
 
     @Test
-    void unlinkRemovesEitherDirection() throws Exception {
+    void untieRemovesAssociation() throws Exception {
         User owner = createUser("unlinker");
         Project project = createProject(owner, "Unlinking", "private");
         long trailId = createTrail(owner, project, "Unlinking trail");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
 
-        mockMvc.perform(post("/api/item/" + itemA + "/link/" + itemB).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/item/" + itemB + "/link/" + itemA).header("Authorization", bearer(owner)))
+        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/item/" + itemA + "/tie?targetType=ITEM&targetId=" + itemB)
+                        .header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
         assertThat(itemLinkRepository.count()).isZero();
     }
 
     @Test
-    void cannotLinkToAnotherUsersItem() throws Exception {
+    void cannotTieToAnotherUsersItem() throws Exception {
         User owner = createUser("linkowner");
         User other = createUser("linkother");
         Project mine = createProject(owner, "MineL", "private");
@@ -354,8 +383,106 @@ class TrailItemTest extends AbstractIntegrationTest {
         long myItem = createItem(owner, myTrail, "My item");
         long theirItem = createItem(other, theirTrail, "Their item");
 
-        mockMvc.perform(post("/api/item/" + myItem + "/link/" + theirItem).header("Authorization", bearer(owner)))
-                .andExpect(status().isForbidden());
+        tie(owner, myItem, "RELATED", "ITEM", theirItem).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void forkCopiesItemAssociations() throws Exception {
+        User owner = createUser("forkorigin");
+        User forker = createUser("forkuser");
+        Project source = createProject(owner, "Forkable", "published");
+        long trailId = createTrail(owner, source, "T");
+        long itemA = createItem(owner, trailId, "A");
+        long itemB = createItem(owner, trailId, "B");
+        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
+
+        assertThat(itemLinkRepository.count()).isEqualTo(1);
+        postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
+        // the fork snapshot duplicates the association onto the copied items
+        assertThat(itemLinkRepository.count()).isEqualTo(2);
+    }
+
+    private ResultActions blaze(User owner, long trailId, long itemId, String jsonBody) throws Exception {
+        return mockMvc.perform(put("/api/trail/" + trailId + "/item/" + itemId)
+                .header("Authorization", bearer(owner))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonBody));
+    }
+
+    @Test
+    void blazeSetsStepAnnotation() throws Exception {
+        User owner = createUser("blazer");
+        Project project = createProject(owner, "Blaze", "private");
+        long trailId = createTrail(owner, project, "T");
+        long itemId = createItem(owner, trailId, "Step");
+
+        blaze(owner, trailId, itemId, "{\"annotation\":\"because it follows\"}")
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].annotation").value("because it follows"));
+    }
+
+    @Test
+    void blazeSetsStepAssociation() throws Exception {
+        User owner = createUser("blazer2");
+        Project project = createProject(owner, "Blaze2", "private");
+        long trailId = createTrail(owner, project, "T");
+        long itemA = createItem(owner, trailId, "A");
+        long itemB = createItem(owner, trailId, "B");
+        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
+
+        String assocResponse = mockMvc.perform(get("/api/item/" + itemA + "/association")
+                        .header("Authorization", bearer(owner)))
+                .andReturn().getResponse().getContentAsString();
+        String assocId = JsonPath.read(assocResponse, "$[0].id");
+
+        // mark that item B was reached via that association
+        blaze(owner, trailId, itemB, "{\"associationId\":" + assocId + "}")
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[1].associationId").value(assocId));
+    }
+
+    @Test
+    void publishBumpsTrailVersion() throws Exception {
+        User owner = createUser("publisher");
+        Project project = createProject(owner, "Pub", "private", "A description", null);
+        long trailId = createTrail(owner, project, "T");
+
+        mockMvc.perform(get("/api/trail/" + trailId).header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"visibility\":\"published\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/trail/" + trailId).header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.version").value(2));
+    }
+
+    @Test
+    void forkCopiesAnnotationsAndForkedFrom() throws Exception {
+        User owner = createUser("forkann");
+        User forker = createUser("forkann2");
+        Project source = createProject(owner, "Forkable", "published");
+        long trailId = createTrail(owner, source, "T");
+        long itemId = createItem(owner, trailId, "Step");
+        blaze(owner, trailId, itemId, "{\"annotation\":\"copied note\"}")
+                .andExpect(status().isNoContent());
+
+        String forkId = postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
+        Project fork = projectRepository.findById(projectIdCodec.decode(forkId)).orElseThrow();
+        Trail forkedTrail = trailRepository.findByProjectId(fork.getId()).get(0);
+
+        assertThat(forkedTrail.getForkedFrom()).isNotNull();
+        assertThat(trailItemRepository.findByTrailIdOrderByOrderIndexAsc(forkedTrail.getId()).get(0).getAnnotation())
+                .isEqualTo("copied note");
     }
 
     @Test

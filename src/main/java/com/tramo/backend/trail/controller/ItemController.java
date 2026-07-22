@@ -1,9 +1,14 @@
 package com.tramo.backend.trail.controller;
 
+import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
+import com.tramo.backend.trail.dto.StepUpdateRequestDTO;
+import com.tramo.backend.trail.dto.TieRequestDTO;
+import com.tramo.backend.trail.dto.TrailItemDTO;
+import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.user.entity.User;
 import jakarta.validation.Valid;
@@ -29,7 +34,7 @@ public class ItemController {
     }
 
     @GetMapping("/trail/{trailId}/item")
-    public ResponseEntity<List<ItemResponseDTO>> getAllForTrail(@PathVariable Long trailId, @AuthenticationPrincipal User user) {
+    public ResponseEntity<List<TrailItemDTO>> getAllForTrail(@PathVariable Long trailId, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.getAllForTrail(trailId, user));
     }
 
@@ -69,20 +74,33 @@ public class ItemController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/item/{id}/link/{targetId}")
-    public ResponseEntity<Void> link(@PathVariable Long id, @PathVariable Long targetId, @AuthenticationPrincipal User user) {
-        itemService.linkItems(id, targetId, user);
+    // "blaze": set a step's annotation + which association was used to reach it.
+    @PutMapping("/trail/{trailId}/item/{itemId}")
+    public ResponseEntity<Void> updateStep(@PathVariable Long trailId, @PathVariable Long itemId,
+                                           @RequestBody StepUpdateRequestDTO request,
+                                           @AuthenticationPrincipal User user) {
+        itemService.updateStep(trailId, itemId, request.annotation(), request.associationId(), user);
         return ResponseEntity.noContent().build();
     }
 
-    @DeleteMapping("/item/{id}/link/{targetId}")
-    public ResponseEntity<Void> unlink(@PathVariable Long id, @PathVariable Long targetId, @AuthenticationPrincipal User user) {
-        itemService.unlinkItems(id, targetId, user);
+    @PostMapping("/item/{id}/tie")
+    public ResponseEntity<Void> tie(@PathVariable Long id, @Valid @RequestBody TieRequestDTO request,
+                                    @AuthenticationPrincipal User user) {
+        itemService.tie(id, request.type(), request.targetType(), request.targetId(), user);
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/item/{id}/link")
-    public ResponseEntity<List<ItemResponseDTO>> getLinks(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(itemService.getLinkedItems(id, user));
+    @DeleteMapping("/item/{id}/tie")
+    public ResponseEntity<Void> untie(@PathVariable Long id,
+                                      @RequestParam AssociationTargetType targetType,
+                                      @RequestParam Long targetId,
+                                      @AuthenticationPrincipal User user) {
+        itemService.untie(id, targetType, targetId, user);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/item/{id}/association")
+    public ResponseEntity<List<AssociationDTO>> getAssociations(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getAssociations(id, user));
     }
 }

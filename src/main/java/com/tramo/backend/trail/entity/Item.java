@@ -26,10 +26,9 @@ public class Item {
     @OneToMany(mappedBy = "item")
     List<TrailItem> trailItem;
 
+    // Outgoing associations (this item as source). Incoming ones are polymorphic
+    // (target_type/target_id), so they are cleaned explicitly in the service layer.
     @OneToMany(mappedBy = "sourceItem", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Association> outgoingLinks;
-
-    @OneToMany(mappedBy = "targetItem", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Association> incomingLinks;
 
 }

@@ -11,19 +11,26 @@ import java.util.Date;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(uniqueConstraints = @UniqueConstraint(columnNames = {"source_item_id", "target_item_id"}))
+@Table(uniqueConstraints = @UniqueConstraint(columnNames = {"source_item_id", "target_type", "target_id"}))
 public class Association {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
+    // The source is always an Item; the target is polymorphic (Item or Trail).
     @ManyToOne
     @JoinColumn(name = "source_item_id")
     private Item sourceItem;
 
-    @ManyToOne
-    @JoinColumn(name = "target_item_id")
-    private Item targetItem;
+    @Enumerated(EnumType.STRING)
+    private AssociationType type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_type")
+    private AssociationTargetType targetType;
+
+    @Column(name = "target_id")
+    private Long targetId;
 
     private Date createdDate;
 }

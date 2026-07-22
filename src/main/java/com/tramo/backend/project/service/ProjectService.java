@@ -11,6 +11,7 @@ import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
 import com.tramo.backend.trail.entity.Association;
+import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.repository.AssociationRepository;
@@ -207,6 +208,14 @@ public class ProjectService {
         }
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
+            if (!"published".equals(previousVisibility)) {
+                // ponytail: publishing the project bumps every trail's version.
+                // Move this to a per-trail publish if that granularity is ever added.
+                for (Trail trail : trailRepository.findByProjectId(project.getId())) {
+                    trail.setVersion(trail.getVersion() + 1);
+                    trailRepository.save(trail);
+                }
+            }
             // first-ever publish only — republishing after a temporary private is not news
             // (deliberate re-announcement is what SHARE is for)
             if (!"published".equals(previousVisibility) && firstPublish) {
@@ -239,10 +248,12 @@ public class ProjectService {
                 Long itemId = membership.getItem().getId();
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                    itemLinkRepository.deleteBySourceItemIdOrTargetItemId(itemId, itemId);
+                    itemLinkRepository.deleteBySourceItemId(itemId);
+                    itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
                     itemRepository.deleteById(itemId);
                 }
             }
+            itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, trail.getId());
             trailRepository.delete(trail);
         }
         projectVoteRepository.deleteByProjectId(id);
@@ -292,6 +303,11 @@ public class ProjectService {
         fork = projectRepository.save(fork);
 
         Map<Long, Item> itemCopies = new HashMap<>();
+        Map<Long, Trail> trailCopies = new HashMap<>();
+        // Track source→copy step pairs so we can wire each step's association after
+        // the associations themselves have been copied.
+        List<TrailItem> sourceSteps = new ArrayList<>();
+        List<TrailItem> copiedSteps = new ArrayList<>();
         for (Trail sourceTrail : trailRepository.findByProjectId(sourceProjectId)) {
             Trail trailCopy = new Trail();
             trailCopy.setTitle(sourceTrail.getTitle());
@@ -299,7 +315,9 @@ public class ProjectService {
             trailCopy.setCreationDate(new Date());
             trailCopy.setModifiedDate(new Date());
             trailCopy.setProject(fork);
+            trailCopy.setForkedFrom(sourceTrail);
             trailCopy = trailRepository.save(trailCopy);
+            trailCopies.put(sourceTrail.getId(), trailCopy);
 
             for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
                 Item itemCopy = itemCopies.computeIfAbsent(membership.getItem().getId(),
@@ -309,24 +327,50 @@ public class ProjectService {
                 membershipCopy.setTrail(trailCopy);
                 membershipCopy.setItem(itemCopy);
                 membershipCopy.setOrderIndex(membership.getOrderIndex());
-                trailItemRepository.save(membershipCopy);
+                membershipCopy.setAnnotation(membership.getAnnotation());
+                membershipCopy = trailItemRepository.save(membershipCopy);
+                sourceSteps.add(membership);
+                copiedSteps.add(membershipCopy);
             }
         }
 
-        Set<Long> copiedLinkIds = new HashSet<>();
+        // Copy associations, remapping polymorphic targets to their fork copies.
+        // Associations pointing outside the snapshot are dropped. Keep old→new so
+        // steps can re-point their association below.
+        Map<Long, Association> assocCopies = new HashMap<>();
         for (Long sourceItemId : itemCopies.keySet()) {
-            for (Association link : itemLinkRepository.findBySourceItemIdOrTargetItemId(sourceItemId, sourceItemId)) {
-                if (!copiedLinkIds.add(link.getId())) continue;
-                Item newSource = itemCopies.get(link.getSourceItem().getId());
-                Item newTarget = itemCopies.get(link.getTargetItem().getId());
-                if (newSource == null || newTarget == null) continue;
+            for (Association assoc : itemLinkRepository.findBySourceItemId(sourceItemId)) {
+                Long newTargetId = switch (assoc.getTargetType()) {
+                    case ITEM -> {
+                        Item t = itemCopies.get(assoc.getTargetId());
+                        yield t != null ? t.getId() : null;
+                    }
+                    case TRAIL -> {
+                        Trail t = trailCopies.get(assoc.getTargetId());
+                        yield t != null ? t.getId() : null;
+                    }
+                };
+                if (newTargetId == null) continue;
 
-                Association linkCopy = new Association();
-                linkCopy.setSourceItem(newSource);
-                linkCopy.setTargetItem(newTarget);
-                linkCopy.setCreatedDate(new Date());
-                itemLinkRepository.save(linkCopy);
+                Association copy = new Association();
+                copy.setSourceItem(itemCopies.get(sourceItemId));
+                copy.setType(assoc.getType());
+                copy.setTargetType(assoc.getTargetType());
+                copy.setTargetId(newTargetId);
+                copy.setCreatedDate(new Date());
+                assocCopies.put(assoc.getId(), itemLinkRepository.save(copy));
             }
+        }
+
+        // Re-point each copied step at the copied association it used (drop if not copied).
+        for (int i = 0; i < sourceSteps.size(); i++) {
+            Association srcAssoc = sourceSteps.get(i).getAssociation();
+            if (srcAssoc == null) continue;
+            Association newAssoc = assocCopies.get(srcAssoc.getId());
+            if (newAssoc == null) continue;
+            TrailItem copy = copiedSteps.get(i);
+            copy.setAssociation(newAssoc);
+            trailItemRepository.save(copy);
         }
 
         notificationService.recordEvent(source.getOwner(), "FORK", source, requester);

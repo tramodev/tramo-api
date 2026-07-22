@@ -21,4 +21,12 @@ public class TrailItem {
     private Item item;
 
     int orderIndex;
+
+    // Human text linking this step to the next — what makes a trail studyable on its own.
+    @Column(columnDefinition = "TEXT")
+    private String annotation;
+
+    // Which graph association was used to jump here from the previous step; null = deliberate jump.
+    @ManyToOne
+    private Association association;
 }
