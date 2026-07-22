@@ -1,10 +1,10 @@
-package com.tramo.backend.path.dto;
+package com.tramo.backend.trail.dto;
 
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class IdeaContentRequestDTO {
+public class ItemContentRequestDTO {
     private String content;
 }

@@ -36,14 +36,14 @@ class QueryCountTest extends AbstractIntegrationTest {
         return statistics.getPrepareStatementCount();
     }
 
-    private Project seedPublishedProject(User owner, String title, int paths, int ideasPerPath, User voter) throws Exception {
+    private Project seedPublishedProject(User owner, String title, int trails, int itemsPerTrail, User voter) throws Exception {
         Project project = createProject(owner, title, "published", "A description", "java,testing");
-        for (int p = 0; p < paths; p++) {
-            long pathId = postForId(owner, "/api/project/" + pid(project) + "/path", """
-                    {"title":"Path %d"}""".formatted(p));
-            for (int i = 0; i < ideasPerPath; i++) {
-                postForId(owner, "/api/path/" + pathId + "/idea", """
-                        {"title":"Idea %d"}""".formatted(i));
+        for (int p = 0; p < trails; p++) {
+            long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                    {"title":"Trail %d"}""".formatted(p));
+            for (int i = 0; i < itemsPerTrail; i++) {
+                postForId(owner, "/api/trail/" + trailId + "/item", """
+                        {"title":"Item %d"}""".formatted(i));
             }
         }
         if (voter != null) {
@@ -121,7 +121,7 @@ class QueryCountTest extends AbstractIntegrationTest {
     void explorePageTwoQueryCountDoesNotScaleWithTotalFeedSize() throws Exception {
         // Seed enough that page 1 is a full page of 10 in both runs (a short final page lets
         // Spring Data infer "last page" and skip the count query, which would make the query
-        // count differ for a reason unrelated to scaling — keep both runs on the same code path).
+        // count differ for a reason unrelated to scaling — keep both runs on the same code trail).
         User author = createUser("qcpageauthor");
         User fan = createUser("qcpagefan");
         for (int i = 0; i < 22; i++) {

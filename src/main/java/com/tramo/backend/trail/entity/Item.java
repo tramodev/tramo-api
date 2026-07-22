@@ -1,4 +1,4 @@
-package com.tramo.backend.path.entity;
+package com.tramo.backend.trail.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -12,7 +12,7 @@ import java.util.List;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Idea {
+public class Item {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
@@ -22,14 +22,14 @@ public class Idea {
     private Date createdDate;
     private Date modifiedDate;
     @OneToOne(cascade = CascadeType.ALL)
-    private IdeaContent content;
-    @OneToMany(mappedBy = "idea")
-    List<PathIdea> pathIdea;
+    private ItemContent content;
+    @OneToMany(mappedBy = "item")
+    List<TrailItem> trailItem;
 
-    @OneToMany(mappedBy = "sourceIdea", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<IdeaLink> outgoingLinks;
+    @OneToMany(mappedBy = "sourceItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Association> outgoingLinks;
 
-    @OneToMany(mappedBy = "targetIdea", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<IdeaLink> incomingLinks;
+    @OneToMany(mappedBy = "targetItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Association> incomingLinks;
 
 }

@@ -8,7 +8,7 @@ import lombok.Setter;
 @Setter
 @AllArgsConstructor
 public class ProfileStatsDTO {
-    private long pathsPublished;
+    private long trailsPublished;
     private long upvotesReceived;
     private long totalViews;
     private long forksCount;

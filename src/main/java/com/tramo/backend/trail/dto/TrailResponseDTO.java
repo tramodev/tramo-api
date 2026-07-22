@@ -1,4 +1,4 @@
-package com.tramo.backend.path.dto;
+package com.tramo.backend.trail.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -9,11 +9,11 @@ import java.util.Date;
 @Getter
 @Setter
 @AllArgsConstructor
-public class IdeaResponseDTO {
+public class TrailResponseDTO {
     private Long id;
     private String title;
-    private String type;
-    private String titleAlign;
-    private Date createdDate;
+    private String visibility;
+    private Date creationDate;
     private Date modifiedDate;
+    private String projectId;
 }

@@ -8,15 +8,15 @@ import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.subscription.service.SubscriptionService;
-import com.tramo.backend.path.entity.Idea;
-import com.tramo.backend.path.entity.IdeaContent;
-import com.tramo.backend.path.entity.IdeaLink;
-import com.tramo.backend.path.entity.Path;
-import com.tramo.backend.path.entity.PathIdea;
-import com.tramo.backend.path.repository.IdeaLinkRepository;
-import com.tramo.backend.path.repository.IdeaRepository;
-import com.tramo.backend.path.repository.PathIdeaRepository;
-import com.tramo.backend.path.repository.PathRepository;
+import com.tramo.backend.trail.entity.Item;
+import com.tramo.backend.trail.entity.ItemContent;
+import com.tramo.backend.trail.entity.Association;
+import com.tramo.backend.trail.entity.Trail;
+import com.tramo.backend.trail.entity.TrailItem;
+import com.tramo.backend.trail.repository.AssociationRepository;
+import com.tramo.backend.trail.repository.ItemRepository;
+import com.tramo.backend.trail.repository.TrailItemRepository;
+import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.dto.ActivityItemDTO;
 import com.tramo.backend.project.dto.AuthorCountDTO;
 import com.tramo.backend.project.dto.BadgeDTO;
@@ -31,8 +31,8 @@ import com.tramo.backend.project.dto.ProfileStatsDTO;
 import com.tramo.backend.project.dto.ProjectFeedItemDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
-import com.tramo.backend.project.dto.PublicIdeaDTO;
-import com.tramo.backend.project.dto.PublicPathDTO;
+import com.tramo.backend.project.dto.PublicItemDTO;
+import com.tramo.backend.project.dto.PublicTrailDTO;
 import com.tramo.backend.project.dto.PublicProfileDTO;
 import com.tramo.backend.project.dto.PublicProjectResponseDTO;
 import com.tramo.backend.project.dto.TagCountDTO;
@@ -89,13 +89,13 @@ public class ProjectService {
     private volatile List<AuthorCountDTO> cachedActiveAuthors = List.of();
 
     private final ProjectRepository projectRepository;
-    private final PathRepository pathRepository;
-    private final PathIdeaRepository pathIdeaRepository;
-    private final IdeaRepository ideaRepository;
+    private final TrailRepository trailRepository;
+    private final TrailItemRepository trailItemRepository;
+    private final ItemRepository itemRepository;
     private final ProjectVoteRepository projectVoteRepository;
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final ProjectViewRepository projectViewRepository;
-    private final IdeaLinkRepository ideaLinkRepository;
+    private final AssociationRepository itemLinkRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
     private final BlockedUserRepository blockedUserRepository;
@@ -108,10 +108,10 @@ public class ProjectService {
     private final R2Client r2Client;
     private final SubscriptionService subscriptionService;
 
-    public ProjectService(ProjectRepository projectRepository, PathRepository pathRepository,
-                           PathIdeaRepository pathIdeaRepository, IdeaRepository ideaRepository,
+    public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
+                           TrailItemRepository trailItemRepository, ItemRepository itemRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
-                           ProjectViewRepository projectViewRepository, IdeaLinkRepository ideaLinkRepository,
+                           ProjectViewRepository projectViewRepository, AssociationRepository itemLinkRepository,
                            UserRepository userRepository, FollowRepository followRepository,
                            BlockedUserRepository blockedUserRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
@@ -120,10 +120,10 @@ public class ProjectService {
                            R2Client r2Client, SubscriptionService subscriptionService) {
         this.subscriptionService = subscriptionService;
         this.projectRepository = projectRepository;
-        this.pathRepository = pathRepository;
-        this.pathIdeaRepository = pathIdeaRepository;
-        this.ideaRepository = ideaRepository;
-        this.ideaLinkRepository = ideaLinkRepository;
+        this.trailRepository = trailRepository;
+        this.trailItemRepository = trailItemRepository;
+        this.itemRepository = itemRepository;
+        this.itemLinkRepository = itemLinkRepository;
         this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
@@ -233,17 +233,17 @@ public class ProjectService {
     @Transactional
     public void delete(Long id, User requester) {
         Project project = getOwnedProject(id, requester);
-        for (Path path : pathRepository.findByProjectId(id)) {
-            List<PathIdea> memberships = pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(path.getId());
-            for (PathIdea membership : memberships) {
-                Long ideaId = membership.getIdea().getId();
-                pathIdeaRepository.delete(membership);
-                if (pathIdeaRepository.findByIdeaId(ideaId).isEmpty()) {
-                    ideaLinkRepository.deleteBySourceIdeaIdOrTargetIdeaId(ideaId, ideaId);
-                    ideaRepository.deleteById(ideaId);
+        for (Trail trail : trailRepository.findByProjectId(id)) {
+            List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trail.getId());
+            for (TrailItem membership : memberships) {
+                Long itemId = membership.getItem().getId();
+                trailItemRepository.delete(membership);
+                if (trailItemRepository.findByItemId(itemId).isEmpty()) {
+                    itemLinkRepository.deleteBySourceItemIdOrTargetItemId(itemId, itemId);
+                    itemRepository.deleteById(itemId);
                 }
             }
-            pathRepository.delete(path);
+            trailRepository.delete(trail);
         }
         projectVoteRepository.deleteByProjectId(id);
         projectBookmarkRepository.deleteByProjectId(id);
@@ -291,41 +291,41 @@ public class ProjectService {
         fork.setModifiedDate(new Date());
         fork = projectRepository.save(fork);
 
-        Map<Long, Idea> ideaCopies = new HashMap<>();
-        for (Path sourcePath : pathRepository.findByProjectId(sourceProjectId)) {
-            Path pathCopy = new Path();
-            pathCopy.setTitle(sourcePath.getTitle());
-            pathCopy.setVisibility(sourcePath.getVisibility());
-            pathCopy.setCreationDate(new Date());
-            pathCopy.setModifiedDate(new Date());
-            pathCopy.setProject(fork);
-            pathCopy = pathRepository.save(pathCopy);
+        Map<Long, Item> itemCopies = new HashMap<>();
+        for (Trail sourceTrail : trailRepository.findByProjectId(sourceProjectId)) {
+            Trail trailCopy = new Trail();
+            trailCopy.setTitle(sourceTrail.getTitle());
+            trailCopy.setVisibility(sourceTrail.getVisibility());
+            trailCopy.setCreationDate(new Date());
+            trailCopy.setModifiedDate(new Date());
+            trailCopy.setProject(fork);
+            trailCopy = trailRepository.save(trailCopy);
 
-            for (PathIdea membership : pathIdeaRepository.findByPathIdOrderByOrderIndexAsc(sourcePath.getId())) {
-                Idea ideaCopy = ideaCopies.computeIfAbsent(membership.getIdea().getId(),
-                        ignored -> copyIdea(membership.getIdea()));
+            for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
+                Item itemCopy = itemCopies.computeIfAbsent(membership.getItem().getId(),
+                        ignored -> copyItem(membership.getItem()));
 
-                PathIdea membershipCopy = new PathIdea();
-                membershipCopy.setPath(pathCopy);
-                membershipCopy.setIdea(ideaCopy);
+                TrailItem membershipCopy = new TrailItem();
+                membershipCopy.setTrail(trailCopy);
+                membershipCopy.setItem(itemCopy);
                 membershipCopy.setOrderIndex(membership.getOrderIndex());
-                pathIdeaRepository.save(membershipCopy);
+                trailItemRepository.save(membershipCopy);
             }
         }
 
         Set<Long> copiedLinkIds = new HashSet<>();
-        for (Long sourceIdeaId : ideaCopies.keySet()) {
-            for (IdeaLink link : ideaLinkRepository.findBySourceIdeaIdOrTargetIdeaId(sourceIdeaId, sourceIdeaId)) {
+        for (Long sourceItemId : itemCopies.keySet()) {
+            for (Association link : itemLinkRepository.findBySourceItemIdOrTargetItemId(sourceItemId, sourceItemId)) {
                 if (!copiedLinkIds.add(link.getId())) continue;
-                Idea newSource = ideaCopies.get(link.getSourceIdea().getId());
-                Idea newTarget = ideaCopies.get(link.getTargetIdea().getId());
+                Item newSource = itemCopies.get(link.getSourceItem().getId());
+                Item newTarget = itemCopies.get(link.getTargetItem().getId());
                 if (newSource == null || newTarget == null) continue;
 
-                IdeaLink linkCopy = new IdeaLink();
-                linkCopy.setSourceIdea(newSource);
-                linkCopy.setTargetIdea(newTarget);
+                Association linkCopy = new Association();
+                linkCopy.setSourceItem(newSource);
+                linkCopy.setTargetItem(newTarget);
                 linkCopy.setCreatedDate(new Date());
-                ideaLinkRepository.save(linkCopy);
+                itemLinkRepository.save(linkCopy);
             }
         }
 
@@ -334,19 +334,19 @@ public class ProjectService {
         return toResponse(fork);
     }
 
-    private Idea copyIdea(Idea source) {
-        Idea copy = new Idea();
+    private Item copyItem(Item source) {
+        Item copy = new Item();
         copy.setTitle(source.getTitle());
         copy.setType(source.getType());
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (source.getContent() != null) {
-            IdeaContent contentCopy = new IdeaContent();
+            ItemContent contentCopy = new ItemContent();
             contentCopy.setContent(source.getContent().getContent());
             contentCopy.setUpdatedDate(new Date());
             copy.setContent(contentCopy);
         }
-        return ideaRepository.save(copy);
+        return itemRepository.save(copy);
     }
 
     @Transactional
@@ -376,20 +376,20 @@ public class ProjectService {
             }
         }
 
-        List<Path> projectPaths = pathRepository.findByProjectId(id);
-        Map<Long, List<PathIdea>> ideasByPathId = projectPaths.isEmpty()
+        List<Trail> projectTrails = trailRepository.findByProjectId(id);
+        Map<Long, List<TrailItem>> itemsByTrailId = projectTrails.isEmpty()
                 ? Map.of()
-                : pathIdeaRepository.findByPathIdInWithIdeaAndContent(projectPaths.stream().map(Path::getId).toList())
+                : trailItemRepository.findByTrailIdInWithItemAndContent(projectTrails.stream().map(Trail::getId).toList())
                 .stream()
-                .collect(Collectors.groupingBy(pathIdea -> pathIdea.getPath().getId()));
+                .collect(Collectors.groupingBy(trailItem -> trailItem.getTrail().getId()));
 
-        List<PublicPathDTO> paths = projectPaths.stream()
-                .map(path -> new PublicPathDTO(
-                        path.getId(),
-                        path.getTitle(),
-                        ideasByPathId.getOrDefault(path.getId(), List.of()).stream()
-                                .map(PathIdea::getIdea)
-                                .map(this::toPublicIdea)
+        List<PublicTrailDTO> trails = projectTrails.stream()
+                .map(trail -> new PublicTrailDTO(
+                        trail.getId(),
+                        trail.getTitle(),
+                        itemsByTrailId.getOrDefault(trail.getId(), List.of()).stream()
+                                .map(TrailItem::getItem)
+                                .map(this::toPublicItem)
                                 .toList()
                 ))
                 .toList();
@@ -400,7 +400,7 @@ public class ProjectService {
                 project.getDescription(),
                 project.getOwner().getUsername(),
                 project.getModifiedDate(),
-                paths,
+                trails,
                 projectVoteRepository.countByProjectId(id),
                 requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
                 requester != null && projectBookmarkRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
@@ -651,13 +651,13 @@ public class ProjectService {
     }
 
     private ProfileStatsDTO getProfileStats(User user) {
-        long pathsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), "published");
+        long trailsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), "published");
         long upvotesReceived = projectVoteRepository.countByProjectOwnerIdAndProjectPublished(user.getId());
         long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
         long forksCount = projectRepository.countByOwnerIdAndForkedFromNotNull(user.getId());
         long followersCount = followRepository.countByFollowedId(user.getId());
         long followingCount = followRepository.countByFollowerId(user.getId());
-        return new ProfileStatsDTO(pathsPublished, upvotesReceived, totalViews, forksCount, followersCount, followingCount);
+        return new ProfileStatsDTO(trailsPublished, upvotesReceived, totalViews, forksCount, followersCount, followingCount);
     }
 
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
@@ -813,8 +813,8 @@ public class ProjectService {
     private List<BadgeDTO> buildBadges(ProfileStatsDTO stats, boolean supporter) {
         List<BadgeDTO> badges = new ArrayList<>();
         badges.add(badge(SubscriptionService.SUPPORTER_BADGE_CODE, "Supporter", "Support Tramo with a subscription", supporter ? 1 : 0, 1));
-        badges.add(badge("first_publish", "First Publish", "Publish your first path", stats.getPathsPublished(), 1));
-        badges.add(badge("prolific", "Prolific", "Publish 10 paths", stats.getPathsPublished(), 10));
+        badges.add(badge("first_publish", "First Publish", "Publish your first trail", stats.getTrailsPublished(), 1));
+        badges.add(badge("prolific", "Prolific", "Publish 10 trails", stats.getTrailsPublished(), 10));
         badges.add(badge("rising_star", "Rising Star", "Earn 10 upvotes", stats.getUpvotesReceived(), 10));
         badges.add(badge("crowd_favorite", "Crowd Favorite", "Earn 100 upvotes", stats.getUpvotesReceived(), 100));
         badges.add(badge("on_the_map", "On the Map", "Reach 1,000 total views", stats.getTotalViews(), ON_THE_MAP_VIEW_THRESHOLD));
@@ -1002,9 +1002,9 @@ public class ProjectService {
         return String.join(",", tags);
     }
 
-    private PublicIdeaDTO toPublicIdea(Idea idea) {
-        String content = idea.getContent() != null ? idea.getContent().getContent() : "";
-        return new PublicIdeaDTO(idea.getId(), idea.getTitle(), idea.getType(), content, idea.getTitleAlign());
+    private PublicItemDTO toPublicItem(Item item) {
+        String content = item.getContent() != null ? item.getContent().getContent() : "";
+        return new PublicItemDTO(item.getId(), item.getTitle(), item.getType(), content, item.getTitleAlign());
     }
 
     public Project getOwnedProject(Long id, User requester) {

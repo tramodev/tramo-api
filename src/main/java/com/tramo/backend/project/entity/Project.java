@@ -1,6 +1,6 @@
 package com.tramo.backend.project.entity;
 
-import com.tramo.backend.path.entity.Path;
+import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.user.entity.User;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -50,5 +50,5 @@ public class Project {
     private Project forkedFrom;
 
     @OneToMany(mappedBy = "project")
-    private List<Path> paths;
+    private List<Trail> trails;
 }

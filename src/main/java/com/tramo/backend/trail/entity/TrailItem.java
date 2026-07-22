@@ -1,4 +1,4 @@
-package com.tramo.backend.path.entity;
+package com.tramo.backend.trail.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -10,15 +10,15 @@ import lombok.Setter;
 @Setter
 @Getter
 @NoArgsConstructor
-public class PathIdea {
+public class TrailItem {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
     @ManyToOne
-    private Path path;
+    private Trail trail;
     @ManyToOne
-    private Idea idea;
+    private Item item;
 
     int orderIndex;
 }

@@ -198,14 +198,14 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteRemovesProjectWithPathsIdeasVotesAndBookmarks() throws Exception {
+    void deleteRemovesProjectWithTrailsItemsVotesAndBookmarks() throws Exception {
         User owner = createUser("demolisher");
         User fan = createUser("fan");
         Project project = createProject(owner, "Doomed", "published");
-        long pathId = postForId(owner, "/api/project/" + pid(project) + "/path", """
-                {"title":"Doomed path"}""");
-        long ideaId = postForId(owner, "/api/path/" + pathId + "/idea", """
-                {"title":"Doomed idea"}""");
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"Doomed trail"}""");
+        long itemId = postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"Doomed item"}""");
 
         mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
@@ -218,7 +218,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         assertThat(projectRepository.findById(project.getId())).isEmpty();
         assertThat(projectVoteRepository.count()).isZero();
         assertThat(projectBookmarkRepository.count()).isZero();
-        mockMvc.perform(get("/api/idea/" + ideaId + "/content").header("Authorization", bearer(owner)))
+        mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
                 .andExpect(status().isNotFound());
     }
 

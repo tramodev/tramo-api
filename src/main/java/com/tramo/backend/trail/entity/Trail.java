@@ -1,4 +1,4 @@
-package com.tramo.backend.path.entity;
+package com.tramo.backend.trail.entity;
 
 import com.tramo.backend.project.entity.Project;
 import jakarta.persistence.*;
@@ -12,7 +12,7 @@ import java.util.List;
 @Setter
 @Getter
 @NoArgsConstructor
-public class Path {
+public class Trail {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
@@ -24,6 +24,6 @@ public class Path {
     @JoinColumn(name="project_id")
     private Project project;
 
-    @OneToMany(mappedBy = "path")
-    private List<PathIdea> pathIdea;
+    @OneToMany(mappedBy = "trail")
+    private List<TrailItem> trailItem;
 }

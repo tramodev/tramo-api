@@ -1,4 +1,4 @@
-package com.tramo.backend.path.entity;
+package com.tramo.backend.trail.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,7 +14,7 @@ import java.util.Date;
 @NoArgsConstructor
 @Getter
 @Setter
-public class IdeaContent {
+public class ItemContent {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;

@@ -4,13 +4,13 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
-
 @Getter
 @Setter
 @AllArgsConstructor
-public class PublicPathDTO {
+public class PublicItemDTO {
     private Long id;
     private String title;
-    private List<PublicIdeaDTO> ideas;
+    private String type;
+    private String content;
+    private String titleAlign;
 }
