@@ -22,6 +22,9 @@ public class JwtService {
     @Value("${app.jwt.secret}")
     private String secretKey;
 
+    @Value("${app.jwt.access-token-ttl-ms:900000}")
+    private long accessTokenTtlMs;
+
     public String getToken(UserDetails user) {
         return getToken(new HashMap<>(), user);
     }
@@ -32,7 +35,7 @@ public class JwtService {
                 .setClaims(extraClaims)
                 .setSubject(user.getUsername())
                 .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis()+1000*60*60*24))
+                .setExpiration(new Date(System.currentTimeMillis() + accessTokenTtlMs))
                 .signWith(getKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

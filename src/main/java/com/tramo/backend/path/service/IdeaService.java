@@ -124,6 +124,7 @@ public class IdeaService {
         return new IdeaContentResponseDTO(content);
     }
 
+    @Transactional
     public void updateContent(Long id, String content, User requester) {
         Idea idea = getOwnedIdea(id, requester);
         IdeaContent ideaContent = idea.getContent();

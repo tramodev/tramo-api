@@ -38,6 +38,30 @@ public class RateLimitFilter implements Filter {
                 case "/api/auth/register" -> rateLimiterService.resolveBucket(
                         ip + ":register", 10, 10, Duration.ofMinutes(1)
                 );
+                // email-triggering endpoints: tight, to prevent mail bombing
+                case "/api/auth/forgot-password" -> rateLimiterService.resolveBucket(
+                        ip + ":forgot-password", 3, 3, Duration.ofMinutes(1)
+                );
+                case "/api/auth/resend-verification" -> rateLimiterService.resolveBucket(
+                        ip + ":resend-verification", 3, 3, Duration.ofMinutes(1)
+                );
+                // token-consuming endpoints: limit brute force
+                case "/api/auth/reset-password" -> rateLimiterService.resolveBucket(
+                        ip + ":reset-password", 10, 10, Duration.ofMinutes(1)
+                );
+                case "/api/auth/verify-email" -> rateLimiterService.resolveBucket(
+                        ip + ":verify-email", 10, 10, Duration.ofMinutes(1)
+                );
+                case "/api/auth/google" -> rateLimiterService.resolveBucket(
+                        ip + ":google", 10, 10, Duration.ofMinutes(1)
+                );
+                case "/api/auth/refresh" -> rateLimiterService.resolveBucket(
+                        ip + ":refresh", 30, 30, Duration.ofMinutes(1)
+                );
+                // availability probes: cap enumeration harvesting (client debounces)
+                case "/api/auth/check-email", "/api/auth/check-username" -> rateLimiterService.resolveBucket(
+                        ip + ":check", 30, 30, Duration.ofMinutes(1)
+                );
                 default -> null;
             };
 

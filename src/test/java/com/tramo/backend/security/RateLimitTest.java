@@ -42,14 +42,21 @@ class RateLimitTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void otherAuthEndpointsAreNotRateLimited() throws Exception {
-        for (int i = 0; i < 15; i++) {
+    void forgotPasswordIsRateLimited() throws Exception {
+        String ip = "172.16.0.4";
+        for (int i = 0; i < 3; i++) {
             mockMvc.perform(post("/api/auth/forgot-password")
-                            .with(remoteAddr("172.16.0.4"))
+                            .with(remoteAddr(ip))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"email":"nobody@example.com"}"""))
                     .andExpect(status().isNoContent());
         }
+        mockMvc.perform(post("/api/auth/forgot-password")
+                        .with(remoteAddr(ip))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"nobody@example.com"}"""))
+                .andExpect(status().is(429));
     }
 }

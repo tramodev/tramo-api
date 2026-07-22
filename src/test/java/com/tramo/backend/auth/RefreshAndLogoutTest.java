@@ -14,6 +14,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,13 +41,13 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void refreshReturnsNewAccessToken() throws Exception {
+    void refreshRotatesTokenAndReturnsWorkingAccessToken() throws Exception {
         User user = createUser("refresher");
         RefreshToken token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
 
         String accessToken = refresh(token.getToken())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.refreshToken").value(token.getToken()))
+                .andExpect(jsonPath("$.refreshToken").value(not(token.getToken())))
                 .andExpect(jsonPath("$.username").value("refresher"))
                 .andReturn().getResponse().getContentAsString()
                 .replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
@@ -54,6 +55,22 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("refresher"));
+    }
+
+    @Test
+    void reusingRotatedTokenDropsTheWholeChain() throws Exception {
+        User user = createUser("reuser");
+        RefreshToken token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+
+        String newToken = refresh(token.getToken())
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()
+                .replaceAll(".*\"refreshToken\":\"([^\"]+)\".*", "$1");
+
+        // presenting the now-revoked original again is treated as theft
+        refresh(token.getToken()).andExpect(status().isUnauthorized());
+        // ...and the freshly issued token is revoked along with the rest of the chain
+        refresh(newToken).andExpect(status().isUnauthorized());
     }
 
     @Test
