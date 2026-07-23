@@ -256,6 +256,13 @@ public class ProjectService {
             itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, trail.getId());
             trailRepository.delete(trail);
         }
+        // Any remaining items of this project (loose or otherwise) — remove them and their links.
+        for (com.tramo.backend.trail.entity.Item item : itemRepository.findByProjectId(id)) {
+            itemLinkRepository.deleteBySourceItemId(item.getId());
+            itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
+            trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
+            itemRepository.delete(item);
+        }
         projectVoteRepository.deleteByProjectId(id);
         projectBookmarkRepository.deleteByProjectId(id);
         projectViewRepository.deleteByProjectId(id);

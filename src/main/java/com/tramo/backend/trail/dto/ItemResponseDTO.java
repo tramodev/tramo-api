@@ -16,4 +16,5 @@ public class ItemResponseDTO {
     private String titleAlign;
     private Date createdDate;
     private Date modifiedDate;
+    private boolean unfiled;
 }

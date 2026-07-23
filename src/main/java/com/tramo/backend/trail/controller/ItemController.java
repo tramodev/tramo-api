@@ -1,5 +1,6 @@
 package com.tramo.backend.trail.controller;
 
+import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
@@ -22,15 +23,29 @@ import java.util.List;
 @RequestMapping("/api")
 public class ItemController {
     private final ItemService itemService;
+    private final ProjectIdCodec projectIdCodec;
 
-    public ItemController(ItemService itemService) {
+    public ItemController(ItemService itemService, ProjectIdCodec projectIdCodec) {
         this.itemService = itemService;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @PostMapping("/trail/{trailId}/item")
     public ResponseEntity<ItemResponseDTO> create(@PathVariable Long trailId, @Valid @RequestBody ItemRequestDTO request,
                                                     @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.create(trailId, request, user));
+    }
+
+    // Loose items — belong to the project, not to any trail.
+    @PostMapping("/project/{projectId}/item")
+    public ResponseEntity<ItemResponseDTO> createLoose(@PathVariable String projectId, @Valid @RequestBody ItemRequestDTO request,
+                                                       @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.createLoose(projectIdCodec.decode(projectId), request, user));
+    }
+
+    @GetMapping("/project/{projectId}/item")
+    public ResponseEntity<List<ItemResponseDTO>> getItemsForProject(@PathVariable String projectId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getItemsForProject(projectIdCodec.decode(projectId), user));
     }
 
     @GetMapping("/trail/{trailId}/item")

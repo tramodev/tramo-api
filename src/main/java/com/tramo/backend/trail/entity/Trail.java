@@ -17,6 +17,8 @@ public class Trail {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
     private String title;
+    @Column(columnDefinition = "TEXT")
+    private String description;
     private String visibility;
     private Date creationDate;
     private Date modifiedDate;

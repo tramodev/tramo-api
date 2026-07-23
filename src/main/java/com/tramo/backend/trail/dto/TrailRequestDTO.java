@@ -7,5 +7,6 @@ import lombok.Setter;
 @Setter
 public class TrailRequestDTO {
     private String title;
+    private String description;
     private String visibility;
 }

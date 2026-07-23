@@ -10,11 +10,16 @@ import java.util.List;
 
 @Repository
 public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
-    List<TrailItem> findByTrailIdOrderByOrderIndexAsc(Long trailId);
+    // Secondary id sort: attach sets orderIndex = count, so after a detach two
+    // rows can share an index — without a tiebreak their order flips between
+    // reloads. id asc = attach order, matching the frontend's append.
+    @Query("SELECT pi FROM TrailItem pi WHERE pi.trail.id = :trailId ORDER BY pi.orderIndex ASC, pi.id ASC")
+    List<TrailItem> findByTrailIdOrderByOrderIndexAsc(@Param("trailId") Long trailId);
+
     List<TrailItem> findByItemId(Long itemId);
     int countByTrailId(Long trailId);
 
-    @Query("SELECT pi FROM TrailItem pi JOIN FETCH pi.item i LEFT JOIN FETCH i.content WHERE pi.trail.id IN :trailIds ORDER BY pi.orderIndex ASC")
+    @Query("SELECT pi FROM TrailItem pi JOIN FETCH pi.item i LEFT JOIN FETCH i.content WHERE pi.trail.id IN :trailIds ORDER BY pi.orderIndex ASC, pi.id ASC")
     List<TrailItem> findByTrailIdInWithItemAndContent(@Param("trailIds") List<Long> trailIds);
 
     @Query("SELECT COUNT(pi) > 0 FROM TrailItem pi WHERE pi.trail.project.owner.id = :ownerId " +

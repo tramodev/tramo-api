@@ -12,6 +12,7 @@ import java.util.Date;
 public class TrailResponseDTO {
     private Long id;
     private String title;
+    private String description;
     private String visibility;
     private Date creationDate;
     private Date modifiedDate;

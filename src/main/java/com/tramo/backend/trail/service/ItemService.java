@@ -78,6 +78,7 @@ public class ItemService {
         item.setType(request.getType());
         item.setTitleAlign("center");
         item.setContent(content);
+        item.setProject(trail.getProject());
         item.setCreatedDate(new Date());
         item.setModifiedDate(new Date());
         item = itemRepository.save(item);
@@ -89,6 +90,36 @@ public class ItemService {
         trailItemRepository.save(trailItem);
 
         return toResponse(item);
+    }
+
+    // Create a "loose" item that belongs to the project but no trail.
+    public ItemResponseDTO createLoose(Long projectId, ItemRequestDTO request, User requester) {
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new IllegalArgumentException("Title is required");
+        }
+        Project project = getOwnedProject(projectId, requester);
+
+        ItemContent content = new ItemContent();
+        content.setContent("");
+        content.setUpdatedDate(new Date());
+
+        Item item = new Item();
+        item.setTitle(request.getTitle());
+        item.setType(request.getType());
+        item.setTitleAlign("center");
+        item.setContent(content);
+        item.setProject(project);
+        item.setUnfiled(true);
+        item.setCreatedDate(new Date());
+        item.setModifiedDate(new Date());
+        return toResponse(itemRepository.save(item));
+    }
+
+    public List<ItemResponseDTO> getItemsForProject(Long projectId, User requester) {
+        getOwnedProject(projectId, requester);
+        return itemRepository.findByProjectId(projectId).stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     public List<TrailItemDTO> getAllForTrail(Long trailId, User requester) {
@@ -249,8 +280,16 @@ public class ItemService {
                 .findFirst()
                 .ifPresent(trailItemRepository::delete);
 
+        // Loose-capable items (with a project) stay; if this was their last
+        // trail they surface in Unfiled. Legacy items (no project) with no
+        // remaining trail are deleted.
         if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
-            deleteItemCompletely(item);
+            if (item.getProject() == null) {
+                deleteItemCompletely(item);
+            } else {
+                item.setUnfiled(true);
+                itemRepository.save(item);
+            }
         }
     }
 
@@ -320,12 +359,23 @@ public class ItemService {
     private Item getOwnedItem(Long id, User requester) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        boolean owns = trailItemRepository.findByItemId(id).stream()
-                .anyMatch(pi -> pi.getTrail().getProject().getOwner().getId().equals(requester.getId()));
+        boolean owns = item.getProject() != null
+                ? item.getProject().getOwner().getId().equals(requester.getId())
+                : trailItemRepository.findByItemId(id).stream()
+                        .anyMatch(pi -> pi.getTrail().getProject().getOwner().getId().equals(requester.getId()));
         if (!owns) {
             throw new AccessDeniedException("Not allowed to access this item");
         }
         return item;
+    }
+
+    private Project getOwnedProject(Long projectId, User requester) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        if (!project.getOwner().getId().equals(requester.getId())) {
+            throw new AccessDeniedException("Not allowed to access this project");
+        }
+        return project;
     }
 
     private ItemResponseDTO toResponse(Item item) {
@@ -335,7 +385,8 @@ public class ItemService {
                 item.getType(),
                 item.getTitleAlign(),
                 item.getCreatedDate(),
-                item.getModifiedDate()
+                item.getModifiedDate(),
+                Boolean.TRUE.equals(item.getUnfiled())
         );
     }
 }

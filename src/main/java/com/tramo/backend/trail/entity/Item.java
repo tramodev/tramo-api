@@ -1,5 +1,6 @@
 package com.tramo.backend.trail.entity;
 
+import com.tramo.backend.project.entity.Project;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,6 +22,18 @@ public class Item {
     private String titleAlign;
     private Date createdDate;
     private Date modifiedDate;
+
+    // The project this item belongs to. Lets an item exist without any trail
+    // ("loose"). Null on legacy items, which resolve ownership via TrailItem.
+    @ManyToOne
+    @JoinColumn(name = "project_id")
+    private Project project;
+
+    // Sticky "Unfiled" membership: set when created loose or when detached from
+    // its last trail; NOT cleared by attaching to a trail (an item can be in
+    // Unfiled and in trails at once). Boolean wrapper: null (legacy rows) = false.
+    private Boolean unfiled = false;
+
     @OneToOne(cascade = CascadeType.ALL)
     private ItemContent content;
     @OneToMany(mappedBy = "item")

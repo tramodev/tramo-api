@@ -4,6 +4,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.trail.dto.TrailRequestDTO;
 import com.tramo.backend.trail.dto.TrailResponseDTO;
+import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.entity.AssociationTargetType;
@@ -48,6 +49,7 @@ public class TrailService {
         Project project = projectService.getOwnedProject(projectId, requester);
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
+        trail.setDescription(request.getDescription());
         trail.setVisibility(request.getVisibility());
         trail.setProject(project);
         trail.setCreationDate(new Date());
@@ -71,6 +73,9 @@ public class TrailService {
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             trail.setTitle(request.getTitle());
         }
+        if (request.getDescription() != null) {
+            trail.setDescription(request.getDescription());
+        }
         if (request.getVisibility() != null) {
             trail.setVisibility(request.getVisibility());
         }
@@ -83,12 +88,19 @@ public class TrailService {
         Trail trail = getOwnedTrail(id, requester);
         List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(id);
         for (TrailItem membership : memberships) {
-            Long itemId = membership.getItem().getId();
+            Item item = membership.getItem();
             trailItemRepository.delete(membership);
-            if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                itemLinkRepository.deleteBySourceItemId(itemId);
-                itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
-                itemRepository.deleteById(itemId);
+            if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
+                if (item.getProject() == null) {
+                    // Legacy item with no other trail: delete it and its links.
+                    itemLinkRepository.deleteBySourceItemId(item.getId());
+                    itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
+                    itemRepository.delete(item);
+                } else {
+                    // Keep it; it surfaces in Unfiled.
+                    item.setUnfiled(true);
+                    itemRepository.save(item);
+                }
             }
         }
         // Drop associations that pointed at this trail as a whole.
@@ -109,6 +121,7 @@ public class TrailService {
         return new TrailResponseDTO(
                 trail.getId(),
                 trail.getTitle(),
+                trail.getDescription(),
                 trail.getVisibility(),
                 trail.getCreationDate(),
                 trail.getModifiedDate(),
