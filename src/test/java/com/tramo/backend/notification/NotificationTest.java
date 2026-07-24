@@ -310,6 +310,41 @@ class NotificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void listNotificationsQueryCountDoesNotScaleWithNotificationCount() throws Exception {
+        User owner = createUser("nqcowner");
+
+        // Each published project voted by a distinct fan is its own UPVOTE notification
+        // row, with a distinct project and latest actor — so a per-row lookup of either
+        // would surface as N+1.
+        voteOnFreshProject(owner, 0);
+
+        // Warm up so any one-time badge notification is already materialised in both runs.
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        for (int i = 1; i < 6; i++) {
+            voteOnFreshProject(owner, i);
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    private void voteOnFreshProject(User owner, int i) throws Exception {
+        Project project = createProject(owner, "Notif QC " + i, "published", "d", null);
+        User fan = createUser("nqcfan" + i);
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void refreshFeaturedProjectNotifiesNewlyFeaturedOwner() throws Exception {
         User owner = createUser("notiffeatured");
         User fan = createUser("notiffeaturedfan");

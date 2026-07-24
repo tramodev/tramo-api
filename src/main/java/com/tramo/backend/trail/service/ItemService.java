@@ -32,7 +32,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ItemService {
@@ -329,15 +331,38 @@ public class ItemService {
     // Outgoing associations of an item, with the resolved target title.
     public List<AssociationDTO> getAssociations(Long id, User requester) {
         Item item = getOwnedItem(id, requester);
-        return itemLinkRepository.findBySourceItemId(item.getId()).stream()
+        List<Association> associations = itemLinkRepository.findBySourceItemId(item.getId());
+
+        // Batch the title lookups by target type so the count is constant (2 queries)
+        // instead of one findById per association (N+1).
+        Map<Long, String> itemTitles = titlesByIdForType(associations, AssociationTargetType.ITEM,
+                itemRepository::findIdTitleByIdIn);
+        Map<Long, String> trailTitles = titlesByIdForType(associations, AssociationTargetType.TRAIL,
+                trailRepository::findIdTitleByIdIn);
+
+        return associations.stream()
                 .map(a -> new AssociationDTO(
                         String.valueOf(a.getId()),
                         a.getType().name(),
                         a.getTargetType().name(),
                         String.valueOf(a.getTargetId()),
-                        targetTitle(a.getTargetType(), a.getTargetId())
+                        (a.getTargetType() == AssociationTargetType.TRAIL ? trailTitles : itemTitles)
+                                .get(a.getTargetId())
                 ))
                 .toList();
+    }
+
+    private Map<Long, String> titlesByIdForType(List<Association> associations, AssociationTargetType type,
+                                                java.util.function.Function<Set<Long>, List<Object[]>> lookup) {
+        Set<Long> ids = associations.stream()
+                .filter(a -> a.getTargetType() == type)
+                .map(Association::getTargetId)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return lookup.apply(ids).stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (String) row[1]));
     }
 
     // Validates ownership of the target and returns its title, or null if it doesn't exist.
@@ -346,14 +371,6 @@ public class ItemService {
             return trailService.getOwnedTrail(targetId, requester).getTitle();
         }
         return getOwnedItem(targetId, requester).getTitle();
-    }
-
-    // Best-effort title lookup for display (no ownership check; used on read paths).
-    private String targetTitle(AssociationTargetType targetType, Long targetId) {
-        if (targetType == AssociationTargetType.TRAIL) {
-            return trailRepository.findById(targetId).map(Trail::getTitle).orElse(null);
-        }
-        return itemRepository.findById(targetId).map(Item::getTitle).orElse(null);
     }
 
     private Item getOwnedItem(Long id, User requester) {

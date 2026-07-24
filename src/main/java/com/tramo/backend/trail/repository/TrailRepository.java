@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -14,4 +15,9 @@ public interface TrailRepository extends JpaRepository<Trail, Long> {
     // (reload-dependent) order and the sidebar shuffles.
     @Query("select t from Trail t where t.project.id = :projectId order by t.id asc")
     List<Trail> findByProjectId(@Param("projectId") Long projectId);
+
+    // id + title only: association-target title lookups don't need each trail's
+    // EAGER project/forkedFrom associations pulled in.
+    @Query("SELECT t.id, t.title FROM Trail t WHERE t.id IN :ids")
+    List<Object[]> findIdTitleByIdIn(@Param("ids") Collection<Long> ids);
 }

@@ -5,11 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
-import jakarta.persistence.EntityManagerFactory;
-import org.hibernate.SessionFactory;
-import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -20,21 +16,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class QueryCountTest extends AbstractIntegrationTest {
-
-    @Autowired
-    EntityManagerFactory entityManagerFactory;
-
-    @FunctionalInterface
-    interface HttpCall {
-        void run() throws Exception;
-    }
-
-    private long queryCount(HttpCall call) throws Exception {
-        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-        statistics.clear();
-        call.run();
-        return statistics.getPrepareStatementCount();
-    }
 
     private Project seedPublishedProject(User owner, String title, int trails, int itemsPerTrail, User voter) throws Exception {
         Project project = createProject(owner, title, "published", "A description", "java,testing");

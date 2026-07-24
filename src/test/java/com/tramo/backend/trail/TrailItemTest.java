@@ -147,7 +147,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteTrailDeletesOrphanedItems() throws Exception {
+    void deleteTrailUnfilesItemsThatHaveAProject() throws Exception {
         User owner = createUser("traildeleter");
         Project project = createProject(owner, "Cleanup", "private");
         long trailId = createTrail(owner, project, "Doomed");
@@ -156,7 +156,11 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/trail/" + trailId).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
-        assertThat(itemRepository.findById(itemId)).isEmpty();
+        // The item belongs to the project, so deleting its only trail keeps it —
+        // it surfaces in Unfiled rather than being destroyed.
+        assertThat(itemRepository.findById(itemId)).isPresent();
+        assertThat(itemRepository.findById(itemId).orElseThrow().getUnfiled()).isTrue();
+        assertThat(trailItemRepository.findByItemId(itemId)).isEmpty();
     }
 
     @Test
@@ -272,7 +276,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void attachIsIdempotentAndDetachDeletesOrphan() throws Exception {
+    void attachIsIdempotentAndDetachUnfilesLastCopy() throws Exception {
         User owner = createUser("attacher");
         Project project = createProject(owner, "Attaching", "private");
         long trail1 = createTrail(owner, project, "P1");
@@ -290,9 +294,12 @@ class TrailItemTest extends AbstractIntegrationTest {
         assertThat(trailItemRepository.findByItemId(itemId)).hasSize(1);
         assertThat(itemRepository.findById(itemId)).isPresent();
 
+        // Detaching the last trail keeps the project-owned item and marks it Unfiled.
         mockMvc.perform(delete("/api/trail/" + trail2 + "/item/" + itemId).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
-        assertThat(itemRepository.findById(itemId)).isEmpty();
+        assertThat(trailItemRepository.findByItemId(itemId)).isEmpty();
+        assertThat(itemRepository.findById(itemId)).isPresent();
+        assertThat(itemRepository.findById(itemId).orElseThrow().getUnfiled()).isTrue();
     }
 
     private ResultActions tie(User owner, long sourceItem, String type, String targetType, long targetId) throws Exception {
@@ -525,6 +532,58 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void createLooseItemIsUnfiledAndSurfacesInProjectItems() throws Exception {
+        User owner = createUser("looser");
+        Project project = createProject(owner, "Loose", "private");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/item")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Floating"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Floating"))
+                .andExpect(jsonPath("$.unfiled").value(true));
+
+        // Both trail-bound and loose items belong to the project and are listed together.
+        long trailId = createTrail(owner, project, "T");
+        createItem(owner, trailId, "In a trail");
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/item").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void createLooseRequiresTitle() throws Exception {
+        User owner = createUser("looser2");
+        Project project = createProject(owner, "Loose2", "private");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/item")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":" "}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void projectItemEndpointsEnforceOwnership() throws Exception {
+        User owner = createUser("projitemowner");
+        User intruder = createUser("projitemintruder");
+        Project project = createProject(owner, "Guarded", "private");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/item")
+                        .header("Authorization", bearer(intruder))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Sneaky"}"""))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/project/" + pid(project) + "/item").header("Authorization", bearer(intruder)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

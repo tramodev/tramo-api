@@ -13,7 +13,10 @@ public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
     // Secondary id sort: attach sets orderIndex = count, so after a detach two
     // rows can share an index — without a tiebreak their order flips between
     // reloads. id asc = attach order, matching the frontend's append.
-    @Query("SELECT pi FROM TrailItem pi WHERE pi.trail.id = :trailId ORDER BY pi.orderIndex ASC, pi.id ASC")
+    // Join-fetch item, its EAGER content, and the step's association so rendering a
+    // trail's steps is one query instead of N+1 (item + content + association per step).
+    @Query("SELECT pi FROM TrailItem pi JOIN FETCH pi.item i LEFT JOIN FETCH i.content " +
+            "LEFT JOIN FETCH pi.association WHERE pi.trail.id = :trailId ORDER BY pi.orderIndex ASC, pi.id ASC")
     List<TrailItem> findByTrailIdOrderByOrderIndexAsc(@Param("trailId") Long trailId);
 
     List<TrailItem> findByItemId(Long itemId);

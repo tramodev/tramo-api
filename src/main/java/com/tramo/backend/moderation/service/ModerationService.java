@@ -94,31 +94,31 @@ public class ModerationService {
     }
 
     public List<ReportDTO> listOpenReports() {
-        Stream<ReportDTO> projectReports = projectReportRepository.findByStatusOrderByCreatedDateDesc("OPEN").stream()
+        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows("OPEN").stream()
                 .map(r -> new ReportDTO(
-                        r.getId(),
+                        (Long) r[0],
                         "PROJECT",
-                        projectIdCodec.encode(r.getProject().getId()),
-                        r.getProject().getTitle(),
+                        projectIdCodec.encode((Long) r[1]),
+                        (String) r[2],
                         null,
                         null,
-                        r.getReporter().getUsername(),
-                        r.getReason(),
-                        r.getStatus(),
-                        r.getCreatedDate()
+                        (String) r[3],
+                        (String) r[4],
+                        (String) r[5],
+                        (Date) r[6]
                 ));
-        Stream<ReportDTO> commentReports = commentReportRepository.findByStatusOrderByCreatedDateDesc("OPEN").stream()
+        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows("OPEN").stream()
                 .map(r -> new ReportDTO(
-                        r.getId(),
+                        (Long) r[0],
                         "COMMENT",
-                        projectIdCodec.encode(r.getComment().getProject().getId()),
-                        r.getComment().getProject().getTitle(),
-                        r.getComment().getId(),
-                        r.getComment().getContent(),
-                        r.getReporter().getUsername(),
-                        r.getReason(),
-                        r.getStatus(),
-                        r.getCreatedDate()
+                        projectIdCodec.encode((Long) r[1]),
+                        (String) r[2],
+                        (Long) r[3],
+                        (String) r[4],
+                        (String) r[5],
+                        (String) r[6],
+                        (String) r[7],
+                        (Date) r[8]
                 ));
         return Stream.concat(projectReports, commentReports)
                 .sorted(Comparator.comparing(ReportDTO::getCreatedDate).reversed())

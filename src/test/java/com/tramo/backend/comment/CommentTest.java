@@ -6,6 +6,7 @@ import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -154,6 +155,28 @@ class CommentTest extends AbstractIntegrationTest {
                         .content("""
                                 {"content":"Can I see this?"}"""))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listCommentsQueryCountDoesNotScaleWithCommentCount() throws Exception {
+        User owner = createUser("cqcowner");
+        Project project = createProject(owner, "Busy thread", "published", "A description", null);
+        // Distinct authors so a per-comment author lookup would show up as N+1.
+        postForId(createUser("cqcfan0"), "/api/project/" + pid(project) + "/comments", """
+                {"content":"Comment 0"}""");
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
+                .andExpect(status().isOk()));
+
+        for (int i = 1; i < 6; i++) {
+            postForId(createUser("cqcfan" + i), "/api/project/" + pid(project) + "/comments", """
+                    {"content":"Comment %d"}""".formatted(i));
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
     }
 
     @Test

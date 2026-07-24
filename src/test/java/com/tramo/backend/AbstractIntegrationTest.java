@@ -1,6 +1,9 @@
 package com.tramo.backend;
 
 import com.jayway.jsonpath.JsonPath;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import com.tramo.backend.auth.service.EmailService;
 import com.tramo.backend.auth.service.GoogleTokenVerifier;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -82,6 +85,23 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected ProjectIdCodec projectIdCodec;
+
+    @Autowired
+    protected EntityManagerFactory entityManagerFactory;
+
+    @FunctionalInterface
+    protected interface HttpCall {
+        void run() throws Exception;
+    }
+
+    // Runs the call and returns how many JDBC statements Hibernate prepared for it.
+    // Used by N+1 guards: assert the count is the same for a small and a large dataset.
+    protected long queryCount(HttpCall call) throws Exception {
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+        call.run();
+        return statistics.getPrepareStatementCount();
+    }
 
     @BeforeEach
     void cleanDatabase() {
