@@ -15,7 +15,8 @@ public class ForkFeedItemDTO {
     private String title;
     private String description;
     private String ownerUsername;
-    private String thumbnail;
+    private String thumbnailImageUrl;
+    private GraphPreviewDTO thumbnailGraph;
     private List<String> tags;
     private Date modifiedDate;
     private long voteCount;

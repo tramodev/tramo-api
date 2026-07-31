@@ -4,10 +4,12 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.moderation.dto.ReportRequestDTO;
 import com.tramo.backend.moderation.service.ModerationService;
 import com.tramo.backend.project.dto.BookmarkResponseDTO;
+import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
+import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.dto.VoteResponseDTO;
 import com.tramo.backend.project.service.ProjectService;
 import com.tramo.backend.security.ClientIp;
@@ -71,6 +73,17 @@ public class ProjectController {
     @PostMapping("/{id}/publish")
     public ResponseEntity<ProjectResponseDTO> publish(@PathVariable String id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.publish(projectIdCodec.decode(id), user));
+    }
+
+    @PutMapping("/{id}/thumbnail")
+    public ResponseEntity<ProjectResponseDTO> setThumbnail(@PathVariable String id, @Valid @RequestBody SetThumbnailRequestDTO request,
+                                                             @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.setThumbnail(projectIdCodec.decode(id), request, user));
+    }
+
+    @GetMapping("/{id}/images")
+    public ResponseEntity<List<ProjectImageDTO>> listImages(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.listProjectImages(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/fork")

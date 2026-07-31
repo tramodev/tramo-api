@@ -18,6 +18,12 @@ public interface TrailRepository extends JpaRepository<Trail, Long> {
     @Query("select t from Trail t join fetch t.project where t.project.id = :projectId order by t.id asc")
     List<Trail> findByProjectId(@Param("projectId") Long projectId);
 
+    // No join fetch here: Project.owner is EAGER (unlike Trail.project, which is LAZY),
+    // so eagerly loading Project per row would N+1-load its owner. Trail.project stays a
+    // lazy proxy — callers only need .getId() off it, which doesn't hit the DB.
+    @Query("select t from Trail t where t.project.id in :projectIds order by t.project.id asc, t.id asc")
+    List<Trail> findByProjectIdIn(@Param("projectIds") Collection<Long> projectIds);
+
     
     
     @Query("select t from Trail t join fetch t.project where t.id = :id")

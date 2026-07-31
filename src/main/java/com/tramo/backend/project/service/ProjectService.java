@@ -19,7 +19,9 @@ import com.tramo.backend.trail.entity.AssociationType;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.dto.AssociationDTO;
+import com.tramo.backend.trail.entity.ItemImageReference;
 import com.tramo.backend.trail.repository.AssociationRepository;
+import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
@@ -31,12 +33,15 @@ import com.tramo.backend.project.dto.ExploreBundleDTO;
 import com.tramo.backend.project.dto.FollowResponseDTO;
 import com.tramo.backend.project.dto.FollowUserDTO;
 import com.tramo.backend.project.dto.ForkFeedItemDTO;
+import com.tramo.backend.project.dto.GraphPreviewDTO;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import com.tramo.backend.project.dto.ProfileStatsBundleDTO;
 import com.tramo.backend.project.dto.ProfileStatsDTO;
 import com.tramo.backend.project.dto.ProjectFeedItemDTO;
+import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
+import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
 import com.tramo.backend.project.dto.PublicItemDTO;
@@ -50,6 +55,7 @@ import com.tramo.backend.project.dto.VoteResponseDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectBookmark;
 import com.tramo.backend.project.entity.ProjectSnapshot;
+import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.project.entity.ProjectVote;
 import com.tramo.backend.project.entity.ProjectView;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
@@ -110,6 +116,7 @@ public class ProjectService {
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final ProjectViewRepository projectViewRepository;
     private final AssociationRepository itemLinkRepository;
+    private final ItemImageReferenceRepository itemImageReferenceRepository;
     private final UserRepository userRepository;
     private final FollowRepository followRepository;
     private final BlockedUserRepository blockedUserRepository;
@@ -130,6 +137,7 @@ public class ProjectService {
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
                            ProjectViewRepository projectViewRepository, AssociationRepository itemLinkRepository,
+                           ItemImageReferenceRepository itemImageReferenceRepository,
                            UserRepository userRepository, FollowRepository followRepository,
                            BlockedUserRepository blockedUserRepository,
                            UserBadgeRepository userBadgeRepository, NotificationService notificationService,
@@ -149,6 +157,7 @@ public class ProjectService {
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
         this.itemLinkRepository = itemLinkRepository;
+        this.itemImageReferenceRepository = itemImageReferenceRepository;
         this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
@@ -189,10 +198,12 @@ public class ProjectService {
         Map<Long, Long> contentBytesByProjectId = itemRepository.sumContentBytesGroupedByProjectIdIn(projectIds).stream()
                 .collect(Collectors.toMap(ItemRepository.ProjectContentBytesSum::getProjectId, ItemRepository.ProjectContentBytesSum::getBytes));
         Map<Long, List<String>> tagNamesByProjectId = tagNamesGroupedByProjectId(projectIds);
+        Map<Long, ThumbnailResolution> thumbnailByProjectId = resolveThumbnails(projects);
         return projects.stream()
                 .map(p -> toResponse(p, imageBytesByProjectId.getOrDefault(p.getId(), 0L)
                         + contentBytesByProjectId.getOrDefault(p.getId(), 0L),
-                        tagNamesByProjectId.getOrDefault(p.getId(), List.of())))
+                        tagNamesByProjectId.getOrDefault(p.getId(), List.of()),
+                        thumbnailByProjectId.getOrDefault(p.getId(), ThumbnailResolution.EMPTY)))
                 .toList();
     }
 
@@ -226,10 +237,6 @@ public class ProjectService {
             }
             touchesModifiedDate = true;
         }
-        String previousThumbnail = project.getThumbnail();
-        if (request.getThumbnail() != null) {
-            project.setThumbnail(request.getThumbnail());
-        }
         if (request.getTags() != null) {
             tagService.applyProjectTags(project, normalizeTagNames(request.getTags()), requester.getId());
             touchesModifiedDate = true;
@@ -239,9 +246,6 @@ public class ProjectService {
         }
         Project savedProject = projectRepository.save(project);
         ProjectResponseDTO response = toResponse(savedProject, liveTagNames(savedProject));
-        if (request.getThumbnail() != null && !request.getThumbnail().equals(previousThumbnail)) {
-            r2Client.deleteByPublicUrl(previousThumbnail);
-        }
         if ("published".equals(request.getVisibility())) {
             checkAndAwardBadges(project.getOwner());
             if (!"published".equals(previousVisibility)) {
@@ -286,6 +290,58 @@ public class ProjectService {
             notifyFollowers(project.getOwner(), "PUBLISH", project);
         }
         return toResponse(project, liveTagNames(project));
+    }
+
+    // Thumbnail choice is only ever set here (the publish flow) — it's sticky afterwards,
+    // read live by resolveThumbnail() regardless of later edits or unpublishing.
+    @Transactional
+    public ProjectResponseDTO setThumbnail(Long id, SetThumbnailRequestDTO request, User requester) {
+        Project project = getOwnedProject(id, requester);
+        ProjectThumbnailType type = ProjectThumbnailType.valueOf(request.getType());
+        ProjectThumbnailType previousType = project.getThumbnailType();
+        String previousImageUrl = project.getThumbnailImageUrl();
+
+        project.setThumbnailType(type);
+        project.setThumbnailImageUrl(null);
+        project.setThumbnailTrail(null);
+
+        switch (type) {
+            case GRAPH -> {
+                if (request.getTrailId() == null) {
+                    throw new IllegalArgumentException("trailId is required for GRAPH thumbnail");
+                }
+                Trail trail = trailRepository.findById(Long.valueOf(request.getTrailId()))
+                        .orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
+                if (!trail.getProject().getId().equals(project.getId())) {
+                    throw new AccessDeniedException("Trail does not belong to this project");
+                }
+                project.setThumbnailTrail(trail);
+            }
+            case PROJECT_IMAGE, DEDICATED -> {
+                if (request.getImageUrl() == null || request.getImageUrl().isBlank()) {
+                    throw new IllegalArgumentException("imageUrl is required for this thumbnail type");
+                }
+                project.setThumbnailImageUrl(request.getImageUrl());
+            }
+            case NONE -> {
+            }
+        }
+
+        Project saved = projectRepository.save(project);
+        // Only DEDICATED uploads are thumbnail-exclusive — PROJECT_IMAGE URLs point at
+        // images still embedded in item content, so those must never be deleted here.
+        if (previousType == ProjectThumbnailType.DEDICATED && previousImageUrl != null
+                && !previousImageUrl.equals(saved.getThumbnailImageUrl())) {
+            r2Client.deleteByPublicUrl(previousImageUrl);
+        }
+        return toResponse(saved, liveTagNames(saved));
+    }
+
+    public List<ProjectImageDTO> listProjectImages(Long id, User requester) {
+        Project project = getOwnedProject(id, requester);
+        return itemImageReferenceRepository.findByProjectIdOrderByItemIdAsc(project.getId()).stream()
+                .map(ref -> new ProjectImageDTO(ref.getUrl(), String.valueOf(ref.getItem().getId()), ref.getItem().getTitle()))
+                .toList();
     }
 
     @Transactional
@@ -366,7 +422,6 @@ public class ProjectService {
         fork.setTitle(source.getTitle());
         fork.setDescription(source.getDescription());
         fork.setVisibility("private");
-        fork.setThumbnail(source.getThumbnail());
         fork.setOwner(requester);
         fork.setForkedFrom(source);
         fork.setCreationDate(new Date());
@@ -596,7 +651,7 @@ public class ProjectService {
         
         ProjectSnapshotData data = new ProjectSnapshotData(ProjectSnapshotData.CURRENT_SCHEMA_VERSION,
                 project.getId(), project.getTitle(), project.getDescription(),
-                project.getVisibility(), project.getThumbnail(), String.join(",", liveTagNames(project)), trails);
+                project.getVisibility(), project.getThumbnailImageUrl(), String.join(",", liveTagNames(project)), trails);
 
         ProjectSnapshot snapshot = new ProjectSnapshot();
         snapshot.setProject(project);
@@ -821,7 +876,8 @@ public class ProjectService {
         }
 
         FeedContext ctx = FeedContext.forPublishedProjects(pageProjects, requester, projectRepository, projectVoteRepository,
-                projectBookmarkRepository, commentRepository, projectSnapshotRepository);
+                projectBookmarkRepository, commentRepository, projectSnapshotRepository)
+                .withThumbnails(resolveThumbnails(pageProjects));
         List<ProjectFeedItemDTO> feed = pageProjects.stream()
                 .map(project -> toFeedItem(project, ctx))
                 .toList();
@@ -834,7 +890,8 @@ public class ProjectService {
                 featured = projectRepository.findByFeaturedTrue()
                         .filter(project -> "published".equals(project.getVisibility()))
                         .map(project -> toFeedItem(project, FeedContext.forPublishedProjects(List.of(project), requester, projectRepository,
-                                projectVoteRepository, projectBookmarkRepository, commentRepository, projectSnapshotRepository)))
+                                projectVoteRepository, projectBookmarkRepository, commentRepository, projectSnapshotRepository)
+                                .withThumbnails(resolveThumbnails(List.of(project)))))
                         .orElse(null);
             }
             hotTopics = cachedHotTopics;
@@ -1221,27 +1278,36 @@ public class ProjectService {
     }
 
     private List<ProjectFeedItemDTO> toFeedItems(List<Project> projects, User requester) {
-        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository);
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)
+                .withThumbnails(resolveThumbnails(projects));
         return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
     }
 
-    
-    
+
+
     private List<ProjectFeedItemDTO> toPublishedFeedItems(List<Project> projects, User requester) {
         FeedContext ctx = FeedContext.forPublishedProjects(projects, requester, projectRepository, projectVoteRepository,
-                projectBookmarkRepository, commentRepository, projectSnapshotRepository);
+                projectBookmarkRepository, commentRepository, projectSnapshotRepository)
+                .withThumbnails(resolveThumbnails(projects));
         return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
     }
 
     private List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
-        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository);
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)
+                .withThumbnails(resolveThumbnails(projects));
         return projects.stream().map(project -> toForkFeedItem(project, requester.getUsername(), ctx)).toList();
     }
 
     private record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Map<Long, Long> commentCounts,
                                 Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds,
                                 Map<Long, ProjectSnapshot> latestPublishByProjectId,
-                                Map<Long, List<String>> tagNamesByProjectId) {
+                                Map<Long, List<String>> tagNamesByProjectId,
+                                Map<Long, ThumbnailResolution> thumbnailByProjectId) {
+        FeedContext withThumbnails(Map<Long, ThumbnailResolution> thumbnails) {
+            return new FeedContext(voteCounts, forkCounts, commentCounts, votedProjectIds, bookmarkedProjectIds,
+                    latestPublishByProjectId, tagNamesByProjectId, thumbnails);
+        }
+
         static FeedContext forProjects(
                 List<Project> projects,
                 User requester,
@@ -1250,7 +1316,7 @@ public class ProjectService {
                 ProjectBookmarkRepository bookmarkRepository
         ) {
             List<Long> ids = projects.stream().map(Project::getId).toList();
-            if (ids.isEmpty()) return new FeedContext(Map.of(), Map.of(), Map.of(), Set.of(), Set.of(), Map.of(), Map.of());
+            if (ids.isEmpty()) return new FeedContext(Map.of(), Map.of(), Map.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of());
 
             Map<Long, Long> voteCounts = new HashMap<>();
             for (ProjectVoteRepository.ProjectVoteCount row : voteRepository.countGroupedByProjectIdIn(ids)) {
@@ -1270,7 +1336,7 @@ public class ProjectService {
             for (ProjectRepository.ProjectTagName row : projectRepository.findTagNamesGroupedByProjectIdIn(ids)) {
                 tagNamesByProjectId.computeIfAbsent(row.getProjectId(), k -> new ArrayList<>()).add(row.getTagName());
             }
-            return new FeedContext(voteCounts, forkCounts, Map.of(), votedProjectIds, bookmarkedProjectIds, Map.of(), tagNamesByProjectId);
+            return new FeedContext(voteCounts, forkCounts, Map.of(), votedProjectIds, bookmarkedProjectIds, Map.of(), tagNamesByProjectId, Map.of());
         }
 
         static FeedContext forProjects(
@@ -1288,7 +1354,7 @@ public class ProjectService {
             for (CommentRepository.ProjectCommentCount row : commentRepository.countGroupedByProjectIdIn(ids)) {
                 commentCounts.put(row.getProjectId(), row.getCommentCount());
             }
-            return new FeedContext(base.voteCounts(), base.forkCounts(), commentCounts, base.votedProjectIds(), base.bookmarkedProjectIds(), Map.of(), base.tagNamesByProjectId());
+            return new FeedContext(base.voteCounts(), base.forkCounts(), commentCounts, base.votedProjectIds(), base.bookmarkedProjectIds(), Map.of(), base.tagNamesByProjectId(), Map.of());
         }
 
         
@@ -1309,7 +1375,7 @@ public class ProjectService {
             for (ProjectSnapshot snapshot : snapshotRepository.findLatestPublishByProjectIdIn(ids)) {
                 latestPublish.put(snapshot.getProject().getId(), snapshot);
             }
-            return new FeedContext(base.voteCounts(), base.forkCounts(), base.commentCounts(), base.votedProjectIds(), base.bookmarkedProjectIds(), latestPublish, base.tagNamesByProjectId());
+            return new FeedContext(base.voteCounts(), base.forkCounts(), base.commentCounts(), base.votedProjectIds(), base.bookmarkedProjectIds(), latestPublish, base.tagNamesByProjectId(), Map.of());
         }
     }
 
@@ -1319,6 +1385,7 @@ public class ProjectService {
                 ? objectMapper.readValue(latestPublish.getContent(), ProjectSnapshotData.class) : null;
         Date lastPublishedDate = latestPublish != null && latestPublish.getVersion() != null && latestPublish.getVersion() > 1
                 ? latestPublish.getCreatedDate() : null;
+        ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         return new ProjectFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
                 snapshot != null ? snapshot.title() : project.getTitle(),
@@ -1326,7 +1393,8 @@ public class ProjectService {
                 project.getOwner().getUsername(),
                 project.getOwner().getImageUrl(),
                 project.getOwner().getSelectedBadge(),
-                snapshot != null ? snapshot.thumbnail() : project.getThumbnail(),
+                thumbnail.imageUrl(),
+                thumbnail.graph(),
                 snapshot != null ? splitLegacySnapshotTags(snapshot.tags()) : ctx.tagNamesByProjectId().getOrDefault(project.getId(), List.of()),
                 project.getModifiedDate(),
                 project.getFirstPublishedDate(),
@@ -1343,12 +1411,14 @@ public class ProjectService {
 
     private ForkFeedItemDTO toForkFeedItem(Project project, String ownerUsername, FeedContext ctx) {
         Project source = project.getForkedFrom();
+        ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         return new ForkFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 ownerUsername,
-                project.getThumbnail(),
+                thumbnail.imageUrl(),
+                thumbnail.graph(),
                 ctx.tagNamesByProjectId().getOrDefault(project.getId(), List.of()),
                 project.getModifiedDate(),
                 ctx.voteCounts().getOrDefault(project.getId(), 0L),
@@ -1466,17 +1536,145 @@ public class ProjectService {
     }
 
     private ProjectResponseDTO toResponse(Project project, long storageBytes, List<String> tagNames) {
+        return toResponse(project, storageBytes, tagNames, resolveThumbnail(project));
+    }
+
+    private ProjectResponseDTO toResponse(Project project, long storageBytes, List<String> tagNames, ThumbnailResolution thumbnail) {
         return new ProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
                 project.getVisibility(),
-                project.getThumbnail(),
+                thumbnail.imageUrl(),
+                thumbnail.graph(),
                 tagNames,
                 project.getCreationDate(),
                 latestOf(project.getModifiedDate(), project.getLastEditedDate()),
                 storageBytes
         );
+    }
+
+    // --- Thumbnail resolution -------------------------------------------------
+    // Order: explicit choice (sticky, set only via publish flow) > first trail with
+    // substantive associations (live graph) > first inserted image > nothing (placeholder).
+    // Batched over a whole project list (feeds, "my projects") so query count doesn't
+    // scale with list size or per-project trail count — see resolveThumbnails.
+
+    private record ThumbnailResolution(String imageUrl, GraphPreviewDTO graph) {
+        static final ThumbnailResolution EMPTY = new ThumbnailResolution(null, null);
+    }
+
+    private ThumbnailResolution resolveThumbnail(Project project) {
+        return resolveThumbnails(List.of(project)).getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
+    }
+
+    private Map<Long, ThumbnailResolution> resolveThumbnails(List<Project> projects) {
+        Map<Long, ThumbnailResolution> result = new HashMap<>();
+        List<Project> chosenGraphProjects = new ArrayList<>();
+        List<Project> fallbackCandidates = new ArrayList<>();
+
+        for (Project project : projects) {
+            ProjectThumbnailType type = project.getThumbnailType();
+            if (type == null || type == ProjectThumbnailType.NONE) {
+                fallbackCandidates.add(project);
+            } else if (type == ProjectThumbnailType.GRAPH) {
+                if (project.getThumbnailTrail() != null) {
+                    chosenGraphProjects.add(project);
+                } else {
+                    result.put(project.getId(), ThumbnailResolution.EMPTY);
+                }
+            } else {
+                result.put(project.getId(), new ThumbnailResolution(project.getThumbnailImageUrl(), null));
+            }
+        }
+
+        if (!chosenGraphProjects.isEmpty()) {
+            List<Long> trailIds = chosenGraphProjects.stream().map(p -> p.getThumbnailTrail().getId()).toList();
+            GraphLookup lookup = GraphLookup.forTrailIds(trailIds, trailItemRepository, itemLinkRepository);
+            for (Project project : chosenGraphProjects) {
+                Trail trail = project.getThumbnailTrail();
+                result.put(project.getId(), new ThumbnailResolution(null, lookup.buildGraphPreview(trail)));
+            }
+        }
+
+        if (!fallbackCandidates.isEmpty()) {
+            List<Long> fallbackProjectIds = fallbackCandidates.stream().map(Project::getId).toList();
+            Map<Long, List<Trail>> trailsByProjectId = trailRepository.findByProjectIdIn(fallbackProjectIds).stream()
+                    .collect(Collectors.groupingBy(t -> t.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
+            List<Long> allTrailIds = trailsByProjectId.values().stream().flatMap(List::stream).map(Trail::getId).toList();
+            GraphLookup lookup = GraphLookup.forTrailIds(allTrailIds, trailItemRepository, itemLinkRepository);
+
+            List<Long> needsImageFallback = new ArrayList<>();
+            for (Project project : fallbackCandidates) {
+                GraphPreviewDTO chosen = null;
+                for (Trail trail : trailsByProjectId.getOrDefault(project.getId(), List.of())) {
+                    GraphPreviewDTO graph = lookup.buildGraphPreview(trail);
+                    if (graph != null && graph.items().stream().anyMatch(i -> !i.associations().isEmpty())) {
+                        chosen = graph;
+                        break;
+                    }
+                }
+                if (chosen != null) {
+                    result.put(project.getId(), new ThumbnailResolution(null, chosen));
+                } else {
+                    needsImageFallback.add(project.getId());
+                }
+            }
+
+            if (!needsImageFallback.isEmpty()) {
+                Map<Long, ItemImageReference> firstImageByProjectId = new LinkedHashMap<>();
+                for (ItemImageReference ref : itemImageReferenceRepository.findByProjectIdInOrderByItemIdAsc(needsImageFallback)) {
+                    firstImageByProjectId.putIfAbsent(ref.getItem().getProject().getId(), ref);
+                }
+                for (Long projectId : needsImageFallback) {
+                    ItemImageReference ref = firstImageByProjectId.get(projectId);
+                    result.put(projectId, ref != null ? new ThumbnailResolution(ref.getUrl(), null) : ThumbnailResolution.EMPTY);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // Pre-fetched trail memberships + outgoing associations for a batch of trails, so
+    // building each trail's graph preview is pure in-memory work (no per-trail queries).
+    private record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, List<Association>> outgoingByItemId) {
+        static GraphLookup forTrailIds(List<Long> trailIds, TrailItemRepository trailItemRepository,
+                                        AssociationRepository itemLinkRepository) {
+            if (trailIds.isEmpty()) return new GraphLookup(Map.of(), Map.of());
+            Map<Long, List<TrailItem>> membershipsByTrailId = trailItemRepository
+                    .findByTrailIdInWithItemContentAndAssociation(trailIds).stream()
+                    .collect(Collectors.groupingBy(ti -> ti.getTrail().getId(), LinkedHashMap::new, Collectors.toList()));
+            Set<Long> itemIds = membershipsByTrailId.values().stream().flatMap(List::stream)
+                    .map(ti -> ti.getItem().getId()).collect(Collectors.toSet());
+            Map<Long, List<Association>> outgoingByItemId = itemIds.isEmpty() ? Map.of()
+                    : itemLinkRepository.findBySourceItemIdIn(itemIds).stream()
+                            .collect(Collectors.groupingBy(a -> a.getSourceItem().getId()));
+            return new GraphLookup(membershipsByTrailId, outgoingByItemId);
+        }
+
+        // ponytail: only includes this trail's own items (no cross-trail "loose" association
+        // targets) — keeps this cheap for a thumbnail; the full editor graph view isn't bound by this.
+        GraphPreviewDTO buildGraphPreview(Trail trail) {
+            List<TrailItem> memberships = membershipsByTrailId.getOrDefault(trail.getId(), List.of());
+            if (memberships.isEmpty()) return null;
+            Map<Long, Item> itemById = memberships.stream()
+                    .collect(Collectors.toMap(m -> m.getItem().getId(), TrailItem::getItem, (a, b) -> a, LinkedHashMap::new));
+            List<String> itemIds = memberships.stream().map(m -> String.valueOf(m.getItem().getId())).toList();
+            List<GraphPreviewDTO.GraphItemDTO> items = itemById.values().stream()
+                    .map(item -> new GraphPreviewDTO.GraphItemDTO(
+                            String.valueOf(item.getId()),
+                            item.getTitle(),
+                            outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
+                                    .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && itemById.containsKey(a.getTargetId()))
+                                    .map(a -> new AssociationDTO(String.valueOf(a.getId()), a.getType().name(),
+                                            a.getTargetType().name(), String.valueOf(a.getTargetId()),
+                                            itemById.get(a.getTargetId()).getTitle()))
+                                    .toList()
+                    ))
+                    .toList();
+            return new GraphPreviewDTO(String.valueOf(trail.getId()), trail.getTitle(), itemIds, items);
+        }
     }
 
     private Date latestOf(Date a, Date b) {

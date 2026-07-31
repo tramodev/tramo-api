@@ -386,12 +386,13 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         project.setModifiedDate(staleDate);
         projectRepository.save(project);
 
-        mockMvc.perform(put("/api/project/" + pid(project))
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"thumbnail":"data:image/png;base64,abc"}"""))
-                .andExpect(status().isOk());
+                                {"type":"DEDICATED","imageUrl":"https://example.com/a.png"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailImageUrl").value("https://example.com/a.png"));
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate().getTime())
                 .isEqualTo(staleDate.getTime());

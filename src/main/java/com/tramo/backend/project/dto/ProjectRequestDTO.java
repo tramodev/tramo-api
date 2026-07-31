@@ -15,6 +15,5 @@ public class ProjectRequestDTO {
     @Pattern(regexp = "private|unlisted|published", message = "Visibility must be private, unlisted, or published")
     private String visibility;
 
-    private String thumbnail;
     private List<String> tags;
 }

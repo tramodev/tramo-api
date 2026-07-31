@@ -15,7 +15,8 @@ public class ProjectResponseDTO {
     private String title;
     private String description;
     private String visibility;
-    private String thumbnail;
+    private String thumbnailImageUrl;
+    private GraphPreviewDTO thumbnailGraph;
     private List<String> tags;
     private Date creationDate;
     private Date modifiedDate;

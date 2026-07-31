@@ -6,9 +6,20 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
+
 @Repository
 public interface ItemImageReferenceRepository extends JpaRepository<ItemImageReference, Long> {
     void deleteByItemId(Long itemId);
+
+    @Query("SELECT r FROM ItemImageReference r JOIN FETCH r.item i WHERE i.project.id = :projectId " +
+            "ORDER BY i.id ASC, r.id ASC")
+    List<ItemImageReference> findByProjectIdOrderByItemIdAsc(@Param("projectId") Long projectId);
+
+    @Query("SELECT r FROM ItemImageReference r JOIN FETCH r.item i WHERE i.project.id IN :projectIds " +
+            "ORDER BY i.project.id ASC, i.id ASC, r.id ASC")
+    List<ItemImageReference> findByProjectIdInOrderByItemIdAsc(@Param("projectIds") Collection<Long> projectIds);
 
     @Query("SELECT COUNT(r) > 0 FROM ItemImageReference r " +
             "WHERE r.url = :url AND r.item.id <> :excludeItemId AND r.item.project.owner.id = :ownerId")

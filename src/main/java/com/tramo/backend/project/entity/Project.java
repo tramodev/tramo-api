@@ -30,7 +30,15 @@ public class Project {
     private String description;
     private String visibility;
     @Column(columnDefinition = "TEXT")
-    private String thumbnail;
+    private String thumbnailImageUrl;
+
+    @Enumerated(EnumType.STRING)
+    private ProjectThumbnailType thumbnailType;
+
+    @ManyToOne
+    @JoinColumn(name = "thumbnail_trail_id")
+    private Trail thumbnailTrail;
+
     private Date creationDate;
     private Date modifiedDate;
     private Date lastEditedDate;
