@@ -28,11 +28,13 @@ public class ProjectController {
     private final ProjectService projectService;
     private final ModerationService moderationService;
     private final ProjectIdCodec projectIdCodec;
+    private final ClientIp clientIp;
 
-    public ProjectController(ProjectService projectService, ModerationService moderationService, ProjectIdCodec projectIdCodec) {
+    public ProjectController(ProjectService projectService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
         this.projectService = projectService;
         this.moderationService = moderationService;
         this.projectIdCodec = projectIdCodec;
+        this.clientIp = clientIp;
     }
 
     @PostMapping
@@ -67,7 +69,7 @@ public class ProjectController {
     public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable String id, @AuthenticationPrincipal User user,
                                                       @RequestHeader(value = "X-Anon-Id", required = false) String anonId,
                                                       HttpServletRequest request) {
-        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user, ClientIp.from(request), anonId));
+        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user, clientIp.from(request), anonId));
     }
 
     @PostMapping("/{id}/publish")

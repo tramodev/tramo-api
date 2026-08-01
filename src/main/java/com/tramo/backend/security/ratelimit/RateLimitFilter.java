@@ -25,9 +25,11 @@ public class RateLimitFilter implements Filter {
     );
 
     private final RateLimiterService rateLimiterService;
+    private final ClientIp clientIp;
 
-    public RateLimitFilter(RateLimiterService rateLimiterService) {
+    public RateLimitFilter(RateLimiterService rateLimiterService, ClientIp clientIp) {
         this.rateLimiterService = rateLimiterService;
+        this.clientIp = clientIp;
     }
 
     @Override
@@ -37,7 +39,7 @@ public class RateLimitFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
 
-        String ip = ClientIp.from(req);
+        String ip = clientIp.from(req);
         String path = req.getRequestURI();
 
         if (path.startsWith("/api/auth/")) {

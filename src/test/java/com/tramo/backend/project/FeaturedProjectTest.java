@@ -25,7 +25,7 @@ class FeaturedProjectTest extends AbstractIntegrationTest {
     private void vote(User voter, Project project, String ip, String deviceId) throws Exception {
         var request = post("/api/project/" + pid(project) + "/vote")
                 .header("Authorization", bearer(voter))
-                .header("X-Forwarded-For", ip);
+                .with(remoteAddr(ip));
         if (deviceId != null) {
             request.header("X-Anon-Id", deviceId);
         }
