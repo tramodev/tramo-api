@@ -13,11 +13,14 @@ import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.exception.InvalidTokenException;
+import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.UserAlreadyExistsException;
 import com.tramo.backend.security.jwt.JwtService;
+import com.tramo.backend.security.ratelimit.RateLimiterService;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
+import io.github.bucket4j.Bucket;
 import jakarta.transaction.Transactional;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -25,6 +28,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -42,12 +46,15 @@ public class AuthService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
     private final GoogleTokenVerifier googleTokenVerifier;
+    private final CaptchaVerifier captchaVerifier;
+    private final RateLimiterService rateLimiterService;
 
     public AuthService(UserRepository userRepository, JwtService jwtService, AuthenticationManager authenticationManager,
                         PasswordEncoder passwordEncoder, RefreshTokenRepository refreshTokenRepository,
                         EmailVerificationTokenRepository emailVerificationTokenRepository,
                         PasswordResetTokenRepository passwordResetTokenRepository, EmailService emailService,
-                        GoogleTokenVerifier googleTokenVerifier) {
+                        GoogleTokenVerifier googleTokenVerifier, CaptchaVerifier captchaVerifier,
+                        RateLimiterService rateLimiterService) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
@@ -57,6 +64,16 @@ public class AuthService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailService = emailService;
         this.googleTokenVerifier = googleTokenVerifier;
+        this.captchaVerifier = captchaVerifier;
+        this.rateLimiterService = rateLimiterService;
+    }
+
+    private void checkIdentityRateLimit(String scope, String identifier, int capacity, int refillTokens) {
+        Bucket bucket = rateLimiterService.resolveBucket(
+                scope + ":" + identifier.trim().toLowerCase(), capacity, refillTokens, Duration.ofMinutes(1));
+        if (!bucket.tryConsume(1)) {
+            throw new LimitExceededException("Too many attempts. Try again later.");
+        }
     }
 
     public AvailabilityResponseDTO checkUsernameAvailability(String username) {
@@ -72,6 +89,8 @@ public class AuthService {
     }
 
     public RegisterResponseDTO register(RegisterRequestDTO registerRequest) {
+        captchaVerifier.verify(registerRequest.getCaptchaToken(), "register");
+
         if (userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
             throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
         }
@@ -119,6 +138,11 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(String username, String email) {
+        String identifier = (username != null && !username.isBlank()) ? username : email;
+        if (identifier != null && !identifier.isBlank()) {
+            checkIdentityRateLimit("resend-verification", identifier, 3, 3);
+        }
+
         Optional<User> userOpt = Optional.empty();
         if (username != null && !username.isBlank()) {
             userOpt = userRepository.findByUsernameIgnoreCase(username);
@@ -145,6 +169,10 @@ public class AuthService {
 
     @Transactional
     public void forgotPassword(String email) {
+        if (email != null && !email.isBlank()) {
+            checkIdentityRateLimit("forgot-password", email, 3, 3);
+        }
+
         userRepository.findByEmail(email).ifPresent(user -> {
             passwordResetTokenRepository.deleteByUserId(user.getId());
             PasswordResetToken token = createPasswordResetToken(user);
@@ -236,6 +264,10 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequestDTO request) {
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            checkIdentityRateLimit("login", request.getUsername(), 10, 10);
+        }
+
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getUsername(),

@@ -2,6 +2,7 @@ package com.tramo.backend.auth;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
+import com.tramo.backend.exception.CaptchaVerificationException;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.springframework.http.MediaType;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -25,7 +27,7 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     private String registerJson(String username, String email, String password) {
         return """
-                {"username":"%s","email":"%s","password":"%s"}""".formatted(username, email, password);
+                {"username":"%s","email":"%s","password":"%s","captchaToken":"test-token"}""".formatted(username, email, password);
     }
 
     private org.springframework.test.web.servlet.ResultActions register(String body) throws Exception {
@@ -48,6 +50,25 @@ class RegistrationTest extends AbstractIntegrationTest {
         assertThat(emailVerificationTokenRepository.findAll())
                 .anyMatch(t -> t.getUser().getId().equals(user.getId()));
         verify(emailService).sendVerificationEmail(any(User.class), anyString());
+    }
+
+    @Test
+    void registerRejectsFailedCaptcha() throws Exception {
+        doThrow(new CaptchaVerificationException("Captcha verification failed"))
+                .when(captchaVerifier).verify(anyString(), anyString());
+
+        register(registerJson("captchafail", "captchafail@example.com", "Passw0rd!"))
+                .andExpect(status().isForbidden());
+
+        assertThat(userRepository.findByUsernameIgnoreCase("captchafail")).isEmpty();
+    }
+
+    @Test
+    void registerRejectsMissingCaptchaToken() throws Exception {
+        register("""
+                {"username":"nocaptcha","email":"nocaptcha@example.com","password":"Passw0rd!"}""")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.captchaToken").exists());
     }
 
     @Test
@@ -109,7 +130,7 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerIgnoresClientSuppliedRole() throws Exception {
         register("""
-                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd!","role":"ADMIN"}""")
+                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd!","role":"ADMIN","captchaToken":"test-token"}""")
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findByUsernameIgnoreCase("sneaky").orElseThrow().getRole())

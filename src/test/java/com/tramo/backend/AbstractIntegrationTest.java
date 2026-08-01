@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
+import com.tramo.backend.auth.service.CaptchaVerifier;
 import com.tramo.backend.auth.service.EmailService;
 import com.tramo.backend.auth.service.GoogleTokenVerifier;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -72,6 +73,9 @@ public abstract class AbstractIntegrationTest {
 
     @MockitoBean
     protected GoogleTokenVerifier googleTokenVerifier;
+
+    @MockitoBean
+    protected CaptchaVerifier captchaVerifier;
 
     @MockitoBean
     protected PatreonClient patreonClient;
@@ -194,6 +198,16 @@ public abstract class AbstractIntegrationTest {
     protected static RequestPostProcessor uniqueIp() {
         int n = IP_COUNTER.incrementAndGet();
         return remoteAddr("10.9." + (n / 256) % 256 + "." + n % 256);
+    }
+
+    private static final AtomicInteger IDENTITY_COUNTER = new AtomicInteger();
+
+    protected static String uniqueUsername() {
+        return "ratetest" + IDENTITY_COUNTER.incrementAndGet();
+    }
+
+    protected static String uniqueEmail() {
+        return "ratetest" + IDENTITY_COUNTER.incrementAndGet() + "@example.com";
     }
 
     protected Project createProject(User owner, String title, String visibility) {

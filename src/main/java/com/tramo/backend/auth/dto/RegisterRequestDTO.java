@@ -28,7 +28,8 @@ public class RegisterRequestDTO {
     @Email(message = "Email must be valid")
     private String email;
 
-
+    @NotBlank(message = "Captcha verification is required")
+    private String captchaToken;
 
     private Boolean visibility;
     private Date createdAt;
