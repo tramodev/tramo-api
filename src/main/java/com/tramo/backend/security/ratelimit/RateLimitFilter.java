@@ -4,6 +4,7 @@ package com.tramo.backend.security.ratelimit;
 import com.tramo.backend.security.ClientIp;
 import com.tramo.backend.user.entity.User;
 import io.github.bucket4j.Bucket;
+import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -74,11 +75,7 @@ public class RateLimitFilter implements Filter {
                 default -> null;
             };
 
-            if (bucket != null && !bucket.tryConsume(1)) {
-                res.setStatus(429);
-                res.setContentType("application/json");
-                res.getWriter().write("""
-                        {"status":429,"message":"Rate limit exceeded. Try again later."}""");
+            if (bucket != null && !tryConsumeOrReject(bucket, res)) {
                 return;
             }
         } else if (MUTATING_METHODS.contains(req.getMethod()) && !path.startsWith("/api/admin/")) {
@@ -89,17 +86,27 @@ public class RateLimitFilter implements Filter {
                         ? rateLimiterService.resolveBucket("user:tight:" + user.getId(), 10, 10, Duration.ofMinutes(1))
                         : rateLimiterService.resolveBucket("user:default:" + user.getId(), 60, 60, Duration.ofMinutes(1));
 
-                if (!bucket.tryConsume(1)) {
-                    res.setStatus(429);
-                    res.setContentType("application/json");
-                    res.getWriter().write("""
-                            {"status":429,"message":"Rate limit exceeded. Try again later."}""");
+                if (!tryConsumeOrReject(bucket, res)) {
                     return;
                 }
             }
         }
 
         chain.doFilter(request, response);
+    }
+
+    private boolean tryConsumeOrReject(Bucket bucket, HttpServletResponse res) throws IOException {
+        ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+        if (probe.isConsumed()) {
+            return true;
+        }
+        long retryAfterSeconds = Math.max(1, probe.getNanosToWaitForRefill() / 1_000_000_000);
+        res.setStatus(429);
+        res.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
+        res.setContentType("application/json");
+        res.getWriter().write("""
+                {"status":429,"message":"Rate limit exceeded. Try again later."}""");
+        return false;
     }
 }
 

@@ -204,4 +204,41 @@ class RateLimitTest extends AbstractIntegrationTest {
                     .andExpect(status().isOk());
         }
     }
+
+    @Test
+    void ipBasedRateLimitReturnsRetryAfterHeader() throws Exception {
+        String ip = "172.16.6.1";
+        String username = uniqueUsername();
+        for (int i = 0; i < 10; i++) {
+            attemptLogin(ip, username);
+        }
+        MvcResult result = attemptLogin(ip, username);
+        assertThat(result.getResponse().getStatus()).isEqualTo(429);
+        assertThat(result.getResponse().getHeader("Retry-After")).isNotNull();
+        assertThat(Integer.parseInt(result.getResponse().getHeader("Retry-After"))).isGreaterThan(0);
+    }
+
+    @Test
+    void userTierRateLimitReturnsRetryAfterHeader() throws Exception {
+        User owner = createUser("retryafterowner");
+        Project project = createProject(owner, "Retry-After target", "published");
+        User reporter = createUser("retryafterreporter");
+
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/project/" + pid(project) + "/report")
+                    .header("Authorization", bearer(reporter))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""
+                            {"reason":"spam"}"""));
+        }
+        MvcResult result = mockMvc.perform(post("/api/project/" + pid(project) + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"spam"}"""))
+                .andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(429);
+        assertThat(result.getResponse().getHeader("Retry-After")).isNotNull();
+        assertThat(Integer.parseInt(result.getResponse().getHeader("Retry-After"))).isGreaterThan(0);
+    }
 }
