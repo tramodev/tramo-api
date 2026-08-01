@@ -102,4 +102,42 @@ class UploadTest extends AbstractIntegrationTest {
         String secondPublicUrl = second.split("\"publicUrl\":\"")[1].split("\"")[0];
         assertThat(firstPublicUrl).isEqualTo(secondPublicUrl);
     }
+
+    @Test
+    void presignSignsContentLengthAlongsideContentType() throws Exception {
+        User user = createUser("uploader6");
+
+        String response = mockMvc.perform(post("/api/uploads/presign")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        String uploadUrl = response.split("\"uploadUrl\":\"")[1].split("\"")[0].toLowerCase();
+        assertThat(uploadUrl).contains("content-length");
+        assertThat(uploadUrl).contains("content-type");
+    }
+
+    @Test
+    void presignEnforcesUploadThroughputPerHour() throws Exception {
+        User user = createUser("uploaderthroughput");
+
+        for (int i = 0; i < 8; i++) {
+            mockMvc.perform(post("/api/uploads/presign")
+                            .header("Authorization", bearer(user))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":26214400}""".formatted(FAKE_HASH)))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/api/uploads/presign")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1}""".formatted(FAKE_HASH)))
+                .andExpect(status().is(429));
+    }
 }

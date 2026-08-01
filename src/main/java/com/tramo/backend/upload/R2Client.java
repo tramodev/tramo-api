@@ -61,11 +61,12 @@ public class R2Client {
         );
     }
 
-    public String presignPut(String key, String contentType) {
+    public String presignPut(String key, String contentType, long contentLength) {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)
                 .contentType(contentType)
+                .contentLength(contentLength)
                 .build();
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofMinutes(10))

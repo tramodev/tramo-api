@@ -3,12 +3,14 @@ package com.tramo.backend.upload;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.project.repository.ProjectRepository;
+import com.tramo.backend.security.ratelimit.RateLimiterService;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.dto.UploadPresignRequestDTO;
 import com.tramo.backend.upload.dto.UploadPresignResponseDTO;
 import com.tramo.backend.upload.entity.UploadRecord;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.entity.User;
+import io.github.bucket4j.Bucket;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.Map;
 
@@ -37,20 +40,26 @@ public class UploadController {
     private final UploadRecordRepository uploadRecordRepository;
     private final ProjectRepository projectRepository;
     private final ProjectIdCodec projectIdCodec;
+    private final RateLimiterService rateLimiterService;
     private final long maxUploadBytes;
+    private final int maxUploadBytesPerHour;
 
     public UploadController(R2Client r2Client,
                             SubscriptionService subscriptionService,
                             UploadRecordRepository uploadRecordRepository,
                             ProjectRepository projectRepository,
                             ProjectIdCodec projectIdCodec,
-                            @Value("${app.limits.max-upload-bytes}") long maxUploadBytes) {
+                            RateLimiterService rateLimiterService,
+                            @Value("${app.limits.max-upload-bytes}") long maxUploadBytes,
+                            @Value("${app.limits.max-upload-bytes-per-hour}") int maxUploadBytesPerHour) {
         this.r2Client = r2Client;
         this.subscriptionService = subscriptionService;
         this.uploadRecordRepository = uploadRecordRepository;
         this.projectRepository = projectRepository;
         this.projectIdCodec = projectIdCodec;
+        this.rateLimiterService = rateLimiterService;
         this.maxUploadBytes = maxUploadBytes;
+        this.maxUploadBytesPerHour = maxUploadBytesPerHour;
     }
 
     @PostMapping("/presign")
@@ -76,6 +85,12 @@ public class UploadController {
         }
         subscriptionService.assertUploadAllowed(user, request.getContentBytes());
 
+        Bucket byteBucket = rateLimiterService.resolveBucket(
+                "upload-bytes:" + user.getId(), maxUploadBytesPerHour, maxUploadBytesPerHour, Duration.ofHours(1));
+        if (!byteBucket.tryConsume(request.getContentBytes())) {
+            throw new LimitExceededException("Upload throughput limit reached. Try again later.");
+        }
+
         Long projectId = null;
         if (request.getProjectId() != null) {
             projectId = projectIdCodec.decode(request.getProjectId());
@@ -86,7 +101,7 @@ public class UploadController {
 
         String key = "%s/%d/%s.%s".formatted(request.getKind(), user.getId(), request.getContentHash(), extension);
         recordUpload(user, projectId, key, request.getContentBytes());
-        String uploadUrl = r2Client.presignPut(key, request.getContentType());
+        String uploadUrl = r2Client.presignPut(key, request.getContentType(), request.getContentBytes());
         String publicUrl = r2Client.publicUrlFor(key);
 
         return ResponseEntity.ok(new UploadPresignResponseDTO(uploadUrl, publicUrl));
