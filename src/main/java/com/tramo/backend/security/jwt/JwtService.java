@@ -6,11 +6,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+import com.tramo.backend.user.Role;
+import com.tramo.backend.user.entity.User;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
@@ -25,15 +27,20 @@ public class JwtService {
     @Value("${app.jwt.access-token-ttl-ms:900000}")
     private long accessTokenTtlMs;
 
-    public String getToken(UserDetails user) {
-        return getToken(new HashMap<>(), user);
+    public String getToken(User user) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("id", user.getId());
+        claims.put("role", user.getRole().name());
+        claims.put("emailVerified", user.isEmailVerified());
+        claims.put("banned", user.isBanned());
+        return getToken(claims, user.getUsername());
     }
 
-    private String getToken(Map<String,Object> extraClaims, UserDetails user) {
+    private String getToken(Map<String,Object> extraClaims, String username) {
         return Jwts
                 .builder()
                 .setClaims(extraClaims)
-                .setSubject(user.getUsername())
+                .setSubject(username)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + accessTokenTtlMs))
                 .signWith(getKey(), SignatureAlgorithm.HS256)
@@ -49,9 +56,30 @@ public class JwtService {
         return getClaim(token, Claims::getSubject);
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        final String username=getUsernameFromToken(token);
-        return (username.equals(userDetails.getUsername())&& !isTokenExpired(token));
+    // Reconstructs a lightweight, claims-only principal without hitting the DB. Only
+    // id/username/role/emailVerified/banned are populated — every other field on the
+    // returned User is null/default. Callers that need anything else (profile fields,
+    // password hash, preferences, ...) must re-fetch a fresh row from the repository.
+    public User buildPrincipalFromClaims(String token) {
+        try {
+            Claims claims = getAllClaims(token);
+            User user = new User();
+            user.setId(((Number) claims.get("id")).longValue());
+            user.setUsername(claims.getSubject());
+            user.setRole(Role.valueOf((String) claims.get("role")));
+            user.setEmailVerified(Boolean.TRUE.equals(claims.get("emailVerified", Boolean.class)));
+            user.setBanned(Boolean.TRUE.equals(claims.get("banned", Boolean.class)));
+            return user;
+        } catch (JwtException | IllegalArgumentException | NullPointerException | ClassCastException e) {
+            // Missing/malformed claims - e.g. a token issued by the previous version of
+            // this code during a rolling deploy. Treat as no principal, same as any
+            // other invalid token.
+            return null;
+        }
+    }
+
+    public boolean isTokenValid(String token) {
+        return !isTokenExpired(token);
     }
 
     private Claims getAllClaims(String token)

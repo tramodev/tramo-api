@@ -1014,7 +1014,8 @@ public class ProjectService {
     }
 
     public UserProfileDTO getProfile(User user) {
-        return new UserProfileDTO(user.getUsername(), user.getEmail(), user.getBio(), user.getBirthDate(), user.getLocation(), user.getWebsite(), user.getImageUrl(), user.getBannerUrl(), user.getCreatedAt(), user.getRole().name(), user.getSelectedBadge());
+        User fresh = userRepository.findById(user.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return new UserProfileDTO(fresh.getUsername(), fresh.getEmail(), fresh.getBio(), fresh.getBirthDate(), fresh.getLocation(), fresh.getWebsite(), fresh.getImageUrl(), fresh.getBannerUrl(), fresh.getCreatedAt(), fresh.getRole().name(), fresh.getSelectedBadge());
     }
 
     private Integer computeAge(LocalDate birthDate) {
@@ -1022,7 +1023,8 @@ public class ProjectService {
     }
 
     @Transactional
-    public UserProfileDTO updateProfile(User user, UpdateProfileRequestDTO request) {
+    public UserProfileDTO updateProfile(User principal, UpdateProfileRequestDTO request) {
+        User user = userRepository.findById(principal.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         String previousImageUrl = user.getImageUrl();
         String previousBannerUrl = user.getBannerUrl();
         if (request.getBio() != null) {

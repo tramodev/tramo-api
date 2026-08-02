@@ -92,6 +92,6 @@ public class UserAccountService {
         passwordResetTokenRepository.deleteByUserId(userId);
         emailVerificationTokenRepository.deleteByUserId(userId);
 
-        userRepository.delete(user);
+        userRepository.deleteById(userId);
     }
 }

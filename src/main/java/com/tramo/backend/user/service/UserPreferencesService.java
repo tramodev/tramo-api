@@ -1,5 +1,6 @@
 package com.tramo.backend.user.service;
 
+import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.user.dto.UpdatePreferencesRequestDTO;
 import com.tramo.backend.user.dto.UserPreferencesDTO;
 import com.tramo.backend.user.entity.User;
@@ -15,12 +16,13 @@ public class UserPreferencesService {
         this.userRepository = userRepository;
     }
 
-    public UserPreferencesDTO getPreferences(User user) {
-        return toDto(user);
+    public UserPreferencesDTO getPreferences(User principal) {
+        return toDto(fresh(principal));
     }
 
     @Transactional
-    public UserPreferencesDTO updatePreferences(User user, UpdatePreferencesRequestDTO request) {
+    public UserPreferencesDTO updatePreferences(User principal, UpdatePreferencesRequestDTO request) {
+        User user = fresh(principal);
         if (request.getProfileVisibility() != null) {
             user.setVisibility("public".equals(request.getProfileVisibility()));
         }
@@ -44,6 +46,11 @@ public class UserPreferencesService {
         }
         userRepository.save(user);
         return toDto(user);
+    }
+
+    private User fresh(User principal) {
+        return userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private UserPreferencesDTO toDto(User user) {

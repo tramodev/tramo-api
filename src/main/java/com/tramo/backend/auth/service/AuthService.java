@@ -14,6 +14,7 @@ import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.exception.LimitExceededException;
+import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.exception.UserAlreadyExistsException;
 import com.tramo.backend.security.jwt.JwtService;
 import com.tramo.backend.security.ratelimit.RateLimiterService;
@@ -199,7 +200,9 @@ public class AuthService {
     }
 
     @Transactional
-    public void changePassword(User user, String currentPassword, String newPassword) {
+    public void changePassword(User principal, String currentPassword, String newPassword) {
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (user.getPassword() == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
