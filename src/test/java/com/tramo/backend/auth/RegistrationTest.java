@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -92,6 +93,24 @@ class RegistrationTest extends AbstractIntegrationTest {
         register(registerJson("someoneelse", "shared@example.com", "Passw0rd!"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errors.email").exists());
+    }
+
+    @Test
+    void emailHasADatabaseLevelUniqueConstraint() {
+        createUser("dbconstraintowner", "dbconstraint@example.com", true, false, Role.USER);
+
+        User duplicate = new User();
+        duplicate.setUsername("dbconstraintother");
+        duplicate.setEmail("dbconstraint@example.com");
+        duplicate.setPassword("irrelevant");
+        duplicate.setRole(Role.USER);
+        duplicate.setVisibility(true);
+        duplicate.setCreatedAt(new java.util.Date());
+        duplicate.setUpdatedAt(new java.util.Date());
+        duplicate.setEmailVerified(true);
+
+        assertThatThrownBy(() -> userRepository.saveAndFlush(duplicate))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test

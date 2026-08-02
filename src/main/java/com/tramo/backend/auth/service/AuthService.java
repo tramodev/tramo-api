@@ -23,6 +23,7 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import io.github.bucket4j.Bucket;
 import jakarta.transaction.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -110,7 +111,16 @@ public class AuthService {
         user.setRole(Role.USER);
         user.setEmailVerified(false);
 
-        userRepository.save(user);
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // Lost a race against a concurrent registration for the same username/email -
+            // the existsBy* checks above passed for both, only one insert can win.
+            if (userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
+                throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
+            }
+            throw new UserAlreadyExistsException("email", "Email '" + registerRequest.getEmail() + "' is already registered");
+        }
 
         EmailVerificationToken verificationToken = createVerificationToken(user);
         emailService.sendVerificationEmail(user, verificationToken.getToken());
@@ -246,7 +256,13 @@ public class AuthService {
         user.setUpdatedAt(new Date());
         user.setRole(Role.USER);
         user.setEmailVerified(true);
-        return userRepository.save(user);
+        try {
+            return userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // Lost a race against a concurrent Google sign-in for the same email -
+            // the other request already inserted the row, use it.
+            return userRepository.findByEmail(payload.email()).orElseThrow(() -> e);
+        }
     }
 
     private String generateUsernameFromEmail(String email) {
