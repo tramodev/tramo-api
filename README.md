@@ -82,6 +82,21 @@ The default datasource points at `jdbc:postgresql://localhost:5432/mypath` — a
 > `spring.jpa.hibernate.ddl-auto` is set to `update` for development convenience.
 > Consider a managed migration tool (Flyway/Liquibase) before production.
 
+### Production
+
+`application.properties` hardcodes a few values to `localhost` for local dev
+convenience (datasource URL, frontend URL, Patreon OAuth redirect). Run with the
+`prod` profile active (`SPRING_PROFILES_ACTIVE=prod`) to override them via
+`application-prod.properties`, which requires these additional environment
+variables (no localhost fallback — the app fails fast at startup if they're
+missing):
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Full JDBC URL for the production Postgres instance |
+| `FRONTEND_URL` | Public URL of the deployed frontend (used in emails, etc.) |
+| `PATREON_REDIRECT_URI` | Must exactly match the redirect URI registered in the Patreon app config, or the OAuth callback fails at Patreon's side |
+
 ### Run
 
 ```bash
