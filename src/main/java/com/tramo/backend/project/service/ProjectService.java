@@ -3,6 +3,7 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.upload.R2Client;
+import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
@@ -1040,10 +1041,23 @@ public class ProjectService {
             user.setWebsite(request.getWebsite().isBlank() ? null : request.getWebsite());
         }
         if (request.getImageUrl() != null) {
-            user.setImageUrl(request.getImageUrl().isBlank() ? null : request.getImageUrl());
+            String newImageUrl = request.getImageUrl().isBlank() ? null : request.getImageUrl();
+            if (newImageUrl != null && !r2Client.isOwnedUrl(newImageUrl, "avatar", user.getId())) {
+                throw new IllegalArgumentException("Invalid image URL");
+            }
+            user.setImageUrl(newImageUrl);
         }
         if (request.getBannerUrl() != null) {
-            user.setBannerUrl(request.getBannerUrl().isBlank() ? null : request.getBannerUrl());
+            String newBannerUrl = request.getBannerUrl().isBlank() ? null : request.getBannerUrl();
+            if (newBannerUrl != null) {
+                if (!r2Client.isOwnedUrl(newBannerUrl, "banner", user.getId())) {
+                    throw new IllegalArgumentException("Invalid banner URL");
+                }
+                if (!subscriptionService.isSupporter(user)) {
+                    throw new LimitExceededException("Profile banners are a supporter perk. Upgrade to use one.");
+                }
+            }
+            user.setBannerUrl(newBannerUrl);
         }
         if (request.getSelectedBadge() != null) {
             String badgeCode = request.getSelectedBadge().isBlank() ? null : request.getSelectedBadge();

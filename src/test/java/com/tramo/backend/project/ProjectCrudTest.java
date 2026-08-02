@@ -411,12 +411,13 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Test
     void updateProfileChangesBioAndImage() throws Exception {
         User user = createUser("profileupdater");
+        String imageUrl = "https://test-bucket.example.com/avatar/" + user.getId() + "/a.png";
 
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"bio":"New bio","imageUrl":"https://example.com/a.png"}"""))
+                                {"bio":"New bio","imageUrl":"%s"}""".formatted(imageUrl)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bio").value("New bio"));
     }

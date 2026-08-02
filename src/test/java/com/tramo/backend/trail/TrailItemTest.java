@@ -718,6 +718,62 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateContentRejectsImageNodeFromExternalDomain() throws Exception {
+        User owner = createUser("contentexternalimg");
+        Project project = createProject(owner, "ExternalImgProject", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Item");
+
+        String content = objectMapperEscape("""
+                {"root":{"children":[{"type":"image","src":"https://attacker.com/px.gif"}]}}""");
+
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"%s"}""".formatted(content)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateContentAcceptsImageNodeFromOurDomain() throws Exception {
+        User owner = createUser("contentownedimg");
+        Project project = createProject(owner, "OwnedImgProject", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Item");
+        String imageUrl = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
+
+        String content = objectMapperEscape("""
+                {"root":{"children":[{"type":"image","src":"%s"}]}}""".formatted(imageUrl));
+
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"%s"}""".formatted(content)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void updateContentIgnoresNonJsonContentEvenIfItMentionsSrc() throws Exception {
+        User owner = createUser("contentplaintext");
+        Project project = createProject(owner, "PlainTextProject", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Item");
+
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"the HTML attribute \\"src\\":\\"http://example.com\\" is used for images"}"""))
+                .andExpect(status().isNoContent());
+    }
+
+    private String objectMapperEscape(String rawJson) {
+        return rawJson.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    @Test
     void purgeDeletesOnlyStaleUnreferencedPendingImages() throws Exception {
         User owner = createUser("imagepurger");
         Project project = createProject(owner, "PurgeProject", "private");

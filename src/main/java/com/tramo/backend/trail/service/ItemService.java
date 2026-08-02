@@ -31,6 +31,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.Date;
 import java.util.List;
@@ -53,12 +55,13 @@ public class ItemService {
     private final R2Client r2Client;
     private final PendingImageDeletionRepository pendingImageDeletionRepository;
     private final ItemImageReferenceRepository itemImageReferenceRepository;
+    private final ObjectMapper objectMapper;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         AssociationRepository itemLinkRepository, TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
-                        ItemImageReferenceRepository itemImageReferenceRepository) {
+                        ItemImageReferenceRepository itemImageReferenceRepository, ObjectMapper objectMapper) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemLinkRepository = itemLinkRepository;
@@ -68,6 +71,7 @@ public class ItemService {
         this.r2Client = r2Client;
         this.pendingImageDeletionRepository = pendingImageDeletionRepository;
         this.itemImageReferenceRepository = itemImageReferenceRepository;
+        this.objectMapper = objectMapper;
     }
 
     public ItemResponseDTO create(Long trailId, ItemRequestDTO request, User requester) {
@@ -209,6 +213,7 @@ public class ItemService {
 
     @Transactional
     public void updateContent(Long id, String content, User requester) {
+        assertImagesAreFromOurDomain(content);
         Item item = getOwnedItem(id, requester);
         ItemContent itemContent = item.getContent();
         String previousContent = itemContent != null ? itemContent.getContent() : null;
@@ -222,6 +227,39 @@ public class ItemService {
         bumpOwningProjectLastEditedDate(id);
         Set<String> newUrls = deleteOrphanedEditorImages(item, id, requester, previousContent, content);
         resyncImageReferences(item, newUrls);
+    }
+
+    // Item content is the raw serialized Lexical editor tree - a JSON blob a client controls
+    // directly via this endpoint, independent of the editor UI (which only ever inserts images
+    // through the upload flow). Without this, a direct API call could embed an image node
+    // pointing anywhere (e.g. a tracking pixel), rendered as a raw <img> for anyone who views
+    // the item. Walking the actual JSON tree (rather than a regex over the raw string) avoids
+    // false positives on plain text that happens to contain the substring "src". Content that
+    // isn't valid JSON can't deserialize into a renderable image node in the editor either way,
+    // so it's skipped rather than rejected here.
+    private void assertImagesAreFromOurDomain(String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(content);
+        } catch (Exception e) {
+            return;
+        }
+        assertImageNodesAreFromOurDomain(root);
+    }
+
+    private void assertImageNodesAreFromOurDomain(JsonNode node) {
+        if (node.isObject() && "image".equals(node.path("type").asText(null))) {
+            String src = node.path("src").asText(null);
+            if (!r2Client.isFromOurDomain(src)) {
+                throw new IllegalArgumentException("Invalid image URL in content");
+            }
+        }
+        for (JsonNode child : node) {
+            assertImageNodesAreFromOurDomain(child);
+        }
     }
 
     private Set<String> deleteOrphanedEditorImages(Item item, Long itemId, User requester, String previousContent, String newContent) {
