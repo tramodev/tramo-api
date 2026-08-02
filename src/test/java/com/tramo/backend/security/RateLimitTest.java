@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -240,5 +241,39 @@ class RateLimitTest extends AbstractIntegrationTest {
         assertThat(result.getResponse().getStatus()).isEqualTo(429);
         assertThat(result.getResponse().getHeader("Retry-After")).isNotNull();
         assertThat(Integer.parseInt(result.getResponse().getHeader("Retry-After"))).isGreaterThan(0);
+    }
+
+    @Test
+    void publicGetEndpointsAreRateLimitedPerIp() throws Exception {
+        String ip = "172.16.7.1";
+        for (int i = 0; i < 120; i++) {
+            mockMvc.perform(get("/api/public/explore").with(remoteAddr(ip)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/public/explore").with(remoteAddr(ip)))
+                .andExpect(status().is(429));
+    }
+
+    @Test
+    void publicGetRateLimitIsSharedAcrossPublicEndpointsPerIp() throws Exception {
+        String ip = "172.16.7.2";
+        for (int i = 0; i < 120; i++) {
+            mockMvc.perform(get("/api/public/tags").with(remoteAddr(ip)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/public/explore").with(remoteAddr(ip)))
+                .andExpect(status().is(429));
+    }
+
+    @Test
+    void publicGetRateLimitIsPerIp() throws Exception {
+        String ip = "172.16.7.3";
+        for (int i = 0; i < 121; i++) {
+            mockMvc.perform(get("/api/public/explore").with(remoteAddr(ip)));
+        }
+        mockMvc.perform(get("/api/public/explore").with(remoteAddr(ip)))
+                .andExpect(status().is(429));
+        mockMvc.perform(get("/api/public/explore").with(remoteAddr("172.16.7.4")))
+                .andExpect(status().isOk());
     }
 }
