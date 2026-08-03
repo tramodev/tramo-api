@@ -40,14 +40,14 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     @Test
     void registerCreatesUnverifiedUserAndSendsVerificationEmail() throws Exception {
-        register(registerJson("newuser", "newuser@example.com", "Passw0rd!"))
+        register(registerJson("newuser", "newuser@example.com", "Passw0rd123!"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").exists());
 
         User user = userRepository.findByUsernameIgnoreCase("newuser").orElseThrow();
         assertThat(user.isEmailVerified()).isFalse();
         assertThat(user.getRole()).isEqualTo(Role.USER);
-        assertThat(user.getPassword()).isNotEqualTo("Passw0rd!");
+        assertThat(user.getPassword()).isNotEqualTo("Passw0rd123!");
         assertThat(emailVerificationTokenRepository.findAll())
                 .anyMatch(t -> t.getUser().getId().equals(user.getId()));
         verify(emailService).sendVerificationEmail(any(User.class), anyString());
@@ -58,7 +58,7 @@ class RegistrationTest extends AbstractIntegrationTest {
         doThrow(new CaptchaVerificationException("Captcha verification failed"))
                 .when(captchaVerifier).verify(anyString(), anyString());
 
-        register(registerJson("captchafail", "captchafail@example.com", "Passw0rd!"))
+        register(registerJson("captchafail", "captchafail@example.com", "Passw0rd123!"))
                 .andExpect(status().isForbidden());
 
         assertThat(userRepository.findByUsernameIgnoreCase("captchafail")).isEmpty();
@@ -67,7 +67,7 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerRejectsMissingCaptchaToken() throws Exception {
         register("""
-                {"username":"nocaptcha","email":"nocaptcha@example.com","password":"Passw0rd!"}""")
+                {"username":"nocaptcha","email":"nocaptcha@example.com","password":"Passw0rd123!"}""")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.captchaToken").exists());
     }
@@ -75,7 +75,7 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerRejectsDuplicateUsername() throws Exception {
         createUser("taken");
-        register(registerJson("taken", "other@example.com", "Passw0rd!"))
+        register(registerJson("taken", "other@example.com", "Passw0rd123!"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errors.username").exists());
     }
@@ -83,14 +83,14 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerRejectsDuplicateUsernameCaseInsensitive() throws Exception {
         createUser("MixedCase");
-        register(registerJson("mixedcase", "other@example.com", "Passw0rd!"))
+        register(registerJson("mixedcase", "other@example.com", "Passw0rd123!"))
                 .andExpect(status().isConflict());
     }
 
     @Test
     void registerRejectsDuplicateEmail() throws Exception {
         createUser("existing", "shared@example.com", true, false, Role.USER);
-        register(registerJson("someoneelse", "shared@example.com", "Passw0rd!"))
+        register(registerJson("someoneelse", "shared@example.com", "Passw0rd123!"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errors.email").exists());
     }
@@ -115,14 +115,14 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     @Test
     void registerRejectsInvalidUsernameCharacters() throws Exception {
-        register(registerJson("bad name!", "a@example.com", "Passw0rd!"))
+        register(registerJson("bad name!", "a@example.com", "Passw0rd123!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.username").exists());
     }
 
     @Test
     void registerRejectsTooShortUsername() throws Exception {
-        register(registerJson("ab", "a@example.com", "Passw0rd!"))
+        register(registerJson("ab", "a@example.com", "Passw0rd123!"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -141,7 +141,7 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     @Test
     void registerRejectsInvalidEmail() throws Exception {
-        register(registerJson("validname", "notanemail", "Passw0rd!"))
+        register(registerJson("validname", "notanemail", "Passw0rd123!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.email").exists());
     }
@@ -149,7 +149,7 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerIgnoresClientSuppliedRole() throws Exception {
         register("""
-                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd!","role":"ADMIN","captchaToken":"test-token"}""")
+                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd123!","role":"ADMIN","captchaToken":"test-token"}""")
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findByUsernameIgnoreCase("sneaky").orElseThrow().getRole())
@@ -158,7 +158,7 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     @Test
     void registerDoesNotSendEmailWhenValidationFails() throws Exception {
-        register(registerJson("validname", "notanemail", "Passw0rd!"))
+        register(registerJson("validname", "notanemail", "Passw0rd123!"))
                 .andExpect(status().isBadRequest());
         verify(emailService, never()).sendVerificationEmail(any(), anyString());
     }

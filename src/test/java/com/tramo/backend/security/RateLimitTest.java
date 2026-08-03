@@ -19,7 +19,7 @@ class RateLimitTest extends AbstractIntegrationTest {
                         .with(remoteAddr(ip))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"%s","password":"Whatever1!"}""".formatted(username)))
+                                {"username":"%s","password":"Whatever123!"}""".formatted(username)))
                 .andReturn();
     }
 
@@ -106,14 +106,14 @@ class RateLimitTest extends AbstractIntegrationTest {
                             .with(remoteAddr(ip))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"username":"%s","email":"%s","password":"Whatever1!","captchaToken":"t"}"""
+                                    {"username":"%s","email":"%s","password":"Whatever123!","captchaToken":"t"}"""
                                     .formatted(uniqueUsername(), uniqueEmail())));
         }
         MvcResult result = mockMvc.perform(post("/api/auth/register")
                         .with(remoteAddr(ip))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"%s","email":"%s","password":"Whatever1!","captchaToken":"t"}"""
+                                {"username":"%s","email":"%s","password":"Whatever123!","captchaToken":"t"}"""
                                 .formatted(uniqueUsername(), uniqueEmail())))
                 .andReturn();
         assertThat(result.getResponse().getStatus())

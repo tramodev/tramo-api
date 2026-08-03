@@ -102,7 +102,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
     @Test
     void resetPasswordChangesPasswordAndRevokesRefreshTokens() throws Exception {
         User user = createUser("resetter");
-        login("resetter", "Passw0rd!").andExpect(status().isOk());
+        login("resetter", "Passw0rd123!").andExpect(status().isOk());
         assertThat(refreshTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .isNotEmpty();
@@ -110,7 +110,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
         PasswordResetToken token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
         resetPassword(token.getToken(), "NewPassw0rd!").andExpect(status().isNoContent());
 
-        login("resetter", "Passw0rd!").andExpect(status().isUnauthorized());
+        login("resetter", "Passw0rd123!").andExpect(status().isUnauthorized());
         login("resetter", "NewPassw0rd!").andExpect(status().isOk());
         assertThat(refreshTokenRepository.findAll())
                 .filteredOn((RefreshToken t) -> t.getUser().getId().equals(user.getId()))
@@ -133,7 +133,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         assertThat(passwordResetTokenRepository.findByToken(token.getToken())).isEmpty();
-        login("slowpoke", "Passw0rd!").andExpect(status().isOk());
+        login("slowpoke", "Passw0rd123!").andExpect(status().isOk());
     }
 
     @Test

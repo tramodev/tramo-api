@@ -47,7 +47,7 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void loginReturnsTokensForVerifiedUser() throws Exception {
         createUser("alice");
-        login("alice", "Passw0rd!")
+        login("alice", "Passw0rd123!")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.refreshToken").isNotEmpty())
@@ -57,7 +57,7 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void loginIsCaseInsensitiveOnUsername() throws Exception {
         createUser("bob");
-        login("BOB", "Passw0rd!")
+        login("BOB", "Passw0rd123!")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("bob"));
     }
@@ -72,14 +72,14 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
 
     @Test
     void loginRejectsUnknownUser() throws Exception {
-        login("ghost", "Passw0rd!")
+        login("ghost", "Passw0rd123!")
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void loginRejectsUnverifiedUser() throws Exception {
         createUser("pending", "pending@example.com", false, false, Role.USER);
-        login("pending", "Passw0rd!")
+        login("pending", "Passw0rd123!")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Please verify your email before logging in."));
     }
@@ -87,7 +87,7 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void loginRejectsBannedUser() throws Exception {
         createUser("outlaw", "outlaw@example.com", true, true, Role.USER);
-        login("outlaw", "Passw0rd!")
+        login("outlaw", "Passw0rd123!")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("This account has been banned."));
     }

@@ -14,7 +14,7 @@ public class ChangePasswordRequestDTO {
     private String currentPassword;
 
     @NotBlank(message = "New password is required")
-    @Size(min = 6, max = 40, message = "Password must be between 6 and 40 characters")
+    @Size(min = 12, max = 40, message = "Password must be between 12 and 40 characters")
     @Pattern(
             regexp = "^(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z0-9]).+$",
             message = "Password must contain at least one uppercase letter, one number, and one symbol"

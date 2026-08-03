@@ -144,7 +144,7 @@ public abstract class AbstractIntegrationTest {
         User user = new User();
         user.setUsername(username);
         user.setEmail(email);
-        user.setPassword(passwordEncoder.encode("Passw0rd!"));
+        user.setPassword(passwordEncoder.encode("Passw0rd123!"));
         user.setVisibility(true);
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
