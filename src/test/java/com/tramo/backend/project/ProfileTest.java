@@ -84,6 +84,32 @@ class ProfileTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateProfileRejectsOversizedFreeTextFields() throws Exception {
+        User user = createUser("profileoversized");
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"bio":"%s"}""".formatted("a".repeat(501))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"location":"%s"}""".formatted("a".repeat(101))))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"website":"%s"}""".formatted("a".repeat(201))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void publicProfileAlwaysExposesLocationAndWebsite() throws Exception {
         User user = createUser("profilepublic");
         mockMvc.perform(put("/api/profile/me")
