@@ -3,6 +3,7 @@ package com.tramo.backend.auth;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.entity.RefreshToken;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
+import com.tramo.backend.auth.service.AuthService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,9 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
 
     @Autowired
     RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    AuthService authService;
 
     private RefreshToken issueRefreshToken(User user, Instant expiresAt) {
         RefreshToken token = new RefreshToken();
@@ -103,5 +107,25 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
 
         assertThat(refreshTokenRepository.findByToken(token.getToken())).isEmpty();
         refresh(token.getToken()).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void purgeDeletesOnlyExpiredTokensRegardlessOfRevokedStatus() {
+        User user = createUser("purgeable");
+        RefreshToken expiredRevoked = issueRefreshToken(user, Instant.now().minus(1, ChronoUnit.DAYS));
+        expiredRevoked.setRevoked(true);
+        refreshTokenRepository.save(expiredRevoked);
+        RefreshToken expiredActive = issueRefreshToken(user, Instant.now().minus(1, ChronoUnit.DAYS));
+        RefreshToken liveRevoked = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        liveRevoked.setRevoked(true);
+        refreshTokenRepository.save(liveRevoked);
+        RefreshToken liveActive = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+
+        authService.purgeExpiredRefreshTokens();
+
+        assertThat(refreshTokenRepository.findByToken(expiredRevoked.getToken())).isEmpty();
+        assertThat(refreshTokenRepository.findByToken(expiredActive.getToken())).isEmpty();
+        assertThat(refreshTokenRepository.findByToken(liveRevoked.getToken())).isPresent();
+        assertThat(refreshTokenRepository.findByToken(liveActive.getToken())).isPresent();
     }
 }

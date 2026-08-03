@@ -23,7 +23,10 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import io.github.bucket4j.Bucket;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -39,6 +42,8 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
@@ -352,6 +357,15 @@ public class AuthService {
     @Transactional
     public void logout(RefreshTokenRequestDTO request) {
         refreshTokenRepository.deleteByToken(request.getRefreshToken());
+    }
+
+    @Scheduled(cron = "0 0 3 * * *")
+    @Transactional
+    public void purgeExpiredRefreshTokens() {
+        long deleted = refreshTokenRepository.deleteByExpiresAtBefore(Instant.now());
+        if (deleted > 0) {
+            log.info("purgeExpiredRefreshTokens deleted {} expired refresh tokens", deleted);
+        }
     }
 
 }
