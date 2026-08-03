@@ -40,6 +40,7 @@ public abstract class AbstractIntegrationTest {
 
     protected static final String TEST_JWT_SECRET = "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=";
     protected static final String TEST_PATREON_WEBHOOK_SECRET = "test-patreon-webhook-secret";
+    protected static final String TEST_TOKEN_ENCRYPTION_KEY = "rRbqGbbP1Sfjmqi+lEZKzNlTztGZy1wcqzu9sVEgEAU=";
 
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
@@ -53,6 +54,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
+        registry.add("app.security.token-encryption-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.google.client-id", () -> "test-client-id");
         registry.add("app.patreon.client-id", () -> "test-patreon-client-id");
         registry.add("app.patreon.client-secret", () -> "test-patreon-client-secret");
