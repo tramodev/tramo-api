@@ -13,6 +13,7 @@ import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
@@ -176,7 +177,7 @@ public class ModerationService {
     public void unpublishProject(Long projectId, User admin, String reason) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        project.setVisibility("private");
+        project.setVisibility(ProjectVisibility.PRIVATE);
         projectRepository.save(project);
 
         for (ProjectReport report : projectReportRepository.findByStatusOrderByCreatedDateDesc("OPEN")) {

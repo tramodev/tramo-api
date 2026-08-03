@@ -57,6 +57,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectBookmark;
 import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
+import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.entity.ProjectVote;
 import com.tramo.backend.project.entity.ProjectView;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
@@ -215,7 +216,7 @@ public class ProjectService {
     @Transactional
     public ProjectResponseDTO update(Long id, ProjectRequestDTO request, User requester) {
         Project project = getOwnedProject(id, requester);
-        String previousVisibility = project.getVisibility();
+        ProjectVisibility previousVisibility = project.getVisibility();
         boolean touchesModifiedDate = false;
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             project.setTitle(request.getTitle());
@@ -227,12 +228,12 @@ public class ProjectService {
         }
         boolean firstPublish = false;
         if (request.getVisibility() != null) {
-            if ("published".equals(request.getVisibility())
+            if (request.getVisibility() == ProjectVisibility.PUBLISHED
                     && (project.getDescription() == null || project.getDescription().isBlank())) {
                 throw new IllegalArgumentException("Add a description before publishing");
             }
             project.setVisibility(request.getVisibility());
-            if ("published".equals(request.getVisibility()) && project.getFirstPublishedDate() == null) {
+            if (request.getVisibility() == ProjectVisibility.PUBLISHED && project.getFirstPublishedDate() == null) {
                 project.setFirstPublishedDate(new Date());
                 firstPublish = true;
             }
@@ -247,20 +248,20 @@ public class ProjectService {
         }
         Project savedProject = projectRepository.save(project);
         ProjectResponseDTO response = toResponse(savedProject, liveTagNames(savedProject));
-        if ("published".equals(request.getVisibility())) {
+        if (request.getVisibility() == ProjectVisibility.PUBLISHED) {
             checkAndAwardBadges(project.getOwner());
-            if (!"published".equals(previousVisibility)) {
-                
-                
+            if (previousVisibility != ProjectVisibility.PUBLISHED) {
+
+
                 for (Trail trail : trailRepository.findByProjectId(project.getId())) {
                     trail.setVersion(trail.getVersion() + 1);
                     trailRepository.save(trail);
                 }
                 createSnapshot(project, "PUBLISH");
             }
-            
-            
-            if (!"published".equals(previousVisibility) && firstPublish) {
+
+
+            if (previousVisibility != ProjectVisibility.PUBLISHED && firstPublish) {
                 notifyFollowers(project.getOwner(), "PUBLISH", project);
             }
         }
@@ -274,7 +275,7 @@ public class ProjectService {
             throw new IllegalArgumentException("Add a description before publishing");
         }
         boolean firstPublish = project.getFirstPublishedDate() == null;
-        project.setVisibility("published");
+        project.setVisibility(ProjectVisibility.PUBLISHED);
         if (firstPublish) {
             project.setFirstPublishedDate(new Date());
         }
@@ -401,8 +402,8 @@ public class ProjectService {
     }
 
     private void assertViewable(Project project) {
-        String visibility = project.getVisibility();
-        if (!"unlisted".equals(visibility) && !"published".equals(visibility)) {
+        ProjectVisibility visibility = project.getVisibility();
+        if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
             throw new ResourceNotFoundException("Project not found");
         }
     }
@@ -422,7 +423,7 @@ public class ProjectService {
         Project fork = new Project();
         fork.setTitle(source.getTitle());
         fork.setDescription(source.getDescription());
-        fork.setVisibility("private");
+        fork.setVisibility(ProjectVisibility.PRIVATE);
         fork.setOwner(requester);
         fork.setForkedFrom(source);
         fork.setCreationDate(new Date());
@@ -652,7 +653,7 @@ public class ProjectService {
         
         ProjectSnapshotData data = new ProjectSnapshotData(ProjectSnapshotData.CURRENT_SCHEMA_VERSION,
                 project.getId(), project.getTitle(), project.getDescription(),
-                project.getVisibility(), project.getThumbnailImageUrl(), String.join(",", liveTagNames(project)), trails);
+                project.getVisibility().toJson(), project.getThumbnailImageUrl(), String.join(",", liveTagNames(project)), trails);
 
         ProjectSnapshot snapshot = new ProjectSnapshot();
         snapshot.setProject(project);
@@ -671,7 +672,7 @@ public class ProjectService {
     @Transactional
     public void backfillMissingPublishSnapshots() {
         Set<Long> alreadySnapshotted = Set.copyOf(projectSnapshotRepository.findProjectIdsWithPublishSnapshot());
-        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc("published")) {
+        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED)) {
             if (!alreadySnapshotted.contains(project.getId())) {
                 createSnapshot(project, "PUBLISH");
             }
@@ -730,7 +731,7 @@ public class ProjectService {
             projectRepository.incrementViewCount(id);
             viewCount++;
 
-            if ("published".equals(project.getVisibility())) {
+            if (project.getVisibility() == ProjectVisibility.PUBLISHED) {
                 long viewsAfter = projectRepository.sumViewCountByOwnerIdAndPublished(project.getOwner().getId());
                 if (crossedViewBadgeThreshold(viewsAfter - 1, viewsAfter)) {
                     checkAndAwardBadges(project.getOwner());
@@ -741,7 +742,7 @@ public class ProjectService {
         
         
         
-        Optional<ProjectSnapshot> snapshotOpt = "published".equals(project.getVisibility())
+        Optional<ProjectSnapshot> snapshotOpt = project.getVisibility() == ProjectVisibility.PUBLISHED
                 ? projectSnapshotRepository.findLatestPublishByProjectIdIn(List.of(id)).stream().findFirst()
                 : Optional.empty();
 
@@ -828,7 +829,7 @@ public class ProjectService {
 
     public List<ProjectFeedItemDTO> getPublishedFeed(String query, String sort, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        List<Project> allPublished = projectRepository.findByVisibilityOrderByModifiedDateDesc("published");
+        List<Project> allPublished = projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED);
         Map<Long, List<String>> tagNamesByProjectId = q.isEmpty() ? Map.of()
                 : tagNamesGroupedByProjectId(allPublished.stream().map(Project::getId).toList());
         List<Project> published = allPublished.stream()
@@ -852,7 +853,7 @@ public class ProjectService {
         List<Project> pageProjects;
         boolean hasMore;
         if ("hot".equals(sort)) {
-            Page<Long> idPage = projectRepository.findPublishedHotIds("published", q, pageable);
+            Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, q, pageable);
             List<Long> ids = idPage.getContent();
             Map<Long, Project> byId = ids.isEmpty()
                     ? Map.of()
@@ -866,12 +867,12 @@ public class ProjectService {
                 pageProjects = List.of();
                 hasMore = false;
             } else {
-                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners("published", followedIds, q, pageable);
+                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners(ProjectVisibility.PUBLISHED, followedIds, q, pageable);
                 pageProjects = projectPage.getContent();
                 hasMore = projectPage.hasNext();
             }
         } else {
-            Page<Project> projectPage = projectRepository.findPublishedRecent("published", q, pageable);
+            Page<Project> projectPage = projectRepository.findPublishedRecent(ProjectVisibility.PUBLISHED, q, pageable);
             pageProjects = projectPage.getContent();
             hasMore = projectPage.hasNext();
         }
@@ -889,7 +890,7 @@ public class ProjectService {
         if (page == 0) {
             if (!"following".equals(sort)) {
                 featured = projectRepository.findByFeaturedTrue()
-                        .filter(project -> "published".equals(project.getVisibility()))
+                        .filter(project -> project.getVisibility() == ProjectVisibility.PUBLISHED)
                         .map(project -> toFeedItem(project, FeedContext.forPublishedProjects(List.of(project), requester, projectRepository,
                                 projectVoteRepository, projectBookmarkRepository, commentRepository, projectSnapshotRepository)
                                 .withThumbnails(resolveThumbnails(List.of(project)))))
@@ -905,7 +906,7 @@ public class ProjectService {
     public List<AuthorCountDTO> getActiveAuthors(int limit) {
         Map<String, Long> authorCounts = new LinkedHashMap<>();
         Map<String, String> authorAvatars = new HashMap<>();
-        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc("published")) {
+        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED)) {
             authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
             authorAvatars.putIfAbsent(project.getOwner().getUsername(), project.getOwner().getImageUrl());
         }
@@ -919,7 +920,7 @@ public class ProjectService {
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void refreshFeaturedProject() {
-        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc("published");
+        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED);
         if (published.isEmpty()) return;
 
         List<Long> ids = published.stream().map(Project::getId).toList();
@@ -1081,7 +1082,7 @@ public class ProjectService {
     }
 
     private ProfileStatsDTO getProfileStats(User user) {
-        long trailsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), "published");
+        long trailsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), ProjectVisibility.PUBLISHED);
         long upvotesReceived = projectVoteRepository.countByProjectOwnerIdAndProjectPublished(user.getId());
         long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
         long forksCount = projectRepository.countByOwnerIdAndForkedFromNotNull(user.getId());
@@ -1099,7 +1100,7 @@ public class ProjectService {
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPage(User user, int page, int size) {
         Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
-                user.getId(), "published", PageRequest.of(page, size));
+                user.getId(), ProjectVisibility.PUBLISHED, PageRequest.of(page, size));
         return new PageResponseDTO<>(toPublishedFeedItems(result.getContent(), user), result.hasNext());
     }
 
@@ -1127,7 +1128,7 @@ public class ProjectService {
         List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
         List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
         List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId());
-        List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), "published");
+        List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), ProjectVisibility.PUBLISHED);
         List<ActivityItemDTO> all = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
 
         int from = Math.min(page * size, all.size());
@@ -1182,7 +1183,7 @@ public class ProjectService {
         User target = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
-                target.getId(), "published", PageRequest.of(page, size));
+                target.getId(), ProjectVisibility.PUBLISHED, PageRequest.of(page, size));
         return new PageResponseDTO<>(toPublishedFeedItems(result.getContent(), requester), result.hasNext());
     }
 

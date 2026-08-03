@@ -7,6 +7,7 @@ import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
@@ -94,8 +95,8 @@ public class CommentService {
     }
 
     private void assertViewable(Project project) {
-        String visibility = project.getVisibility();
-        if (!"unlisted".equals(visibility) && !"published".equals(visibility)) {
+        ProjectVisibility visibility = project.getVisibility();
+        if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
             throw new ResourceNotFoundException("Project not found");
         }
     }

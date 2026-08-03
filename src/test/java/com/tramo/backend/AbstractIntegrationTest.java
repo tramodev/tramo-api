@@ -10,6 +10,7 @@ import com.tramo.backend.auth.service.GoogleTokenVerifier;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.subscription.patreon.PatreonClient;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.security.jwt.JwtService;
 import com.tramo.backend.tag.entity.Tag;
@@ -220,7 +221,7 @@ public abstract class AbstractIntegrationTest {
         Project project = new Project();
         project.setTitle(title);
         project.setDescription(description);
-        project.setVisibility(visibility);
+        project.setVisibility(visibility == null ? null : ProjectVisibility.valueOf(visibility.toUpperCase()));
         project.setOwner(owner);
         project.setCreationDate(new Date());
         project.setModifiedDate(new Date());

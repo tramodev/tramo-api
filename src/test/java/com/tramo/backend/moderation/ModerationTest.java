@@ -6,6 +6,7 @@ import com.tramo.backend.moderation.entity.ProjectReport;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -205,7 +206,7 @@ class ModerationTest extends AbstractIntegrationTest {
                                 {"reason":"confirmed"}"""))
                 .andExpect(status().isOk());
 
-        assertThat(projectRepository.findById(project.getId()).orElseThrow().getVisibility()).isEqualTo("private");
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getVisibility()).isEqualTo(ProjectVisibility.PRIVATE);
         assertThat(projectReportRepository.findAll().get(0).getStatus()).isEqualTo("ACTIONED");
         assertThat(moderationLogRepository.findAll())
                 .anyMatch(l -> "UNPUBLISH_PROJECT".equals(l.getAction()) && l.getTargetId().equals(project.getId()));

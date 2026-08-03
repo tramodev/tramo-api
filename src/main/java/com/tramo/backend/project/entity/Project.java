@@ -28,7 +28,7 @@ public class Project {
     private Long id;
     private String title;
     private String description;
-    private String visibility;
+    private ProjectVisibility visibility;
     @Column(columnDefinition = "TEXT")
     private String thumbnailImageUrl;
 
