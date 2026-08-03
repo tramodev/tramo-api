@@ -106,8 +106,8 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
         user.setEmail(registerRequest.getEmail());
         user.setVisibility(registerRequest.getVisibility() != null ? registerRequest.getVisibility() : true);
-        user.setCreatedAt(registerRequest.getCreatedAt());
-        user.setUpdatedAt(registerRequest.getUpdatedAt());
+        user.setCreatedAt(new Date());
+        user.setUpdatedAt(new Date());
         user.setRole(Role.USER);
         user.setEmailVerified(false);
 

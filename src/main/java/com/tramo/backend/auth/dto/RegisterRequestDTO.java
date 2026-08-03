@@ -1,11 +1,8 @@
 package com.tramo.backend.auth.dto;
 
-import com.tramo.backend.user.Role;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.util.Date;
 
 @Getter
 @Setter
@@ -32,14 +29,8 @@ public class RegisterRequestDTO {
     private String captchaToken;
 
     private Boolean visibility;
-    private Date createdAt;
-    private Date updatedAt;
-    private Role role;
 
     public RegisterRequestDTO() {
-        this.createdAt = new Date();
-        this.updatedAt = new Date();
-        this.role = Role.USER;
         this.visibility = true;
     }
 }
