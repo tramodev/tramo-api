@@ -4,7 +4,6 @@ import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -20,10 +19,10 @@ class JwtFilterTest extends AbstractIntegrationTest {
     private String signedToken(String username, String base64Secret, long expiresInMs) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
-                .setSubject(username)
-                .setIssuedAt(new Date(now - 10_000))
-                .setExpiration(new Date(now + expiresInMs))
-                .signWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(base64Secret)), SignatureAlgorithm.HS256)
+                .subject(username)
+                .issuedAt(new Date(now - 10_000))
+                .expiration(new Date(now + expiresInMs))
+                .signWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(base64Secret)))
                 .compact();
     }
 

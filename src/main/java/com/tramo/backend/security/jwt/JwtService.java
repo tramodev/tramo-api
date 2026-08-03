@@ -1,6 +1,5 @@
 package com.tramo.backend.security.jwt;
 
-import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,9 +13,10 @@ import org.springframework.stereotype.Service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+
+import javax.crypto.SecretKey;
 
 @Service
 public class JwtService {
@@ -39,15 +39,15 @@ public class JwtService {
     private String getToken(Map<String,Object> extraClaims, String username) {
         return Jwts
                 .builder()
-                .setClaims(extraClaims)
-                .setSubject(username)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + accessTokenTtlMs))
-                .signWith(getKey(), SignatureAlgorithm.HS256)
+                .claims(extraClaims)
+                .subject(username)
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + accessTokenTtlMs))
+                .signWith(getKey())
                 .compact();
     }
 
-    private Key getKey() {
+    private SecretKey getKey() {
         byte[] keyBytes= Decoders.BASE64.decode(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
     }
@@ -85,11 +85,11 @@ public class JwtService {
     private Claims getAllClaims(String token)
     {
         return Jwts
-                .parserBuilder()
-                .setSigningKey(getKey())
+                .parser()
+                .verifyWith(getKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     public <T> T getClaim(String token, Function<Claims,T> claimsResolver)

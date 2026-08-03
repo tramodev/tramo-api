@@ -43,7 +43,7 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>com.github.vladimir-bukhtoyarov</groupId>
+			<groupId>com.bucket4j</groupId>
 			<artifactId>bucket4j-core</artifactId>
 			<version>8.0.1</version>
 		</dependency>
@@ -64,18 +64,18 @@
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
-			<version>0.11.5</version>
+			<version>0.13.0</version>
 		</dependency>
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-impl</artifactId>
-			<version>0.11.5</version>
+			<version>0.13.0</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-jackson</artifactId>
-			<version>0.11.5</version>
+			<version>0.13.0</version>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
@@ -108,12 +108,6 @@
 			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-devtools</artifactId>
-			<scope>runtime</scope>
-			<optional>true</optional>
-		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
