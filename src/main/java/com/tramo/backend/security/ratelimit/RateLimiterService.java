@@ -18,10 +18,10 @@ public class RateLimiterService {
 
         return cache.get(key, k ->
                 Bucket.builder()
-                        .addLimit(Bandwidth.classic(
-                                capacity,
-                                Refill.intervally(refillTokens, refillDuration)
-                        ))
+                        .addLimit(Bandwidth.builder()
+                                .capacity(capacity)
+                                .refillIntervally(refillTokens, refillDuration)
+                                .build())
                         .build()
         );
     }
