@@ -79,8 +79,11 @@ Create a local `.env` (or export them) before running:
 The default datasource points at `jdbc:postgresql://localhost:5432/mypath` — adjust
 `spring.datasource.url` in `application.properties` if yours differs.
 
-> `spring.jpa.hibernate.ddl-auto` is set to `update` for development convenience.
-> Consider a managed migration tool (Flyway/Liquibase) before production.
+> Schema is managed by Flyway (`spring.jpa.hibernate.ddl-auto=validate` — Hibernate only
+> checks the entity mappings match, it never alters schema). Migrations live in
+> `src/main/resources/db/migration/`; every schema change is a new sequential
+> `V{n}__description.sql` file, applied automatically on boot. Never edit a migration
+> that's already been applied — add a new one instead.
 
 ### Production
 
