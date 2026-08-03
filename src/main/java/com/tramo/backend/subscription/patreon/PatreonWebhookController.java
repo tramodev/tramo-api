@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.Set;
 
 
 
@@ -29,6 +30,9 @@ import java.util.Optional;
 @RequestMapping("/api/webhooks/patreon")
 public class PatreonWebhookController {
     private static final Logger log = LoggerFactory.getLogger(PatreonWebhookController.class);
+
+    private static final Set<String> ACTIVATION_EVENTS = Set.of("members:pledge:create", "members:pledge:update");
+    private static final Set<String> DEACTIVATION_EVENTS = Set.of("members:pledge:delete");
 
     private final String webhookSecret;
     private final UserRepository userRepository;
@@ -65,10 +69,12 @@ public class PatreonWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        if (eventType != null && eventType.endsWith("pledge:delete")) {
+        if (DEACTIVATION_EVENTS.contains(eventType)) {
             subscriptionService.deactivateSupporterSubscription(user.get());
-        } else {
+        } else if (ACTIVATION_EVENTS.contains(eventType)) {
             subscriptionService.activateSupporterSubscription(user.get(), subscriptionService.findOrCreateSupporterPlan());
+        } else {
+            log.warn("Patreon webhook unrecognized eventType={}, ignoring", eventType);
         }
         return ResponseEntity.ok().build();
     }
