@@ -204,6 +204,26 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void exploreSearchIgnoresTermsShorterThanThreeChars() throws Exception {
+        User owner = createUser("shortsearchowner");
+        createProject(owner, "Zebra crossing", "published", "A description", null);
+        createProject(owner, "Another thing entirely", "published", "A description", null);
+
+        mockMvc.perform(get("/api/public/explore?q=z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(2));
+
+        mockMvc.perform(get("/api/public/explore?q=ze"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(2));
+
+        mockMvc.perform(get("/api/public/explore?q=zeb"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feed.length()").value(1))
+                .andExpect(jsonPath("$.feed[0].title").value("Zebra crossing"));
+    }
+
+    @Test
     void deleteRemovesProjectWithTrailsItemsVotesAndBookmarks() throws Exception {
         User owner = createUser("demolisher");
         User fan = createUser("fan");

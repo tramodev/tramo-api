@@ -848,6 +848,11 @@ public class ProjectService {
 
     public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
+        // Trigram indexes need >=3 chars to generate tokens; shorter terms can't use
+        // idx_project_title_trgm/idx_project_description_trgm/idx_tag_name_trgm and
+        // fall back to a full scan on `project`. Treat them like an empty query —
+        // the JPQL below already short-circuits filtering on `:query = ''`.
+        if (q.length() < 3) q = "";
         Pageable pageable = PageRequest.of(page, size);
 
         List<Project> pageProjects;
