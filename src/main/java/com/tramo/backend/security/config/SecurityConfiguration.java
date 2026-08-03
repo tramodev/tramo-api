@@ -42,8 +42,7 @@ public class SecurityConfiguration {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authRequest ->
                         authRequest
-                                
-                                
+                                .requestMatchers("/actuator/health").permitAll()
                                 .requestMatchers("/api/auth/patreon/connect").authenticated()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()
