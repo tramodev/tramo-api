@@ -71,7 +71,7 @@ public class RateLimitFilter implements Filter {
                         ip + ":refresh", 30, 30, Duration.ofMinutes(1)
                 );
                 
-                case "/api/auth/check-email", "/api/auth/check-username" -> rateLimiterService.resolveBucket(
+                case "/api/auth/check-username" -> rateLimiterService.resolveBucket(
                         ip + ":check", 30, 30, Duration.ofMinutes(1)
                 );
                 default -> null;

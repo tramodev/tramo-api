@@ -89,11 +89,7 @@ public class AuthService {
         return new AvailabilityResponseDTO(available);
     }
 
-    public AvailabilityResponseDTO checkEmailAvailability(String email) {
-        boolean available = email != null && !email.isBlank()
-                && !userRepository.existsByEmail(email);
-        return new AvailabilityResponseDTO(available);
-    }
+    private static final String REGISTERED_MESSAGE = "Account created. Check your email to verify your account.";
 
     public RegisterResponseDTO register(RegisterRequestDTO registerRequest) {
         captchaVerifier.verify(registerRequest.getCaptchaToken(), "register");
@@ -102,8 +98,11 @@ public class AuthService {
             throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
         }
 
+        // Unlike username, email isn't a public identifier - responding the same way
+        // whether or not it's taken keeps this endpoint from being an email-enumeration
+        // oracle for a social platform. No account is created, no email is sent.
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new UserAlreadyExistsException("email", "Email '" + registerRequest.getEmail() + "' is already registered");
+            return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
 
         User user = new User();
@@ -124,13 +123,13 @@ public class AuthService {
             if (userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
                 throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
             }
-            throw new UserAlreadyExistsException("email", "Email '" + registerRequest.getEmail() + "' is already registered");
+            return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
 
         EmailVerificationToken verificationToken = createVerificationToken(user);
         emailService.sendVerificationEmail(user, verificationToken.getToken());
 
-        return new RegisterResponseDTO("Account created. Check your email to verify your account.");
+        return new RegisterResponseDTO(REGISTERED_MESSAGE);
     }
 
     public AuthResponse verifyEmail(String token) {

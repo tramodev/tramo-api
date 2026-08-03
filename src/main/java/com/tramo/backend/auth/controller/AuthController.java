@@ -34,11 +34,6 @@ public class AuthController {
         return ResponseEntity.ok(authService.checkUsernameAvailability(username));
     }
 
-    @GetMapping("/check-email")
-    public ResponseEntity<AvailabilityResponseDTO> checkEmail(@RequestParam String email) {
-        return ResponseEntity.ok(authService.checkEmailAvailability(email));
-    }
-
     @PostMapping("/register")
     public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO registerRequest){
         return ResponseEntity.ok(authService.register(registerRequest));

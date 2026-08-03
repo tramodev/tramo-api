@@ -88,11 +88,19 @@ class RegistrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void registerRejectsDuplicateEmail() throws Exception {
+    void registerRespondsIdenticallyToSuccessOnDuplicateEmailWithoutCreatingAnAccount() throws Exception {
+        // Deliberately not distinguishable from the real-success response - an
+        // email/username-existence oracle isn't worth the UX convenience on a
+        // social platform. Username stays enumerable (see checkUsernameReportsAvailability):
+        // it's already public, unlike an email address.
         createUser("existing", "shared@example.com", true, false, Role.USER);
+
         register(registerJson("someoneelse", "shared@example.com", "Passw0rd123!"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.errors.email").exists());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Account created. Check your email to verify your account."));
+
+        assertThat(userRepository.findByUsernameIgnoreCase("someoneelse")).isEmpty();
+        verify(emailService, never()).sendVerificationEmail(any(), anyString());
     }
 
     @Test
@@ -180,23 +188,6 @@ class RegistrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.available").value(true));
 
         mockMvc.perform(get("/api/auth/check-username").param("username", ""))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available").value(false));
-    }
-
-    @Test
-    void checkEmailReportsAvailability() throws Exception {
-        createUser("mailowner", "mail@example.com", true, false, Role.USER);
-
-        mockMvc.perform(get("/api/auth/check-email").param("email", "mail@example.com"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available").value(false));
-
-        mockMvc.perform(get("/api/auth/check-email").param("email", "free@example.com"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available").value(true));
-
-        mockMvc.perform(get("/api/auth/check-email").param("email", ""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.available").value(false));
     }
