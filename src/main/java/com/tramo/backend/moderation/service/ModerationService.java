@@ -1,5 +1,6 @@
 package com.tramo.backend.moderation.service;
 
+import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.comment.entity.Comment;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -35,6 +36,7 @@ public class ModerationService {
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
     private final ProjectIdCodec projectIdCodec;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
                               CommentReportRepository commentReportRepository,
@@ -42,7 +44,8 @@ public class ModerationService {
                               ProjectRepository projectRepository,
                               CommentRepository commentRepository,
                               UserRepository userRepository,
-                              ProjectIdCodec projectIdCodec) {
+                              ProjectIdCodec projectIdCodec,
+                              RefreshTokenRepository refreshTokenRepository) {
         this.projectReportRepository = projectReportRepository;
         this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
@@ -50,6 +53,7 @@ public class ModerationService {
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
         this.projectIdCodec = projectIdCodec;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Transactional
@@ -161,6 +165,7 @@ public class ModerationService {
         }
         target.setBanned(true);
         userRepository.save(target);
+        refreshTokenRepository.deleteByUserId(userId);
         logAction(admin, "BAN", "USER", userId, reason);
     }
 
