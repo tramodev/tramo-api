@@ -8,6 +8,7 @@ import com.tramo.backend.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,15 +39,18 @@ public class PatreonWebhookController {
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
+    private final PatreonWebhookSignatureRepository webhookSignatureRepository;
 
     public PatreonWebhookController(@Value("${app.patreon.webhook-secret}") String webhookSecret,
                                      UserRepository userRepository,
                                      SubscriptionService subscriptionService,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     PatreonWebhookSignatureRepository webhookSignatureRepository) {
         this.webhookSecret = webhookSecret;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
+        this.webhookSignatureRepository = webhookSignatureRepository;
     }
 
     @PostMapping
@@ -55,6 +59,17 @@ public class PatreonWebhookController {
                                         @RequestHeader(value = "X-Patreon-Event", required = false) String eventType) {
         if (!signatureValid(rawBody, signature)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        // The signature is an HMAC of the raw body, so it's already a stable content
+        // fingerprint — recording it here rejects replays of a captured request (and
+        // no-ops Patreon's own retries of the same delivery) without needing a nonce
+        // or timestamp that Patreon's payload doesn't actually send.
+        try {
+            webhookSignatureRepository.save(new PatreonWebhookSignature(signature));
+        } catch (DataIntegrityViolationException ex) {
+            log.info("Patreon webhook replay detected, ignoring");
+            return ResponseEntity.ok().build();
         }
 
         String patreonUserId = extractPatreonUserId(rawBody);

@@ -26,9 +26,16 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     }
 
     private String pledgePayload(String patreonUserId) {
+        return pledgePayload(patreonUserId, "member-1");
+    }
+
+    // Real Patreon deliveries for the same member differ in body between events
+    // (timestamps, charge status, etc.), so the signature (an HMAC of the raw body)
+    // differs too. memberId stands in for that variation in these fixtures.
+    private String pledgePayload(String patreonUserId, String memberId) {
         return """
-                {"data":{"id":"member-1","type":"member","relationships":{"user":{"data":{"id":"%s","type":"user"}}}}}"""
-                .formatted(patreonUserId);
+                {"data":{"id":"%s","type":"member","relationships":{"user":{"data":{"id":"%s","type":"user"}}}}}"""
+                .formatted(memberId, patreonUserId);
     }
 
     @Test
@@ -55,20 +62,58 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
         User user = createUser("lapsingpatron");
         user.setPatreonUserId("patreon-999");
         userRepository.save(user);
-        String body = pledgePayload("patreon-999");
+        String createBody = pledgePayload("patreon-999");
+        String deleteBody = pledgePayload("patreon-999", "member-1-cancelled");
 
         mockMvc.perform(post("/api/webhooks/patreon")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Patreon-Event", "members:pledge:create")
-                        .header("X-Patreon-Signature", sign(body))
-                        .content(body))
+                        .header("X-Patreon-Signature", sign(createBody))
+                        .content(createBody))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/webhooks/patreon")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Patreon-Event", "members:pledge:delete")
-                        .header("X-Patreon-Signature", sign(body))
-                        .content(body))
+                        .header("X-Patreon-Signature", sign(deleteBody))
+                        .content(deleteBody))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.supporter").value(false));
+    }
+
+    @Test
+    void rejectsReplayOfCapturedPledgeCreateAfterCancellation() throws Exception {
+        User user = createUser("replayvictim");
+        user.setPatreonUserId("patreon-555");
+        userRepository.save(user);
+
+        String createBody = pledgePayload("patreon-555");
+        String createSignature = sign(createBody);
+
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", "members:pledge:create")
+                        .header("X-Patreon-Signature", createSignature)
+                        .content(createBody))
+                .andExpect(status().isOk());
+
+        String deleteBody = pledgePayload("patreon-555", "member-1-cancelled");
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", "members:pledge:delete")
+                        .header("X-Patreon-Signature", sign(deleteBody))
+                        .content(deleteBody))
+                .andExpect(status().isOk());
+
+        // Attacker replays the originally captured pledge:create request+signature.
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", "members:pledge:create")
+                        .header("X-Patreon-Signature", createSignature)
+                        .content(createBody))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
