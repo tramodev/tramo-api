@@ -110,22 +110,28 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void purgeDeletesOnlyExpiredTokensRegardlessOfRevokedStatus() {
+    void purgeDeletesExpiredAndStaleRevokedTokens() {
         User user = createUser("purgeable");
         RefreshToken expiredRevoked = issueRefreshToken(user, Instant.now().minus(1, ChronoUnit.DAYS));
         expiredRevoked.setRevoked(true);
         refreshTokenRepository.save(expiredRevoked);
         RefreshToken expiredActive = issueRefreshToken(user, Instant.now().minus(1, ChronoUnit.DAYS));
-        RefreshToken liveRevoked = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
-        liveRevoked.setRevoked(true);
-        refreshTokenRepository.save(liveRevoked);
+        RefreshToken revokedPastGracePeriod = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        revokedPastGracePeriod.setRevoked(true);
+        revokedPastGracePeriod.setRevokedAt(Instant.now().minus(3, ChronoUnit.DAYS));
+        refreshTokenRepository.save(revokedPastGracePeriod);
+        RefreshToken revokedRecently = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        revokedRecently.setRevoked(true);
+        revokedRecently.setRevokedAt(Instant.now().minus(1, ChronoUnit.HOURS));
+        refreshTokenRepository.save(revokedRecently);
         RefreshToken liveActive = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
 
-        authService.purgeExpiredRefreshTokens();
+        authService.purgeExpiredTokens();
 
         assertThat(refreshTokenRepository.findByToken(expiredRevoked.getToken())).isEmpty();
         assertThat(refreshTokenRepository.findByToken(expiredActive.getToken())).isEmpty();
-        assertThat(refreshTokenRepository.findByToken(liveRevoked.getToken())).isPresent();
+        assertThat(refreshTokenRepository.findByToken(revokedPastGracePeriod.getToken())).isEmpty();
+        assertThat(refreshTokenRepository.findByToken(revokedRecently.getToken())).isPresent();
         assertThat(refreshTokenRepository.findByToken(liveActive.getToken())).isPresent();
     }
 }

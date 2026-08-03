@@ -29,4 +29,6 @@ public class RefreshToken {
 
     private boolean revoked;
 
+    private Instant revokedAt;
+
 }

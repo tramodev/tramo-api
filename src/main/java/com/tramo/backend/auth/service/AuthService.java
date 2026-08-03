@@ -335,6 +335,7 @@ public class AuthService {
         
         
         refreshToken.setRevoked(true);
+        refreshToken.setRevokedAt(Instant.now());
         refreshTokenRepository.save(refreshToken);
 
         String accessToken = jwtService.getToken(user);
@@ -360,10 +361,26 @@ public class AuthService {
 
     @Scheduled(cron = "0 0 3 * * *")
     @Transactional
-    public void purgeExpiredRefreshTokens() {
-        long deleted = refreshTokenRepository.deleteByExpiresAtBefore(Instant.now());
-        if (deleted > 0) {
-            log.info("purgeExpiredRefreshTokens deleted {} expired refresh tokens", deleted);
+    public void purgeExpiredTokens() {
+        long deletedRefreshTokens = refreshTokenRepository.deleteByExpiresAtBefore(Instant.now());
+        if (deletedRefreshTokens > 0) {
+            log.info("purgeExpiredTokens deleted {} expired refresh tokens", deletedRefreshTokens);
+        }
+
+        long deletedRevokedRefreshTokens = refreshTokenRepository
+                .deleteByRevokedTrueAndRevokedAtBefore(Instant.now().minus(48, ChronoUnit.HOURS));
+        if (deletedRevokedRefreshTokens > 0) {
+            log.info("purgeExpiredTokens deleted {} revoked refresh tokens past the grace period", deletedRevokedRefreshTokens);
+        }
+
+        long deletedVerificationTokens = emailVerificationTokenRepository.deleteByExpiresAtBefore(Instant.now());
+        if (deletedVerificationTokens > 0) {
+            log.info("purgeExpiredTokens deleted {} expired email verification tokens", deletedVerificationTokens);
+        }
+
+        long deletedResetTokens = passwordResetTokenRepository.deleteByExpiresAtBefore(Instant.now());
+        if (deletedResetTokens > 0) {
+            log.info("purgeExpiredTokens deleted {} expired password reset tokens", deletedResetTokens);
         }
     }
 
