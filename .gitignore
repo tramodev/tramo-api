@@ -1,5 +1,10 @@
 HELP.md
 target/
+
+# macOS duplicate artifacts
+* 2.*
+* 3.*
+.DS_Store
 .env
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
