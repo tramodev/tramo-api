@@ -28,7 +28,9 @@ public class CommentReport {
 
     private String reason;
 
-    private String status = "OPEN";
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private ReportStatus status = ReportStatus.OPEN;
 
     private Date createdDate;
 }

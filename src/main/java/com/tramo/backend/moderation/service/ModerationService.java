@@ -86,7 +86,7 @@ public class ModerationService {
         if (comment.getAuthor() != null && comment.getAuthor().getId().equals(reporter.getId())) {
             throw new AccessDeniedException("Cannot report your own comment");
         }
-        if (commentReportRepository.existsByCommentIdAndReporterIdAndStatus(commentId, reporter.getId(), "OPEN")) {
+        if (commentReportRepository.existsByCommentIdAndReporterIdAndStatus(commentId, reporter.getId(), ReportStatus.OPEN)) {
             return;
         }
 
@@ -94,7 +94,7 @@ public class ModerationService {
         report.setComment(comment);
         report.setReporter(reporter);
         report.setReason(reason);
-        report.setStatus("OPEN");
+        report.setStatus(ReportStatus.OPEN);
         report.setCreatedDate(new Date());
         commentReportRepository.save(report);
     }
@@ -113,7 +113,7 @@ public class ModerationService {
                         ((ReportStatus) r[5]).name(),
                         (Date) r[6]
                 ));
-        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows("OPEN").stream()
+        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows(ReportStatus.OPEN).stream()
                 .map(r -> new ReportDTO(
                         (Long) r[0],
                         "COMMENT",
@@ -123,7 +123,7 @@ public class ModerationService {
                         (String) r[4],
                         (String) r[5],
                         (String) r[6],
-                        (String) r[7],
+                        ((ReportStatus) r[7]).name(),
                         (Date) r[8]
                 ));
         return Stream.concat(projectReports, commentReports)
@@ -136,7 +136,7 @@ public class ModerationService {
         if ("COMMENT".equals(type)) {
             CommentReport report = commentReportRepository.findById(reportId)
                     .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
-            report.setStatus("DISMISSED");
+            report.setStatus(ReportStatus.DISMISSED);
             logAction(admin, "DISMISS_REPORT", "COMMENT_REPORT", reportId, null);
             return;
         }

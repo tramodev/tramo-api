@@ -21,6 +21,13 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Reject duplicate file artifacts
+        run: |
+          if find src -name "* [0-9].*" | grep .; then
+            echo "::error::macOS duplicate files committed"
+            exit 1
+          fi
+
       - run: mvn --batch-mode test
 
       - uses: cicirello/jacoco-badge-generator@v2

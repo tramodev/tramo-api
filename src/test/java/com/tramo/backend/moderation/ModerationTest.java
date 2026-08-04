@@ -1,9 +1,11 @@
 package com.tramo.backend.moderation;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.moderation.entity.CommentReport;
 import com.tramo.backend.moderation.entity.ModerationLog;
 import com.tramo.backend.moderation.entity.ProjectReport;
 import com.tramo.backend.moderation.entity.ReportStatus;
+import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.project.entity.Project;
@@ -23,6 +25,9 @@ class ModerationTest extends AbstractIntegrationTest {
 
     @Autowired
     ProjectReportRepository projectReportRepository;
+
+    @Autowired
+    CommentReportRepository commentReportRepository;
 
     @Autowired
     ModerationLogRepository moderationLogRepository;
@@ -266,5 +271,40 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].username").value("findme"));
+    }
+
+    @Test
+    void upheldCommentReportRoundTripsAndIsExcludedFromOpenList() throws Exception {
+        User author = createUser("commentauthor");
+        User reporter = createUser("commentreporter");
+        User admin = createAdmin("admin13");
+        Project project = createProject(author, "Commentable", "published");
+
+        long commentId = postForId(author, "/api/project/" + pid(project) + "/comments", """
+                {"content":"spammy comment"}""");
+
+        mockMvc.perform(post("/api/comment/" + commentId + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"spam"}"""))
+                .andExpect(status().isOk());
+
+        CommentReport report = commentReportRepository.findAll().get(0);
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.OPEN);
+
+        mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+        report.setStatus(ReportStatus.UPHELD);
+        commentReportRepository.save(report);
+
+        assertThat(commentReportRepository.findById(report.getId()).orElseThrow().getStatus())
+                .isEqualTo(ReportStatus.UPHELD);
+
+        mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
     }
 }
