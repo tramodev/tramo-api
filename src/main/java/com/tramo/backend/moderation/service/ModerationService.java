@@ -3,6 +3,7 @@ package com.tramo.backend.moderation.service;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.comment.entity.Comment;
 import com.tramo.backend.comment.repository.CommentRepository;
+import com.tramo.backend.comment.service.CommentService;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.dto.AdminUserDTO;
@@ -35,6 +36,7 @@ public class ModerationService {
     private final ModerationLogRepository moderationLogRepository;
     private final ProjectRepository projectRepository;
     private final CommentRepository commentRepository;
+    private final CommentService commentService;
     private final UserRepository userRepository;
     private final ProjectIdCodec projectIdCodec;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -44,6 +46,7 @@ public class ModerationService {
                               ModerationLogRepository moderationLogRepository,
                               ProjectRepository projectRepository,
                               CommentRepository commentRepository,
+                              CommentService commentService,
                               UserRepository userRepository,
                               ProjectIdCodec projectIdCodec,
                               RefreshTokenRepository refreshTokenRepository) {
@@ -52,6 +55,7 @@ public class ModerationService {
         this.moderationLogRepository = moderationLogRepository;
         this.projectRepository = projectRepository;
         this.commentRepository = commentRepository;
+        this.commentService = commentService;
         this.userRepository = userRepository;
         this.projectIdCodec = projectIdCodec;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -144,6 +148,22 @@ public class ModerationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
         report.setStatus(ReportStatus.DISMISSED);
         logAction(admin, "DISMISS_REPORT", "REPORT", reportId, null);
+    }
+
+    @Transactional
+    public void upholdCommentReport(Long reportId, User admin, String reason) {
+        CommentReport report = commentReportRepository.findById(reportId)
+                .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
+        Comment comment = report.getComment();
+        commentService.delete(comment.getId(), admin);
+
+        for (CommentReport r : commentReportRepository.findByStatusOrderByCreatedDateDesc(ReportStatus.OPEN)) {
+            if (r.getComment().getId().equals(comment.getId())) {
+                r.setStatus(ReportStatus.UPHELD);
+            }
+        }
+
+        logAction(admin, "UPHOLD_REPORT", "COMMENT_REPORT", reportId, reason);
     }
 
     public List<AdminUserDTO> searchUsers(String query) {

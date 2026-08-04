@@ -1,6 +1,7 @@
 package com.tramo.backend.moderation;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.moderation.entity.CommentReport;
 import com.tramo.backend.moderation.entity.ModerationLog;
 import com.tramo.backend.moderation.entity.ProjectReport;
@@ -28,6 +29,9 @@ class ModerationTest extends AbstractIntegrationTest {
 
     @Autowired
     CommentReportRepository commentReportRepository;
+
+    @Autowired
+    CommentRepository commentRepository;
 
     @Autowired
     ModerationLogRepository moderationLogRepository;
@@ -302,6 +306,42 @@ class ModerationTest extends AbstractIntegrationTest {
 
         assertThat(commentReportRepository.findById(report.getId()).orElseThrow().getStatus())
                 .isEqualTo(ReportStatus.UPHELD);
+
+        mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void upholdCommentReportDeletesCommentAndMarksReportUpheld() throws Exception {
+        User author = createUser("commentauthor2");
+        User reporter = createUser("commentreporter2");
+        User admin = createAdmin("admin14");
+        Project project = createProject(author, "Upholdable", "published");
+
+        long commentId = postForId(author, "/api/project/" + pid(project) + "/comments", """
+                {"content":"spammy comment"}""");
+
+        mockMvc.perform(post("/api/comment/" + commentId + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"spam"}"""))
+                .andExpect(status().isOk());
+
+        long reportId = commentReportRepository.findAll().get(0).getId();
+
+        mockMvc.perform(post("/api/admin/reports/" + reportId + "/uphold")
+                        .header("Authorization", bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"confirmed"}"""))
+                .andExpect(status().isOk());
+
+        assertThat(commentRepository.findById(commentId).orElseThrow().isDeleted()).isTrue();
+        assertThat(commentReportRepository.findById(reportId).orElseThrow().getStatus()).isEqualTo(ReportStatus.UPHELD);
+        assertThat(moderationLogRepository.findAll())
+                .anyMatch(l -> "UPHOLD_REPORT".equals(l.getAction()) && l.getTargetId().equals(reportId));
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
