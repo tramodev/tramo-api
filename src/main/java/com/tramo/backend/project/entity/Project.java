@@ -21,6 +21,7 @@ import java.util.Set;
         @Index(name = "idx_project_owner_visibility", columnList = "user_id, visibility"),
         @Index(name = "idx_project_visibility", columnList = "visibility"),
         @Index(name = "idx_project_forked_from", columnList = "forked_from_id"),
+        @Index(name = "idx_project_last_published_date", columnList = "last_published_date"),
 })
 public class Project {
     @Id
@@ -44,6 +45,7 @@ public class Project {
     private Date lastEditedDate;
     
     private Date firstPublishedDate;
+    private Date lastPublishedDate;
 
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;

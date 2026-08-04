@@ -17,14 +17,14 @@ import java.util.Optional;
 public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByOwnerId(Long ownerId);
 
-    @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.modifiedDate DESC")
-    List<Project> findByVisibilityOrderByModifiedDateDesc(@Param("visibility") ProjectVisibility visibility);
+    @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.lastPublishedDate DESC")
+    List<Project> findByVisibilityOrderByLastPublishedDateDesc(@Param("visibility") ProjectVisibility visibility);
 
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
-            + "ORDER BY p.modifiedDate DESC",
+            + "ORDER BY p.lastPublishedDate DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
@@ -35,7 +35,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "WHERE p.visibility = :visibility AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
-            + "ORDER BY p.modifiedDate DESC",
+            + "ORDER BY p.lastPublishedDate DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
@@ -47,7 +47,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
-            + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.modifiedDate) DESC",
+            + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.lastPublishedDate) DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "

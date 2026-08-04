@@ -227,6 +227,7 @@ public class ProjectService {
             touchesModifiedDate = true;
         }
         boolean firstPublish = false;
+        Date firstPublishTimestamp = null;
         if (request.getVisibility() != null) {
             if (request.getVisibility() == ProjectVisibility.PUBLISHED
                     && (project.getDescription() == null || project.getDescription().isBlank())) {
@@ -234,7 +235,8 @@ public class ProjectService {
             }
             project.setVisibility(request.getVisibility());
             if (request.getVisibility() == ProjectVisibility.PUBLISHED && project.getFirstPublishedDate() == null) {
-                project.setFirstPublishedDate(new Date());
+                firstPublishTimestamp = new Date();
+                project.setFirstPublishedDate(firstPublishTimestamp);
                 firstPublish = true;
             }
             touchesModifiedDate = true;
@@ -258,6 +260,7 @@ public class ProjectService {
                     trailRepository.save(trail);
                 }
                 createSnapshot(project, "PUBLISH");
+                project.setLastPublishedDate(firstPublish ? firstPublishTimestamp : new Date());
             }
 
 
@@ -274,10 +277,14 @@ public class ProjectService {
         if (project.getDescription() == null || project.getDescription().isBlank()) {
             throw new IllegalArgumentException("Add a description before publishing");
         }
+        ProjectVisibility previousVisibility = project.getVisibility();
         boolean firstPublish = project.getFirstPublishedDate() == null;
         project.setVisibility(ProjectVisibility.PUBLISHED);
         if (firstPublish) {
             project.setFirstPublishedDate(new Date());
+        }
+        if (previousVisibility != ProjectVisibility.PUBLISHED) {
+            project.setLastPublishedDate(firstPublish ? project.getFirstPublishedDate() : new Date());
         }
         project.setModifiedDate(new Date());
         project = projectRepository.save(project);
@@ -672,7 +679,7 @@ public class ProjectService {
     @Transactional
     public void backfillMissingPublishSnapshots() {
         Set<Long> alreadySnapshotted = Set.copyOf(projectSnapshotRepository.findProjectIdsWithPublishSnapshot());
-        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED)) {
+        for (Project project : projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED)) {
             if (!alreadySnapshotted.contains(project.getId())) {
                 createSnapshot(project, "PUBLISH");
             }
@@ -830,7 +837,7 @@ public class ProjectService {
 
     public List<ProjectFeedItemDTO> getPublishedFeed(String query, String sort, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        List<Project> allPublished = projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED);
+        List<Project> allPublished = projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED);
         Map<Long, List<String>> tagNamesByProjectId = q.isEmpty() ? Map.of()
                 : tagNamesGroupedByProjectId(allPublished.stream().map(Project::getId).toList());
         List<Project> published = allPublished.stream()
@@ -841,8 +848,11 @@ public class ProjectService {
         List<ProjectFeedItemDTO> feed = new ArrayList<>(toPublishedFeedItems(published, requester));
 
         if ("hot".equals(sort)) {
+            Map<String, Date> lastPublishedByProjectId = published.stream()
+                    .collect(Collectors.toMap(p -> projectIdCodec.encode(p.getId()), Project::getLastPublishedDate));
             feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
-                    .thenComparing(ProjectFeedItemDTO::getModifiedDate, Comparator.reverseOrder()));
+                    .thenComparing((ProjectFeedItemDTO item) -> lastPublishedByProjectId.get(item.getId()),
+                            Comparator.nullsLast(Comparator.reverseOrder())));
         }
         return feed;
     }
@@ -912,7 +922,7 @@ public class ProjectService {
     public List<AuthorCountDTO> getActiveAuthors(int limit) {
         Map<String, Long> authorCounts = new LinkedHashMap<>();
         Map<String, String> authorAvatars = new HashMap<>();
-        for (Project project : projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED)) {
+        for (Project project : projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED)) {
             authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
             authorAvatars.putIfAbsent(project.getOwner().getUsername(), project.getOwner().getImageUrl());
         }
@@ -926,7 +936,7 @@ public class ProjectService {
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void refreshFeaturedProject() {
-        List<Project> published = projectRepository.findByVisibilityOrderByModifiedDateDesc(ProjectVisibility.PUBLISHED);
+        List<Project> published = projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED);
         if (published.isEmpty()) return;
 
         List<Long> ids = published.stream().map(Project::getId).toList();
@@ -1406,8 +1416,9 @@ public class ProjectService {
         ProjectSnapshot latestPublish = ctx.latestPublishByProjectId().get(project.getId());
         ProjectSnapshotData snapshot = latestPublish != null
                 ? objectMapper.readValue(latestPublish.getContent(), ProjectSnapshotData.class) : null;
-        Date lastPublishedDate = latestPublish != null && latestPublish.getVersion() != null && latestPublish.getVersion() > 1
-                ? latestPublish.getCreatedDate() : null;
+        Date lastPublishedDate = project.getLastPublishedDate() != null
+                && !project.getLastPublishedDate().equals(project.getFirstPublishedDate())
+                ? project.getLastPublishedDate() : null;
         ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         return new ProjectFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
