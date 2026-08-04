@@ -280,8 +280,8 @@ class SnapshotTest extends AbstractIntegrationTest {
         assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(
                 feedJsonAfterFirstPublish, feedIndexPath + ".lastPublishedDate").get(0)).isNull();
 
-        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk());
+        setVisibility(owner, project, "private");
+        setVisibility(owner, project, "published");
 
         String feedJsonAfterRepublish = mockMvc.perform(get("/api/public/explore"))
                 .andExpect(status().isOk())
