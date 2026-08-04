@@ -253,8 +253,7 @@ class SnapshotTest extends AbstractIntegrationTest {
 
         setVisibility(owner, project, "private");
         mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + v1Id))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.version").value(1));
+                .andExpect(status().isNotFound());
     }
 
     @Test

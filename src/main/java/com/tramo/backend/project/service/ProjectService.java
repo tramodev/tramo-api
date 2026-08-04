@@ -700,6 +700,7 @@ public class ProjectService {
     public ProjectSnapshotDetailDTO getPublicSnapshotDetail(Long id, Long snapshotId) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Version not found"));
+        assertViewable(project);
         if (project.getFirstPublishedDate() == null) {
             throw new ResourceNotFoundException("Version not found");
         }

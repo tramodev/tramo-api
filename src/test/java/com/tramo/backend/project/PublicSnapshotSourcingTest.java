@@ -4,6 +4,7 @@ import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.service.ProjectService;
 import com.tramo.backend.user.entity.User;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -91,5 +92,52 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Legacy Published"));
+    }
+
+    private long publishAndCaptureSnapshotId(User owner, Project project) throws Exception {
+        setVisibility(owner, project, "published");
+        String versionsJson = mockMvc.perform(get("/api/project/" + pid(project) + "/versions")
+                        .header("Authorization", bearer(owner)))
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(versionsJson, "$[0].id")).longValue();
+    }
+
+    @Test
+    void publicVersionHiddenAfterUnpublishToPrivate() throws Exception {
+        User owner = createUser("snapsrcowner5");
+        User otherUser = createUser("snapsrcowner5other");
+        Project project = createProject(owner, "Will Be Unpublished", "private", "Original description", "tag");
+        long snapshotId = publishAndCaptureSnapshotId(owner, project);
+
+        setVisibility(owner, project, "private");
+
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId)
+                        .header("Authorization", bearer(otherUser)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void publicVersionStaysReadableWhenUnlisted() throws Exception {
+        User owner = createUser("snapsrcowner6");
+        Project project = createProject(owner, "Will Be Unlisted", "private", "Original description", "tag");
+        long snapshotId = publishAndCaptureSnapshotId(owner, project);
+
+        setVisibility(owner, project, "unlisted");
+
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void publicVersionReadableWhilePublished() throws Exception {
+        User owner = createUser("snapsrcowner7");
+        Project project = createProject(owner, "Stays Published", "private", "Original description", "tag");
+        long snapshotId = publishAndCaptureSnapshotId(owner, project);
+
+        mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId))
+                .andExpect(status().isOk());
     }
 }
