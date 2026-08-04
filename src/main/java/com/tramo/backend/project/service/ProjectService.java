@@ -898,16 +898,8 @@ public class ProjectService {
     }
 
     public List<AuthorCountDTO> getActiveAuthors(int limit) {
-        Map<String, Long> authorCounts = new LinkedHashMap<>();
-        Map<String, String> authorAvatars = new HashMap<>();
-        for (Project project : projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED)) {
-            authorCounts.merge(project.getOwner().getUsername(), 1L, Long::sum);
-            authorAvatars.putIfAbsent(project.getOwner().getUsername(), project.getOwner().getImageUrl());
-        }
-        return authorCounts.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(limit)
-                .map(entry -> new AuthorCountDTO(entry.getKey(), authorAvatars.get(entry.getKey()), entry.getValue()))
+        return projectRepository.findActiveAuthors(ProjectVisibility.PUBLISHED, PageRequest.of(0, limit)).stream()
+                .map(a -> new AuthorCountDTO(a.getUsername(), a.getAvatar(), a.getCount()))
                 .toList();
     }
 

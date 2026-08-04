@@ -107,4 +107,14 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
         Long getProjectId();
         String getTagName();
     }
+
+    @Query("SELECT p.owner.username AS username, p.owner.imageUrl AS avatar, COUNT(p) AS count FROM Project p "
+            + "WHERE p.visibility = :visibility GROUP BY p.owner.username, p.owner.imageUrl ORDER BY COUNT(p) DESC")
+    List<AuthorCount> findActiveAuthors(@Param("visibility") ProjectVisibility visibility, Pageable pageable);
+
+    interface AuthorCount {
+        String getUsername();
+        String getAvatar();
+        Long getCount();
+    }
 }
