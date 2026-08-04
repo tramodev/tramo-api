@@ -835,30 +835,6 @@ public class ProjectService {
                 associations);
     }
 
-    public List<ProjectFeedItemDTO> getPublishedFeed(String query, String sort, User requester) {
-        String q = query == null ? "" : query.trim().toLowerCase();
-        List<Project> allPublished = projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED);
-        Map<Long, List<String>> tagNamesByProjectId = q.isEmpty() ? Map.of()
-                : tagNamesGroupedByProjectId(allPublished.stream().map(Project::getId).toList());
-        List<Project> published = allPublished.stream()
-                .filter(project -> q.isEmpty()
-                        || matchesSearch(project, tagNamesByProjectId.getOrDefault(project.getId(), List.of()), q))
-                .toList();
-
-        List<ProjectFeedItemDTO> feed = new ArrayList<>(toPublishedFeedItems(published, requester));
-
-        if ("hot".equals(sort)) {
-            Map<String, Date> lastPublishedByProjectId = new HashMap<>();
-            for (Project p : published) {
-                lastPublishedByProjectId.put(projectIdCodec.encode(p.getId()), p.getLastPublishedDate());
-            }
-            feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
-                    .thenComparing((ProjectFeedItemDTO item) -> lastPublishedByProjectId.get(item.getId()),
-                            Comparator.nullsLast(Comparator.reverseOrder())));
-        }
-        return feed;
-    }
-
     public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
         // Trigram indexes need >=3 chars to generate tokens; shorter terms can't use

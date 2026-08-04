@@ -45,14 +45,6 @@ public class PublicProjectController {
         return ResponseEntity.ok(projectService.getPublicSnapshotDetail(projectIdCodec.decode(id), snapshotId));
     }
 
-    @GetMapping("/projects")
-    public ResponseEntity<List<ProjectFeedItemDTO>> getFeed(
-            @RequestParam(required = false) String q,
-            @RequestParam(required = false, defaultValue = "recent") String sort,
-            @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublishedFeed(q, sort, user));
-    }
-
     @GetMapping("/explore")
     public ResponseEntity<ExploreBundleDTO> getExploreBundle(
             @RequestParam(required = false) String q,

@@ -276,16 +276,6 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void publicFeedReturnsPublishedProjects() throws Exception {
-        User author = createUser("feedauthor");
-        createProject(author, "Feed item", "published", "d", "tag");
-
-        mockMvc.perform(get("/api/public/projects"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].title").value("Feed item"));
-    }
-
-    @Test
     void publicTagsReturnsHotTopics() throws Exception {
         User author = createUser("tagauthor");
         

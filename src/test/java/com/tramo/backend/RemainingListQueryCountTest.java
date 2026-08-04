@@ -49,24 +49,6 @@ class RemainingListQueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void publishedFeedQueryCountDoesNotScaleWithFeedSize() throws Exception {
-        User author = createUser("rlqcfeed");
-        published(author, "Feed 0", null);
-
-        long small = queryCount(() -> mockMvc.perform(get("/api/public/projects"))
-                .andExpect(status().isOk()));
-
-        for (int i = 1; i < 6; i++) {
-            published(author, "Feed " + i, null);
-        }
-
-        long large = queryCount(() -> mockMvc.perform(get("/api/public/projects"))
-                .andExpect(status().isOk()));
-
-        assertThat(large).isEqualTo(small);
-    }
-
-    @Test
     void activityQueryCountDoesNotScaleWithActivityCount() throws Exception {
         User me = createUser("rlqcactme");
         User other = createUser("rlqcactother");
