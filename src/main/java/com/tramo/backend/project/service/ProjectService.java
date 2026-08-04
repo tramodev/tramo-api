@@ -848,8 +848,10 @@ public class ProjectService {
         List<ProjectFeedItemDTO> feed = new ArrayList<>(toPublishedFeedItems(published, requester));
 
         if ("hot".equals(sort)) {
-            Map<String, Date> lastPublishedByProjectId = published.stream()
-                    .collect(Collectors.toMap(p -> projectIdCodec.encode(p.getId()), Project::getLastPublishedDate));
+            Map<String, Date> lastPublishedByProjectId = new HashMap<>();
+            for (Project p : published) {
+                lastPublishedByProjectId.put(projectIdCodec.encode(p.getId()), p.getLastPublishedDate());
+            }
             feed.sort(Comparator.comparingLong(ProjectFeedItemDTO::getVoteCount).reversed()
                     .thenComparing((ProjectFeedItemDTO item) -> lastPublishedByProjectId.get(item.getId()),
                             Comparator.nullsLast(Comparator.reverseOrder())));
