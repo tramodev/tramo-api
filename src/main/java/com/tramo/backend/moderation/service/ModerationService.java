@@ -157,10 +157,8 @@ public class ModerationService {
         Comment comment = report.getComment();
         commentService.delete(comment.getId(), admin);
 
-        for (CommentReport r : commentReportRepository.findByStatusOrderByCreatedDateDesc(ReportStatus.OPEN)) {
-            if (r.getComment().getId().equals(comment.getId())) {
-                r.setStatus(ReportStatus.UPHELD);
-            }
+        for (CommentReport r : commentReportRepository.findByCommentIdAndStatus(comment.getId(), ReportStatus.OPEN)) {
+            r.setStatus(ReportStatus.UPHELD);
         }
 
         logAction(admin, "UPHOLD_REPORT", "COMMENT_REPORT", reportId, reason);

@@ -38,9 +38,9 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
-    @PostMapping("/reports/{id}/uphold")
-    public ResponseEntity<Void> upholdReport(@PathVariable Long id, @RequestBody(required = false) ModerationActionRequestDTO request,
-                                              @AuthenticationPrincipal User admin) {
+    @PostMapping("/comment-reports/{id}/uphold")
+    public ResponseEntity<Void> upholdCommentReport(@PathVariable Long id, @RequestBody(required = false) ModerationActionRequestDTO request,
+                                                      @AuthenticationPrincipal User admin) {
         moderationService.upholdCommentReport(id, admin, request != null ? request.getReason() : null);
         return ResponseEntity.ok().build();
     }

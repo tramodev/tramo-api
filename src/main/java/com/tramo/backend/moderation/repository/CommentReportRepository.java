@@ -9,9 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface CommentReportRepository extends JpaRepository<CommentReport, Long> {
-    List<CommentReport> findByStatusOrderByCreatedDateDesc(ReportStatus status);
-
-
+    List<CommentReport> findByCommentIdAndStatus(Long commentId, ReportStatus status);
 
     @Query("SELECT r.id, p.id, p.title, c.id, c.content, rep.username, r.reason, r.status, r.createdDate " +
             "FROM CommentReport r JOIN r.comment c JOIN c.project p JOIN r.reporter rep " +

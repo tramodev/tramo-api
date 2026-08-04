@@ -331,7 +331,7 @@ class ModerationTest extends AbstractIntegrationTest {
 
         long reportId = commentReportRepository.findAll().get(0).getId();
 
-        mockMvc.perform(post("/api/admin/reports/" + reportId + "/uphold")
+        mockMvc.perform(post("/api/admin/comment-reports/" + reportId + "/uphold")
                         .header("Authorization", bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
