@@ -28,7 +28,8 @@ public class ProjectReport {
 
     private String reason;
 
-    private String status = "OPEN";
+    @Enumerated(EnumType.STRING)
+    private ReportStatus status = ReportStatus.OPEN;
 
     private Date createdDate;
 }

@@ -10,6 +10,7 @@ import com.tramo.backend.moderation.dto.ReportDTO;
 import com.tramo.backend.moderation.entity.CommentReport;
 import com.tramo.backend.moderation.entity.ModerationLog;
 import com.tramo.backend.moderation.entity.ProjectReport;
+import com.tramo.backend.moderation.entity.ReportStatus;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
@@ -64,7 +65,7 @@ public class ModerationService {
         if (project.getOwner().getId().equals(reporter.getId())) {
             throw new AccessDeniedException("Cannot report your own project");
         }
-        if (projectReportRepository.existsByProjectIdAndReporterIdAndStatus(projectId, reporter.getId(), "OPEN")) {
+        if (projectReportRepository.existsByProjectIdAndReporterIdAndStatus(projectId, reporter.getId(), ReportStatus.OPEN)) {
             return;
         }
 
@@ -72,7 +73,7 @@ public class ModerationService {
         report.setProject(project);
         report.setReporter(reporter);
         report.setReason(reason);
-        report.setStatus("OPEN");
+        report.setStatus(ReportStatus.OPEN);
         report.setCreatedDate(new Date());
         projectReportRepository.save(report);
     }
@@ -99,7 +100,7 @@ public class ModerationService {
     }
 
     public List<ReportDTO> listOpenReports() {
-        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows("OPEN").stream()
+        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows(ReportStatus.OPEN).stream()
                 .map(r -> new ReportDTO(
                         (Long) r[0],
                         "PROJECT",
@@ -109,7 +110,7 @@ public class ModerationService {
                         null,
                         (String) r[3],
                         (String) r[4],
-                        (String) r[5],
+                        ((ReportStatus) r[5]).name(),
                         (Date) r[6]
                 ));
         Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows("OPEN").stream()
@@ -141,7 +142,7 @@ public class ModerationService {
         }
         ProjectReport report = projectReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
-        report.setStatus("DISMISSED");
+        report.setStatus(ReportStatus.DISMISSED);
         logAction(admin, "DISMISS_REPORT", "REPORT", reportId, null);
     }
 
@@ -185,9 +186,9 @@ public class ModerationService {
         project.setVisibility(ProjectVisibility.PRIVATE);
         projectRepository.save(project);
 
-        for (ProjectReport report : projectReportRepository.findByStatusOrderByCreatedDateDesc("OPEN")) {
+        for (ProjectReport report : projectReportRepository.findByStatusOrderByCreatedDateDesc(ReportStatus.OPEN)) {
             if (report.getProject().getId().equals(projectId)) {
-                report.setStatus("ACTIONED");
+                report.setStatus(ReportStatus.UPHELD);
             }
         }
 

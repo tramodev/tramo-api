@@ -3,6 +3,7 @@ package com.tramo.backend.moderation;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.moderation.entity.ModerationLog;
 import com.tramo.backend.moderation.entity.ProjectReport;
+import com.tramo.backend.moderation.entity.ReportStatus;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.project.entity.Project;
@@ -138,7 +139,7 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         ProjectReport report = projectReportRepository.findById(reportId).orElseThrow();
-        assertThat(report.getStatus()).isEqualTo("DISMISSED");
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.DISMISSED);
 
         ModerationLog log = moderationLogRepository.findAll().get(0);
         assertThat(log.getAction()).isEqualTo("DISMISS_REPORT");
@@ -207,7 +208,7 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getVisibility()).isEqualTo(ProjectVisibility.PRIVATE);
-        assertThat(projectReportRepository.findAll().get(0).getStatus()).isEqualTo("ACTIONED");
+        assertThat(projectReportRepository.findAll().get(0).getStatus()).isEqualTo(ReportStatus.UPHELD);
         assertThat(moderationLogRepository.findAll())
                 .anyMatch(l -> "UNPUBLISH_PROJECT".equals(l.getAction()) && l.getTargetId().equals(project.getId()));
     }
