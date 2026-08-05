@@ -16,6 +16,7 @@ public class PublicProjectResponseDTO {
     private String description;
     private String ownerUsername;
     private Date modifiedDate;
+    private String thumbnailImageUrl;
     private List<PublicTrailDTO> trails;
     private long voteCount;
     private boolean votedByRequester;

@@ -40,6 +40,27 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void publicProjectExposesThumbnailImageUrlWhenDedicatedButNotForGraphOrNone() throws Exception {
+        User owner = createUser("publicthumbowner");
+        Project project = createProject(owner, "Thumbed", "published");
+
+        mockMvc.perform(get("/api/public/project/" + pid(project)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailImageUrl").value(nullValue()));
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"DEDICATED","imageUrl":"https://example.com/thumb.png"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/public/project/" + pid(project)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailImageUrl").value("https://example.com/thumb.png"));
+    }
+
+    @Test
     void publicProjectExposesTrailAndStepMetadataButFiltersCrossProjectAssociations() throws Exception {
         User owner = createUser("publicdetailowner");
         Project project = createProject(owner, "Detailed", "published", "desc", "tag");

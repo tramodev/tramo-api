@@ -50,6 +50,8 @@ import com.tramo.backend.project.dto.PublicItemDTO;
 import com.tramo.backend.project.dto.PublicTrailDTO;
 import com.tramo.backend.project.dto.PublicProfileDTO;
 import com.tramo.backend.project.dto.PublicProjectResponseDTO;
+import com.tramo.backend.project.dto.SitemapProjectDTO;
+import com.tramo.backend.project.dto.SitemapUserDTO;
 import com.tramo.backend.project.dto.TagCountDTO;
 import com.tramo.backend.project.dto.UpdateProfileRequestDTO;
 import com.tramo.backend.project.dto.UserProfileDTO;
@@ -816,6 +818,7 @@ public class ProjectService {
                 description,
                 project.getOwner().getUsername(),
                 displayDate,
+                resolveThumbnail(project).imageUrl(),
                 trails,
                 projectVoteRepository.countByProjectId(id),
                 requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
@@ -1167,6 +1170,20 @@ public class ProjectService {
         Integer publicAge = Boolean.FALSE.equals(target.getShowAge()) ? null : computeAge(target.getBirthDate());
         return new PublicProfileDTO(target.getUsername(), target.getBio(), publicAge, target.getLocation(), target.getWebsite(), target.getImageUrl(), target.getBannerUrl(), target.getCreatedAt(),
                 stats, buildBadges(stats, subscriptionService.isSupporter(target)), target.getSelectedBadge(), following, self, blocked);
+    }
+
+    // ponytail: findAll is fine at current scale, paginate if the published-project
+    // count reaches the thousands.
+    public List<SitemapProjectDTO> getSitemapProjects() {
+        return projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED).stream()
+                .map(project -> new SitemapProjectDTO(projectIdCodec.encode(project.getId()), project.getModifiedDate()))
+                .toList();
+    }
+
+    public List<SitemapUserDTO> getSitemapUsers() {
+        return userRepository.findByVisibilityTrueAndBannedFalse().stream()
+                .map(user -> new SitemapUserDTO(user.getUsername(), user.getUpdatedAt()))
+                .toList();
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {

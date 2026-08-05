@@ -8,6 +8,8 @@ import com.tramo.backend.project.dto.ProjectFeedItemDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.PublicProfileDTO;
 import com.tramo.backend.project.dto.PublicProjectResponseDTO;
+import com.tramo.backend.project.dto.SitemapProjectDTO;
+import com.tramo.backend.project.dto.SitemapUserDTO;
 import com.tramo.backend.project.dto.TagCountDTO;
 import com.tramo.backend.project.service.ProjectService;
 import com.tramo.backend.user.entity.User;
@@ -58,6 +60,17 @@ public class PublicProjectController {
     @GetMapping("/tags")
     public ResponseEntity<List<TagCountDTO>> getHotTopics() {
         return ResponseEntity.ok(projectService.getHotTopics(5));
+    }
+
+    // For the frontend's sitemap generator only - not used by the app UI.
+    @GetMapping("/sitemap/projects")
+    public ResponseEntity<List<SitemapProjectDTO>> getSitemapProjects() {
+        return ResponseEntity.ok(projectService.getSitemapProjects());
+    }
+
+    @GetMapping("/sitemap/users")
+    public ResponseEntity<List<SitemapUserDTO>> getSitemapUsers() {
+        return ResponseEntity.ok(projectService.getSitemapUsers());
     }
 
     @GetMapping("/users/{username}")
