@@ -4,6 +4,8 @@ import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
+
 @Getter
 @Setter
 public class RegisterRequestDTO {
@@ -27,6 +29,10 @@ public class RegisterRequestDTO {
 
     @NotBlank(message = "Captcha verification is required")
     private String captchaToken;
+
+    @NotNull(message = "Date of birth is required")
+    @Past(message = "Date of birth must be in the past")
+    private LocalDate birthDate;
 
     private Boolean visibility;
 

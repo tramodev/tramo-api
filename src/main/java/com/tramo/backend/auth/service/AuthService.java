@@ -6,15 +6,19 @@ import com.tramo.backend.auth.dto.LoginRequestDTO;
 import com.tramo.backend.auth.dto.RefreshTokenRequestDTO;
 import com.tramo.backend.auth.dto.RegisterRequestDTO;
 import com.tramo.backend.auth.dto.RegisterResponseDTO;
+import com.tramo.backend.auth.entity.AgeRejectionAttempt;
 import com.tramo.backend.auth.entity.EmailVerificationToken;
 import com.tramo.backend.auth.entity.PasswordResetToken;
 import com.tramo.backend.auth.entity.RefreshToken;
+import com.tramo.backend.auth.repository.AgeRejectionAttemptRepository;
 import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
+import com.tramo.backend.exception.BirthDateAlreadySetException;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.exception.UnderageRegistrationException;
 import com.tramo.backend.exception.UserAlreadyExistsException;
 import com.tramo.backend.security.jwt.JwtService;
 import com.tramo.backend.security.ratelimit.RateLimiterService;
@@ -25,6 +29,7 @@ import io.github.bucket4j.Bucket;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -35,6 +40,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Optional;
@@ -55,13 +61,19 @@ public class AuthService {
     private final GoogleTokenVerifier googleTokenVerifier;
     private final CaptchaVerifier captchaVerifier;
     private final RateLimiterService rateLimiterService;
+    private final AgeRejectionAttemptRepository ageRejectionAttemptRepository;
+    private final MinAgeValidator minAgeValidator;
+
+    @Value("${app.auth.rejection-cooldown-hours}")
+    private long rejectionCooldownHours;
 
     public AuthService(UserRepository userRepository, JwtService jwtService, AuthenticationManager authenticationManager,
                         PasswordEncoder passwordEncoder, RefreshTokenRepository refreshTokenRepository,
                         EmailVerificationTokenRepository emailVerificationTokenRepository,
                         PasswordResetTokenRepository passwordResetTokenRepository, EmailService emailService,
                         GoogleTokenVerifier googleTokenVerifier, CaptchaVerifier captchaVerifier,
-                        RateLimiterService rateLimiterService) {
+                        RateLimiterService rateLimiterService, AgeRejectionAttemptRepository ageRejectionAttemptRepository,
+                        MinAgeValidator minAgeValidator) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
@@ -73,6 +85,8 @@ public class AuthService {
         this.googleTokenVerifier = googleTokenVerifier;
         this.captchaVerifier = captchaVerifier;
         this.rateLimiterService = rateLimiterService;
+        this.ageRejectionAttemptRepository = ageRejectionAttemptRepository;
+        this.minAgeValidator = minAgeValidator;
     }
 
     private void checkIdentityRateLimit(String scope, String identifier, int capacity, int refillTokens) {
@@ -91,7 +105,15 @@ public class AuthService {
 
     private static final String REGISTERED_MESSAGE = "Account created. Check your email to verify your account.";
 
-    public RegisterResponseDTO register(RegisterRequestDTO registerRequest) {
+    public RegisterResponseDTO register(RegisterRequestDTO registerRequest, String ip) {
+        // Checked before captcha/uniqueness so a rejected-then-retried underage signup
+        // can't just try a different year - see MinAgeValidator/AgeRejectionAttempt below.
+        if (ageRejectionAttemptRepository.existsByIpAddressAndRejectedAtAfter(
+                ip, Instant.now().minus(rejectionCooldownHours, ChronoUnit.HOURS))) {
+            throw new UnderageRegistrationException(
+                    "You do not meet the minimum age requirement to create an account.");
+        }
+
         captchaVerifier.verify(registerRequest.getCaptchaToken(), "register");
 
         if (userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
@@ -105,10 +127,21 @@ public class AuthService {
             return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
 
+        try {
+            minAgeValidator.validate(registerRequest.getBirthDate());
+        } catch (UnderageRegistrationException e) {
+            AgeRejectionAttempt attempt = new AgeRejectionAttempt();
+            attempt.setIpAddress(ip);
+            attempt.setRejectedAt(Instant.now());
+            ageRejectionAttemptRepository.save(attempt);
+            throw e;
+        }
+
         User user = new User();
         user.setUsername(registerRequest.getUsername());
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
         user.setEmail(registerRequest.getEmail());
+        user.setBirthDate(registerRequest.getBirthDate());
         user.setVisibility(registerRequest.getVisibility() != null ? registerRequest.getVisibility() : true);
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
@@ -148,7 +181,7 @@ public class AuthService {
 
         String accessToken = jwtService.getToken(user);
         RefreshToken refreshToken = createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername());
+        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername(), user.getBirthDate() == null);
     }
 
     @Transactional
@@ -247,7 +280,7 @@ public class AuthService {
 
         String accessToken = jwtService.getToken(user);
         RefreshToken refreshToken = createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername());
+        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername(), user.getBirthDate() == null);
     }
 
     private User createGoogleUser(GoogleTokenVerifier.GoogleTokenPayload payload) {
@@ -304,7 +337,7 @@ public class AuthService {
         String accessToken = jwtService.getToken(user);
         RefreshToken refreshToken = createRefreshToken(user);
 
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername());
+        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername(), user.getBirthDate() == null);
 
     }
 
@@ -341,7 +374,23 @@ public class AuthService {
         String accessToken = jwtService.getToken(user);
         RefreshToken newRefreshToken = createRefreshToken(user);
 
-        return new AuthResponse(accessToken, newRefreshToken.getToken(), user.getUsername());
+        return new AuthResponse(accessToken, newRefreshToken.getToken(), user.getUsername(), user.getBirthDate() == null);
+    }
+
+    @Transactional
+    public AuthResponse setBirthDate(User principal, LocalDate birthDate) {
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (user.getBirthDate() != null) {
+            throw new BirthDateAlreadySetException("Birth date is already set.");
+        }
+        minAgeValidator.validate(birthDate);
+        user.setBirthDate(birthDate);
+        userRepository.save(user);
+
+        String accessToken = jwtService.getToken(user);
+        RefreshToken refreshToken = createRefreshToken(user);
+        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername(), false);
     }
 
 

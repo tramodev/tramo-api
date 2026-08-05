@@ -33,6 +33,7 @@ public class JwtService {
         claims.put("role", user.getRole().name());
         claims.put("emailVerified", user.isEmailVerified());
         claims.put("banned", user.isBanned());
+        claims.put("requiresBirthDate", user.getBirthDate() == null);
         return getToken(claims, user.getUsername());
     }
 
@@ -69,6 +70,7 @@ public class JwtService {
             user.setRole(Role.valueOf((String) claims.get("role")));
             user.setEmailVerified(Boolean.TRUE.equals(claims.get("emailVerified", Boolean.class)));
             user.setBanned(Boolean.TRUE.equals(claims.get("banned", Boolean.class)));
+            user.setRequiresBirthDate(Boolean.TRUE.equals(claims.get("requiresBirthDate", Boolean.class)));
             return user;
         } catch (JwtException | IllegalArgumentException | NullPointerException | ClassCastException e) {
             // Missing/malformed claims - e.g. a token issued by the previous version of

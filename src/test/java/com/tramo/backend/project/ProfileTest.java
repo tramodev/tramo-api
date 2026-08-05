@@ -17,26 +17,42 @@ class ProfileTest extends AbstractIntegrationTest {
     private static final String R2_BASE_URL = "https://test-bucket.example.com";
 
     @Test
-    void updateProfileSetsBioBirthDateLocationAndWebsite() throws Exception {
+    void updateProfileSetsBioLocationAndWebsite() throws Exception {
         User user = createUser("profileowner");
 
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"bio":"Hello there","birthDate":"1997-12-03","location":"Rosario, Argentina","website":"tramo.app"}"""))
+                                {"bio":"Hello there","location":"Rosario, Argentina","website":"tramo.app"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bio").value("Hello there"))
-                .andExpect(jsonPath("$.birthDate").value("1997-12-03"))
                 .andExpect(jsonPath("$.location").value("Rosario, Argentina"))
                 .andExpect(jsonPath("$.website").value("tramo.app"));
 
         mockMvc.perform(get("/api/profile/me").header("Authorization", bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bio").value("Hello there"))
-                .andExpect(jsonPath("$.birthDate").value("1997-12-03"))
                 .andExpect(jsonPath("$.location").value("Rosario, Argentina"))
                 .andExpect(jsonPath("$.website").value("tramo.app"));
+    }
+
+    @Test
+    void updateProfileIgnoresBirthDateChangeOnceSet() throws Exception {
+        User user = createUser("profilebirthdatelocked");
+        String originalBirthDate = user.getBirthDate().toString();
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"birthDate":"1997-12-03"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.birthDate").value(originalBirthDate));
+
+        mockMvc.perform(get("/api/profile/me").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.birthDate").value(originalBirthDate));
     }
 
     @Test

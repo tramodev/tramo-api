@@ -152,6 +152,7 @@ public abstract class AbstractIntegrationTest {
         user.setRole(role);
         user.setEmailVerified(verified);
         user.setBanned(banned);
+        user.setBirthDate(java.time.LocalDate.now().minusYears(30));
         return userRepository.save(user);
     }
 

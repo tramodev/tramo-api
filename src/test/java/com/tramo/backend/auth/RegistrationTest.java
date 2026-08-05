@@ -27,8 +27,12 @@ class RegistrationTest extends AbstractIntegrationTest {
     EmailVerificationTokenRepository emailVerificationTokenRepository;
 
     private String registerJson(String username, String email, String password) {
+        return registerJson(username, email, password, "1990-01-01");
+    }
+
+    private String registerJson(String username, String email, String password, String birthDate) {
         return """
-                {"username":"%s","email":"%s","password":"%s","captchaToken":"test-token"}""".formatted(username, email, password);
+                {"username":"%s","email":"%s","password":"%s","captchaToken":"test-token","birthDate":"%s"}""".formatted(username, email, password, birthDate);
     }
 
     private org.springframework.test.web.servlet.ResultActions register(String body) throws Exception {
@@ -157,7 +161,7 @@ class RegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerIgnoresClientSuppliedRole() throws Exception {
         register("""
-                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd123!","role":"ADMIN","captchaToken":"test-token"}""")
+                {"username":"sneaky","email":"sneaky@example.com","password":"Passw0rd123!","role":"ADMIN","captchaToken":"test-token","birthDate":"1990-01-01"}""")
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findByUsernameIgnoreCase("sneaky").orElseThrow().getRole())

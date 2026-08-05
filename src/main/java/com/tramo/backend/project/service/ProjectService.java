@@ -1,5 +1,6 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.auth.service.MinAgeValidator;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.upload.R2Client;
@@ -134,6 +135,7 @@ public class ProjectService {
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final ObjectMapper objectMapper;
     private final TagService tagService;
+    private final MinAgeValidator minAgeValidator;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -148,7 +150,8 @@ public class ProjectService {
                            R2Client r2Client, SubscriptionService subscriptionService,
                            UploadRecordRepository uploadRecordRepository,
                            ProjectSnapshotRepository projectSnapshotRepository, ObjectMapper objectMapper,
-                           TagService tagService) {
+                           TagService tagService, MinAgeValidator minAgeValidator) {
+        this.minAgeValidator = minAgeValidator;
         this.tagService = tagService;
         this.subscriptionService = subscriptionService;
         this.uploadRecordRepository = uploadRecordRepository;
@@ -1018,7 +1021,8 @@ public class ProjectService {
         if (request.getBio() != null) {
             user.setBio(request.getBio().isBlank() ? null : request.getBio());
         }
-        if (request.getBirthDate() != null) {
+        if (request.getBirthDate() != null && user.getBirthDate() == null) {
+            minAgeValidator.validate(request.getBirthDate());
             user.setBirthDate(request.getBirthDate());
         }
         if (request.getLocation() != null) {

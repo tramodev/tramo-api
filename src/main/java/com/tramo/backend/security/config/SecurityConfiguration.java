@@ -1,5 +1,6 @@
 package com.tramo.backend.security.config;
 
+import com.tramo.backend.security.agegate.BirthDateGateFilter;
 import com.tramo.backend.security.jwt.JwtAuthEntryPoint;
 import com.tramo.backend.security.jwt.JwtAuthFilter;
 import com.tramo.backend.security.ratelimit.RateLimitFilter;
@@ -26,11 +27,20 @@ public class SecurityConfiguration {
     @Autowired
     private RateLimitFilter rateLimitFilter;
     @Autowired
+    private BirthDateGateFilter birthDateGateFilter;
+    @Autowired
     private JwtAuthEntryPoint authEntryPoint;
 
     @Bean
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<BirthDateGateFilter> birthDateGateFilterRegistration(BirthDateGateFilter filter) {
+        FilterRegistrationBean<BirthDateGateFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }
@@ -44,6 +54,7 @@ public class SecurityConfiguration {
                         authRequest
                                 .requestMatchers("/actuator/health").permitAll()
                                 .requestMatchers("/api/auth/patreon/connect").authenticated()
+                                .requestMatchers("/api/auth/birth-date").authenticated()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()
                                 .requestMatchers("/api/webhooks/**").permitAll()
@@ -58,6 +69,7 @@ public class SecurityConfiguration {
                 .authenticationProvider(authProvider)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(rateLimitFilter, JwtAuthFilter.class)
+                .addFilterAfter(birthDateGateFilter, RateLimitFilter.class)
                 .build();
     }
 }

@@ -8,11 +8,13 @@ public class AuthResponse {
     String accessToken;
     String refreshToken;
     String username;
+    boolean requiresBirthDate;
 
-    public AuthResponse(String accessToken, String refreshToken, String username) {
+    public AuthResponse(String accessToken, String refreshToken, String username, boolean requiresBirthDate) {
         this.accessToken = accessToken;
         this.refreshToken = refreshToken;
         this.username = username;
+        this.requiresBirthDate = requiresBirthDate;
     }
 
 }
