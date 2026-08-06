@@ -827,7 +827,8 @@ public class ProjectService {
                 commentRepository.countGroupedByProjectIdIn(List.of(id)).stream()
                         .findFirst()
                         .map(CommentRepository.ProjectCommentCount::getCommentCount)
-                        .orElse(0L)
+                        .orElse(0L),
+                project.getVisibility().toJson()
         );
     }
 

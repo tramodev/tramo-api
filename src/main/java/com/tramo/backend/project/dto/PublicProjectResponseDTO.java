@@ -23,4 +23,5 @@ public class PublicProjectResponseDTO {
     private boolean bookmarkedByRequester;
     private long viewCount;
     private long commentCount;
+    private String visibility;
 }
