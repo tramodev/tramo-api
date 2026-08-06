@@ -22,4 +22,7 @@ public class ProjectResponseDTO {
     private Date creationDate;
     private Date modifiedDate;
     private long storageBytes;
+    private String forkedFromProjectId;
+    private String forkedFromTitle;
+    private String forkedFromOwnerUsername;
 }

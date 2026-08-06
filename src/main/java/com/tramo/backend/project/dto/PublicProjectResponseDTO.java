@@ -24,4 +24,7 @@ public class PublicProjectResponseDTO {
     private long viewCount;
     private long commentCount;
     private String visibility;
+    private String forkedFromProjectId;
+    private String forkedFromTitle;
+    private String forkedFromOwnerUsername;
 }

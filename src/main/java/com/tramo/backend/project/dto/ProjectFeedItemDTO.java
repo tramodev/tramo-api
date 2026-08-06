@@ -31,4 +31,7 @@ public class ProjectFeedItemDTO {
     private long forkCount;
     private long commentCount;
     private boolean featured;
+    private String forkedFromProjectId;
+    private String forkedFromTitle;
+    private String forkedFromOwnerUsername;
 }

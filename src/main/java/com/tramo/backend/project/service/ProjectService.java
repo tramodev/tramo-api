@@ -812,6 +812,7 @@ public class ProjectService {
                     .toList();
         }
 
+        Project publicSource = project.getForkedFrom();
         return new PublicProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
                 title,
@@ -828,7 +829,10 @@ public class ProjectService {
                         .findFirst()
                         .map(CommentRepository.ProjectCommentCount::getCommentCount)
                         .orElse(0L),
-                project.getVisibility().toJson()
+                project.getVisibility().toJson(),
+                publicSource != null ? projectIdCodec.encode(publicSource.getId()) : null,
+                publicSource != null ? publicSource.getTitle() : null,
+                publicSource != null ? publicSource.getOwner().getUsername() : null
         );
     }
 
@@ -1412,6 +1416,7 @@ public class ProjectService {
                 && !project.getLastPublishedDate().equals(project.getFirstPublishedDate())
                 ? project.getLastPublishedDate() : null;
         ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
+        Project source = project.getForkedFrom();
         return new ProjectFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
                 snapshot != null ? snapshot.title() : project.getTitle(),
@@ -1431,7 +1436,10 @@ public class ProjectService {
                 project.getViewCount(),
                 ctx.forkCounts().getOrDefault(project.getId(), 0L),
                 ctx.commentCounts().getOrDefault(project.getId(), 0L),
-                project.isFeatured()
+                project.isFeatured(),
+                source != null ? projectIdCodec.encode(source.getId()) : null,
+                source != null ? source.getTitle() : null,
+                source != null ? source.getOwner().getUsername() : null
         );
     }
 
@@ -1566,6 +1574,7 @@ public class ProjectService {
     }
 
     private ProjectResponseDTO toResponse(Project project, long storageBytes, List<String> tagNames, ThumbnailResolution thumbnail) {
+        Project source = project.getForkedFrom();
         return new ProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
                 project.getTitle(),
@@ -1576,7 +1585,10 @@ public class ProjectService {
                 tagNames,
                 project.getCreationDate(),
                 latestOf(project.getModifiedDate(), project.getLastEditedDate()),
-                storageBytes
+                storageBytes,
+                source != null ? projectIdCodec.encode(source.getId()) : null,
+                source != null ? source.getTitle() : null,
+                source != null ? source.getOwner().getUsername() : null
         );
     }
 
