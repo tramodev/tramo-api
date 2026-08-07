@@ -74,6 +74,7 @@ public class ItemService {
         this.objectMapper = objectMapper;
     }
 
+    @Transactional
     public ItemResponseDTO create(Long trailId, ItemRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new IllegalArgumentException("Title is required");
@@ -104,6 +105,7 @@ public class ItemService {
     }
 
     
+    @Transactional
     public ItemResponseDTO createLoose(Long projectId, ItemRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new IllegalArgumentException("Title is required");
@@ -176,6 +178,7 @@ public class ItemService {
         trailItemRepository.save(step);
     }
 
+    @Transactional
     public ItemResponseDTO update(Long id, ItemRequestDTO request, User requester) {
         Item item = getOwnedItem(id, requester);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
@@ -315,6 +318,7 @@ public class ItemService {
         });
     }
 
+    @Transactional
     public void attachToTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrail(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
@@ -354,6 +358,7 @@ public class ItemService {
     }
 
     
+    @Transactional
     public void tie(Long sourceId, AssociationType type, AssociationTargetType targetType,
                     Long targetId, User requester) {
         Item source = getOwnedItem(sourceId, requester);
@@ -380,6 +385,7 @@ public class ItemService {
     }
 
     
+    @Transactional
     public void untie(Long sourceId, AssociationTargetType targetType, Long targetId, User requester) {
         getOwnedItem(sourceId, requester);
         itemLinkRepository.findBySourceItemIdAndTargetTypeAndTargetId(sourceId, targetType, targetId)

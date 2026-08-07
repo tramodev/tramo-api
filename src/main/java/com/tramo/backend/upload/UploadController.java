@@ -13,6 +13,7 @@ import com.tramo.backend.user.entity.User;
 import io.github.bucket4j.Bucket;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -109,15 +110,19 @@ public class UploadController {
 
     
     private void recordUpload(User user, Long projectId, String key, long bytes) {
-        UploadRecord record = uploadRecordRepository.findByObjectKey(key).orElseGet(() -> {
-            UploadRecord fresh = new UploadRecord();
-            fresh.setUserId(user.getId());
-            fresh.setObjectKey(key);
-            fresh.setCreatedDate(new Date());
-            return fresh;
-        });
-        record.setBytes(bytes);
-        record.setProjectId(projectId);
-        uploadRecordRepository.save(record);
+        if (uploadRecordRepository.updateByObjectKey(key, projectId, bytes) > 0) {
+            return;
+        }
+        UploadRecord fresh = new UploadRecord();
+        fresh.setUserId(user.getId());
+        fresh.setObjectKey(key);
+        fresh.setCreatedDate(new Date());
+        fresh.setBytes(bytes);
+        fresh.setProjectId(projectId);
+        try {
+            uploadRecordRepository.save(fresh);
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            uploadRecordRepository.updateByObjectKey(key, projectId, bytes);
+        }
     }
 }

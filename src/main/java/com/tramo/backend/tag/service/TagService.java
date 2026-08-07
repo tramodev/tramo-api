@@ -10,6 +10,7 @@ import io.github.bucket4j.Bucket;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.Comparator;
@@ -111,6 +112,7 @@ public class TagService {
 
 
 
+    @Transactional
     public void applyProjectTags(Project project, List<String> rawNames, Long userId) {
         Set<String> targetNames = new HashSet<>();
         for (String rawName : rawNames) {
@@ -125,20 +127,22 @@ public class TagService {
         List<Tag> toRemove = current.stream()
                 .filter(tag -> !targetNames.contains(tag.getName()))
                 .toList();
-        for (Tag tag : toRemove) {
-            tag.setUsageCount(Math.max(0, tag.getUsageCount() - 1));
-            tagRepository.save(tag);
-            current.remove(tag);
+        current.removeAll(toRemove);
+        if (!toRemove.isEmpty()) {
+            tagRepository.decrementUsageCount(toRemove.stream().map(Tag::getId).toList());
         }
 
         Set<String> currentNames = current.stream().map(Tag::getName).collect(java.util.stream.Collectors.toSet());
+        List<Long> addedIds = new java.util.ArrayList<>();
         for (String name : targetNames) {
             if (!currentNames.contains(name)) {
                 Tag tag = resolveOrCreate(name, userId);
-                tag.setUsageCount(tag.getUsageCount() + 1);
-                tagRepository.save(tag);
                 current.add(tag);
+                addedIds.add(tag.getId());
             }
+        }
+        if (!addedIds.isEmpty()) {
+            tagRepository.incrementUsageCount(addedIds);
         }
 
         if (!toRemove.isEmpty() || !currentNames.containsAll(targetNames)) {

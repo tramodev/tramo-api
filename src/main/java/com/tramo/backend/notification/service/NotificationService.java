@@ -90,17 +90,12 @@ public class NotificationService {
     public void recordEvent(User recipient, String type, Project project, User actor) {
         if (recipient.getId().equals(actor.getId())) return;
 
-        Optional<Notification> existing = project != null
-                ? notificationRepository.findByRecipientIdAndTypeAndProjectIdAndReadFalse(recipient.getId(), type, project.getId())
-                : notificationRepository.findByRecipientIdAndTypeAndProjectIsNullAndReadFalse(recipient.getId(), type);
-
         Date now = new Date();
-        if (existing.isPresent()) {
-            Notification notification = existing.get();
-            notification.setCount(notification.getCount() + 1);
-            notification.setLatestActor(actor);
-            notification.setUpdatedDate(now);
-        } else {
+        int merged = project != null
+                ? notificationRepository.incrementForProject(recipient.getId(), type, project.getId(), actor, now)
+                : notificationRepository.incrementWithoutProject(recipient.getId(), type, actor, now);
+
+        if (merged == 0) {
             Notification notification = new Notification();
             notification.setRecipient(recipient);
             notification.setType(type);

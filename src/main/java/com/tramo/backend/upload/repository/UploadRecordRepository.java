@@ -16,6 +16,10 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
 
     @Transactional
     @Modifying(flushAutomatically = true)
+    @Query("UPDATE UploadRecord r SET r.bytes = :bytes, r.projectId = :projectId WHERE r.objectKey = :objectKey")
+    int updateByObjectKey(@Param("objectKey") String objectKey, @Param("projectId") Long projectId, @Param("bytes") long bytes);
+
+    @Modifying(flushAutomatically = true)
     @Query("delete from UploadRecord r where r.objectKey = :objectKey")
     void deleteByObjectKey(@Param("objectKey") String objectKey);
 

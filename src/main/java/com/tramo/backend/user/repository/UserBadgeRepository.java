@@ -12,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 @Repository
 public interface UserBadgeRepository extends JpaRepository<UserBadge, Long> {
     List<UserBadge> findByUserId(Long userId);
+
+    boolean existsByUserIdAndBadgeCode(Long userId, String badgeCode);
     @Modifying(flushAutomatically = true)
     @Query("delete from UserBadge b where b.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);

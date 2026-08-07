@@ -1,6 +1,9 @@
 package com.tramo.backend.notification.repository;
 
 import com.tramo.backend.notification.entity.Notification;
+import com.tramo.backend.user.entity.User;
+
+import java.util.Date;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -23,6 +26,18 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Optional<Notification> findByRecipientIdAndTypeAndProjectIdAndReadFalse(Long recipientId, String type, Long projectId);
 
     Optional<Notification> findByRecipientIdAndTypeAndProjectIsNullAndReadFalse(Long recipientId, String type);
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Notification n SET n.count = n.count + 1, n.latestActor = :actor, n.updatedDate = :now "
+            + "WHERE n.recipient.id = :recipientId AND n.type = :type AND n.project.id = :projectId AND n.read = false")
+    int incrementForProject(@Param("recipientId") Long recipientId, @Param("type") String type,
+                            @Param("projectId") Long projectId, @Param("actor") User actor, @Param("now") Date now);
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Notification n SET n.count = n.count + 1, n.latestActor = :actor, n.updatedDate = :now "
+            + "WHERE n.recipient.id = :recipientId AND n.type = :type AND n.project IS NULL AND n.read = false")
+    int incrementWithoutProject(@Param("recipientId") Long recipientId, @Param("type") String type,
+                                @Param("actor") User actor, @Param("now") Date now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Notification n SET n.read = true WHERE n.recipient.id = :recipientId AND n.read = false")

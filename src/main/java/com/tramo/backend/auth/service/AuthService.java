@@ -36,6 +36,8 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -63,6 +65,7 @@ public class AuthService {
     private final RateLimiterService rateLimiterService;
     private final AgeRejectionAttemptRepository ageRejectionAttemptRepository;
     private final MinAgeValidator minAgeValidator;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${app.auth.rejection-cooldown-hours}")
     private long rejectionCooldownHours;
@@ -73,7 +76,7 @@ public class AuthService {
                         PasswordResetTokenRepository passwordResetTokenRepository, EmailService emailService,
                         GoogleTokenVerifier googleTokenVerifier, CaptchaVerifier captchaVerifier,
                         RateLimiterService rateLimiterService, AgeRejectionAttemptRepository ageRejectionAttemptRepository,
-                        MinAgeValidator minAgeValidator) {
+                        MinAgeValidator minAgeValidator, PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
@@ -87,6 +90,7 @@ public class AuthService {
         this.rateLimiterService = rateLimiterService;
         this.ageRejectionAttemptRepository = ageRejectionAttemptRepository;
         this.minAgeValidator = minAgeValidator;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     private void checkIdentityRateLimit(String scope, String identifier, int capacity, int refillTokens) {
@@ -148,8 +152,12 @@ public class AuthService {
         user.setRole(Role.USER);
         user.setEmailVerified(false);
 
+        EmailVerificationToken verificationToken;
         try {
-            userRepository.save(user);
+            verificationToken = transactionTemplate.execute(status -> {
+                userRepository.save(user);
+                return createVerificationToken(user);
+            });
         } catch (DataIntegrityViolationException e) {
             // Lost a race against a concurrent registration for the same username/email -
             // the existsBy* checks above passed for both, only one insert can win.
@@ -158,13 +166,12 @@ public class AuthService {
             }
             return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
-
-        EmailVerificationToken verificationToken = createVerificationToken(user);
         emailService.sendVerificationEmail(user, verificationToken.getToken());
 
         return new RegisterResponseDTO(REGISTERED_MESSAGE);
     }
 
+    @Transactional(dontRollbackOn = InvalidTokenException.class)
     public AuthResponse verifyEmail(String token) {
         EmailVerificationToken verificationToken = emailVerificationTokenRepository.findByToken(token)
                 .orElseThrow(() -> new InvalidTokenException("Invalid or expired verification link"));

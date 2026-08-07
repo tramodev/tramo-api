@@ -12,6 +12,7 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.entity.UserBadge;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -136,16 +137,18 @@ public class SubscriptionService {
     }
 
     private void awardSupporterBadge(User user) {
-        boolean alreadyAwarded = userBadgeRepository.findByUserId(user.getId()).stream()
-                .anyMatch(b -> SUPPORTER_BADGE_CODE.equals(b.getBadgeCode()));
-        if (alreadyAwarded) {
+        if (userBadgeRepository.existsByUserIdAndBadgeCode(user.getId(), SUPPORTER_BADGE_CODE)) {
             return;
         }
         UserBadge badge = new UserBadge();
         badge.setUser(user);
         badge.setBadgeCode(SUPPORTER_BADGE_CODE);
         badge.setEarnedAt(new Date());
-        userBadgeRepository.save(badge);
+        try {
+            userBadgeRepository.save(badge);
+        } catch (DataIntegrityViolationException alreadyAwarded) {
+            return;
+        }
         notificationService.recordBadge(user, SUPPORTER_BADGE_CODE, "Supporter");
     }
 }

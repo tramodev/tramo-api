@@ -42,6 +42,7 @@ public class TrailService {
         this.projectIdCodec = projectIdCodec;
     }
 
+    @Transactional
     public TrailResponseDTO create(Long projectId, TrailRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new IllegalArgumentException("Title is required");
@@ -68,6 +69,7 @@ public class TrailService {
         return toResponse(getOwnedTrail(id, requester));
     }
 
+    @Transactional
     public TrailResponseDTO update(Long id, TrailRequestDTO request, User requester) {
         Trail trail = getOwnedTrail(id, requester);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
