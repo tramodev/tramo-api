@@ -43,8 +43,9 @@ public class PublicProjectController {
     }
 
     @GetMapping("/project/{id}/versions/{snapshotId}")
-    public ResponseEntity<ProjectSnapshotDetailDTO> getPublicVersion(@PathVariable String id, @PathVariable Long snapshotId) {
-        return ResponseEntity.ok(projectService.getPublicSnapshotDetail(projectIdCodec.decode(id), snapshotId));
+    public ResponseEntity<ProjectSnapshotDetailDTO> getPublicVersion(@PathVariable String id, @PathVariable Long snapshotId,
+                                                                        @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublicSnapshotDetail(projectIdCodec.decode(id), snapshotId, user));
     }
 
     @GetMapping("/explore")

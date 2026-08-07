@@ -362,7 +362,7 @@ public class ProjectService {
     public void shareProject(Long id, User sharer) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        assertViewable(project);
+        assertViewable(project, sharer);
         notifyFollowers(sharer, "SHARE", project);
     }
 
@@ -413,9 +413,13 @@ public class ProjectService {
         projectRepository.delete(project);
     }
 
-    private void assertViewable(Project project) {
+    private void assertViewable(Project project, User requester) {
         ProjectVisibility visibility = project.getVisibility();
         if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
+            throw new ResourceNotFoundException("Project not found");
+        }
+        boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
+        if (!isOwner && project.getOwner().isBanned()) {
             throw new ResourceNotFoundException("Project not found");
         }
     }
@@ -424,7 +428,7 @@ public class ProjectService {
     public ProjectResponseDTO fork(Long sourceProjectId, User requester) {
         Project source = projectRepository.findById(sourceProjectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        assertViewable(source);
+        assertViewable(source, requester);
         if (source.getOwner().getId().equals(requester.getId())) {
             throw new AccessDeniedException("Cannot fork your own project");
         }
@@ -709,10 +713,10 @@ public class ProjectService {
         return new ProjectSnapshotDetailDTO(snapshot.getId(), snapshot.getVersion(), snapshot.getCreatedDate(), content);
     }
 
-    public ProjectSnapshotDetailDTO getPublicSnapshotDetail(Long id, Long snapshotId) {
+    public ProjectSnapshotDetailDTO getPublicSnapshotDetail(Long id, Long snapshotId, User requester) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Version not found"));
-        assertViewable(project);
+        assertViewable(project, requester);
         if (project.getFirstPublishedDate() == null) {
             throw new ResourceNotFoundException("Version not found");
         }
@@ -729,7 +733,7 @@ public class ProjectService {
     public PublicProjectResponseDTO getPublicProject(Long id, User requester, String anonId) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        assertViewable(project);
+        assertViewable(project, requester);
 
         String viewerKey = requester != null ? "user:" + requester.getId()
                 : anonId != null && !anonId.isBlank() ? "anon:" + anonId
@@ -975,7 +979,7 @@ public class ProjectService {
             projectVoteRepository.delete(existingVote.get());
             voted = false;
         } else {
-            assertViewable(project);
+            assertViewable(project, requester);
             ProjectVote vote = new ProjectVote();
             vote.setProject(project);
             vote.setUser(requester);
@@ -1001,7 +1005,7 @@ public class ProjectService {
             projectBookmarkRepository.delete(existingBookmark.get());
             bookmarked = false;
         } else {
-            assertViewable(project);
+            assertViewable(project, requester);
             ProjectBookmark bookmark = new ProjectBookmark();
             bookmark.setProject(project);
             bookmark.setUser(requester);

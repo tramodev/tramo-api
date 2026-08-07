@@ -38,7 +38,7 @@ public class CommentService {
     public CommentDTO create(Long projectId, CommentRequestDTO request, User author) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        assertViewable(project);
+        assertViewable(project, author);
         if (blockedUserRepository.existsEitherDirection(author.getId(), project.getOwner().getId())) {
             throw new AccessDeniedException("Cannot comment on this project");
         }
@@ -72,7 +72,7 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
         if (!isOwner) {
-            assertViewable(project);
+            assertViewable(project, requester);
         }
         return commentRepository.findByProjectIdOrderByCreatedDateAsc(projectId).stream()
                 .map(c -> toDto(c, requester))
@@ -94,9 +94,13 @@ public class CommentService {
         commentRepository.save(comment);
     }
 
-    private void assertViewable(Project project) {
+    private void assertViewable(Project project, User requester) {
         ProjectVisibility visibility = project.getVisibility();
         if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
+            throw new ResourceNotFoundException("Project not found");
+        }
+        boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
+        if (!isOwner && project.getOwner().isBanned()) {
             throw new ResourceNotFoundException("Project not found");
         }
     }
