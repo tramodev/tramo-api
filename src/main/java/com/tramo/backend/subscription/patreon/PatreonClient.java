@@ -18,9 +18,6 @@ import java.util.List;
 
 @Component
 public class PatreonClient {
-    // Same reasoning as CaptchaVerifier: no timeouts means a hung Patreon endpoint holds the
-    // request thread indefinitely. Timeouts arrive as ResourceAccessException, already caught
-    // below and rethrown as InvalidTokenException.
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 

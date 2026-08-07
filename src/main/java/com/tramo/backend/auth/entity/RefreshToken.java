@@ -13,7 +13,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(indexes = @Index(name = "idx_refresh_token_user", columnList = "user_id"))
+@Table(indexes = {
+        @Index(name = "idx_refresh_token_user", columnList = "user_id"),
+        @Index(name = "idx_refresh_token_expires", columnList = "expires_at"),
+})
 public class RefreshToken {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

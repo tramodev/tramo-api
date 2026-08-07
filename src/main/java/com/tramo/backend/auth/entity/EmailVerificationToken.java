@@ -13,6 +13,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = {
+        @Index(name = "idx_email_verification_token_user", columnList = "user_id"),
+        @Index(name = "idx_email_verification_token_expires", columnList = "expires_at"),
+})
 public class EmailVerificationToken {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

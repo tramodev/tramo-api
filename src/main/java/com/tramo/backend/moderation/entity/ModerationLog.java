@@ -12,6 +12,7 @@ import java.util.Date;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = @Index(name = "idx_moderation_log_admin", columnList = "admin_id"))
 public class ModerationLog {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

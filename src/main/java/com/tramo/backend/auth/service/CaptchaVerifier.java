@@ -15,9 +15,6 @@ import java.time.Duration;
 
 @Component
 public class CaptchaVerifier {
-    // Without explicit timeouts a hung siteverify call pins the request thread forever, and
-    // this sits on the registration path. A timeout surfaces as ResourceAccessException, which
-    // the catch below already turns into CaptchaVerificationException (403).
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 

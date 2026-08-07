@@ -15,6 +15,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = @Index(name = "idx_patreon_connect_token_user", columnList = "user_id"))
 public class PatreonConnectToken {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

@@ -13,6 +13,10 @@ import java.util.UUID;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = {
+        @Index(name = "idx_password_reset_token_user", columnList = "user_id"),
+        @Index(name = "idx_password_reset_token_expires", columnList = "expires_at"),
+})
 public class PasswordResetToken {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

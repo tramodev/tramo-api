@@ -14,8 +14,10 @@ import java.util.Date;
 @Setter
 @NoArgsConstructor
 @Table(indexes = {
-        @Index(name = "idx_notification_recipient", columnList = "recipient_id"),
+        @Index(name = "idx_notification_recipient_updated", columnList = "recipient_id, updated_date DESC"),
         @Index(name = "idx_notification_recipient_unread", columnList = "recipient_id, read"),
+        @Index(name = "idx_notification_project", columnList = "project_id"),
+        @Index(name = "idx_notification_actor", columnList = "actor_id"),
 })
 public class Notification {
     @Id

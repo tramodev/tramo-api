@@ -14,7 +14,8 @@ import java.util.Date;
 @Setter
 @NoArgsConstructor
 @Table(indexes = {
-        @Index(name = "idx_comment_project", columnList = "project_id"),
+        @Index(name = "idx_comment_project_created", columnList = "project_id, created_date"),
+        @Index(name = "idx_comment_author", columnList = "author_id"),
 })
 public class Comment {
     @Id

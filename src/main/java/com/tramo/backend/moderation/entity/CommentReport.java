@@ -13,6 +13,11 @@ import java.util.Date;
 @Getter
 @Setter
 @NoArgsConstructor
+@Table(indexes = {
+        @Index(name = "idx_comment_report_comment_status", columnList = "comment_id, status"),
+        @Index(name = "idx_comment_report_reporter", columnList = "reporter_id"),
+        @Index(name = "idx_comment_report_status_created", columnList = "status, created_date DESC"),
+})
 public class CommentReport {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
