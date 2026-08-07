@@ -109,6 +109,7 @@ public class ProjectService {
     private static final long ON_THE_MAP_VIEW_THRESHOLD = 1000;
     private static final long TRENDSETTER_VIEW_THRESHOLD = 10000;
     private static final long EXPLORE_CACHE_REFRESH_MS = 5 * 60 * 1000;
+    private static final int ACTIVITY_FEED_LIMIT = 50;
 
     private volatile List<TagCountDTO> cachedHotTopics = List.of();
     private volatile List<AuthorCountDTO> cachedActiveAuthors = List.of();
@@ -1146,11 +1147,12 @@ public class ProjectService {
     }
 
     public PageResponseDTO<ActivityItemDTO> getActivityPage(User user, int page, int size) {
-        List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
-        List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId());
-        List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId());
-        List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), ProjectVisibility.PUBLISHED);
-        List<ActivityItemDTO> all = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects);
+        Pageable cap = PageRequest.of(0, Math.min((page + 1) * size, ACTIVITY_FEED_LIMIT));
+        List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId(), cap);
+        List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId(), cap);
+        List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId(), cap);
+        List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), ProjectVisibility.PUBLISHED, cap);
+        List<ActivityItemDTO> all = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects, cap);
 
         int from = Math.min(page * size, all.size());
         int to = Math.min(from + size, all.size());
@@ -1295,7 +1297,7 @@ public class ProjectService {
         return new BadgeDTO(code, name, description, progress >= target, Math.min(progress, target), target);
     }
 
-    private List<ActivityItemDTO> getMyActivity(User user, List<ProjectBookmark> myBookmarks, List<ProjectVote> myVotes, List<Project> myForkedProjects, List<Project> myPublishedProjects) {
+    private List<ActivityItemDTO> getMyActivity(User user, List<ProjectBookmark> myBookmarks, List<ProjectVote> myVotes, List<Project> myForkedProjects, List<Project> myPublishedProjects, Pageable cap) {
         Long userId = user.getId();
         List<ActivityItemDTO> items = new ArrayList<>();
 
@@ -1312,20 +1314,20 @@ public class ProjectService {
         for (ProjectBookmark bookmark : myBookmarks) {
             items.add(new ActivityItemDTO("bookmarked", bookmark.getCreatedDate(), projectIdCodec.encode(bookmark.getProject().getId()), bookmark.getProject().getTitle(), null));
         }
-        for (ProjectVote vote : projectVoteRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
+        for (ProjectVote vote : projectVoteRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId, cap)) {
             items.add(new ActivityItemDTO("received_vote", vote.getCreatedDate(), projectIdCodec.encode(vote.getProject().getId()), vote.getProject().getTitle(), vote.getUser().getUsername()));
         }
-        for (Project project : projectRepository.findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(userId, userId)) {
+        for (Project project : projectRepository.findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(userId, userId, cap)) {
             Project source = project.getForkedFrom();
             items.add(new ActivityItemDTO("received_fork", project.getCreationDate(), projectIdCodec.encode(source.getId()), source.getTitle(), project.getOwner().getUsername()));
         }
-        for (ProjectBookmark bookmark : projectBookmarkRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId)) {
+        for (ProjectBookmark bookmark : projectBookmarkRepository.findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(userId, userId, cap)) {
             items.add(new ActivityItemDTO("received_bookmark", bookmark.getCreatedDate(), projectIdCodec.encode(bookmark.getProject().getId()), bookmark.getProject().getTitle(), bookmark.getUser().getUsername()));
         }
 
         return items.stream()
                 .sorted(Comparator.comparing(ActivityItemDTO::getTimestamp).reversed())
-                .limit(50)
+                .limit(ACTIVITY_FEED_LIMIT)
                 .toList();
     }
 

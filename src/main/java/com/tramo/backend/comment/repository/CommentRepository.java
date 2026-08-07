@@ -1,6 +1,8 @@
 package com.tramo.backend.comment.repository;
 
 import com.tramo.backend.comment.entity.Comment;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -11,8 +13,12 @@ import java.util.List;
 
 @Repository
 public interface CommentRepository extends JpaRepository<Comment, Long> {
-    @Query("SELECT c FROM Comment c LEFT JOIN FETCH c.author LEFT JOIN FETCH c.parent WHERE c.project.id = :projectId ORDER BY c.createdDate ASC")
-    List<Comment> findByProjectIdOrderByCreatedDateAsc(@Param("projectId") Long projectId);
+    @Query(value = "SELECT c FROM Comment c LEFT JOIN FETCH c.author WHERE c.project.id = :projectId AND c.parent IS NULL ORDER BY c.createdDate ASC",
+            countQuery = "SELECT COUNT(c) FROM Comment c WHERE c.project.id = :projectId AND c.parent IS NULL")
+    Page<Comment> findRootsByProjectId(@Param("projectId") Long projectId, Pageable pageable);
+
+    @Query("SELECT c FROM Comment c LEFT JOIN FETCH c.author LEFT JOIN FETCH c.parent WHERE c.parent.id IN :parentIds ORDER BY c.createdDate ASC")
+    List<Comment> findRepliesByParentIdIn(@Param("parentIds") List<Long> parentIds);
 
     @Query("SELECT c.id FROM Comment c WHERE c.project.id = :projectId")
     List<Long> findIdsByProjectId(@Param("projectId") Long projectId);

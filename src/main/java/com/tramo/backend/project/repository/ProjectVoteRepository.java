@@ -20,14 +20,14 @@ public interface ProjectVoteRepository extends JpaRepository<ProjectVote, Long> 
     List<Long> findVotedProjectIds(@Param("userId") Long userId, @Param("projectIds") List<Long> projectIds);
 
     @Query("SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC")
-    List<ProjectVote> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId);
+    List<ProjectVote> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId, Pageable pageable);
 
     @Query(value = "SELECT v FROM ProjectVote v LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE v.user.id = :userId ORDER BY v.createdDate DESC",
             countQuery = "SELECT COUNT(v) FROM ProjectVote v WHERE v.user.id = :userId")
     Page<ProjectVote> findByUserIdOrderByCreatedDateDescPaged(@Param("userId") Long userId, Pageable pageable);
 
     @Query("SELECT v FROM ProjectVote v JOIN FETCH v.user LEFT JOIN FETCH v.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND v.user.id <> :userId ORDER BY v.createdDate DESC")
-    List<ProjectVote> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);
+    List<ProjectVote> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId, Pageable pageable);
     @Modifying(flushAutomatically = true)
     @Query("delete from ProjectVote v where v.project.id = :projectId")
     void deleteByProjectId(@Param("projectId") Long projectId);

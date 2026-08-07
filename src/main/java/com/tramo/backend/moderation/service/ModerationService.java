@@ -22,6 +22,7 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -31,6 +32,7 @@ import java.util.stream.Stream;
 
 @Service
 public class ModerationService {
+    private static final int ADMIN_SEARCH_LIMIT = 50;
     private final ProjectReportRepository projectReportRepository;
     private final CommentReportRepository commentReportRepository;
     private final ModerationLogRepository moderationLogRepository;
@@ -166,12 +168,8 @@ public class ModerationService {
 
     public List<AdminUserDTO> searchUsers(String query) {
         String q = query == null ? "" : query.trim();
-        List<User> users = q.isEmpty()
-                ? userRepository.findAll()
-                : userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(q, q);
-        return users.stream()
+        return userRepository.searchByUsernameOrEmail(q, PageRequest.of(0, ADMIN_SEARCH_LIMIT)).stream()
                 .map(u -> new AdminUserDTO(u.getId(), u.getUsername(), u.getEmail(), u.getRole().name(), u.isBanned()))
-                .limit(50)
                 .toList();
     }
 

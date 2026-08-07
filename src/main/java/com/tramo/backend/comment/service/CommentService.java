@@ -3,6 +3,9 @@ package com.tramo.backend.comment.service;
 import com.tramo.backend.comment.dto.CommentDTO;
 import com.tramo.backend.comment.dto.CommentRequestDTO;
 import com.tramo.backend.comment.entity.Comment;
+import com.tramo.backend.project.dto.PageResponseDTO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.service.NotificationService;
@@ -17,6 +20,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -67,16 +71,25 @@ public class CommentService {
         return toDto(comment, author);
     }
 
-    public List<CommentDTO> getForProject(Long projectId, User requester) {
+    public PageResponseDTO<CommentDTO> getForProject(Long projectId, User requester, int page, int size) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
         if (!isOwner) {
             assertViewable(project, requester);
         }
-        return commentRepository.findByProjectIdOrderByCreatedDateAsc(projectId).stream()
-                .map(c -> toDto(c, requester))
-                .toList();
+        Page<Comment> roots = commentRepository.findRootsByProjectId(projectId, PageRequest.of(page, size));
+        List<Long> rootIds = roots.getContent().stream().map(Comment::getId).toList();
+        List<Comment> replies = rootIds.isEmpty() ? List.of() : commentRepository.findRepliesByParentIdIn(rootIds);
+
+        List<CommentDTO> thread = new ArrayList<>();
+        for (Comment root : roots.getContent()) {
+            thread.add(toDto(root, requester));
+        }
+        for (Comment reply : replies) {
+            thread.add(toDto(reply, requester));
+        }
+        return new PageResponseDTO<>(thread, roots.hasNext());
     }
 
     @Transactional

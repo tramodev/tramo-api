@@ -5,6 +5,9 @@ import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.dto.NotificationDTO;
 import com.tramo.backend.notification.dto.UnreadCountDTO;
 import com.tramo.backend.notification.entity.Notification;
+import com.tramo.backend.project.dto.PageResponseDTO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
@@ -138,8 +141,10 @@ public class NotificationService {
         publishUnreadCount(recipient);
     }
 
-    public List<NotificationDTO> getNotifications(User user) {
-        return notificationRepository.findByRecipientIdOrderByUpdatedDateDesc(user.getId()).stream()
+    public PageResponseDTO<NotificationDTO> getNotifications(User user, int page, int size) {
+        Page<Notification> result = notificationRepository.findByRecipientIdOrderByUpdatedDateDesc(
+                user.getId(), PageRequest.of(page, size));
+        List<NotificationDTO> items = result.getContent().stream()
                 .map(n -> new NotificationDTO(
                         n.getId(),
                         n.getType(),
@@ -153,6 +158,7 @@ public class NotificationService {
                         n.getUpdatedDate()
                 ))
                 .toList();
+        return new PageResponseDTO<>(items, result.hasNext());
     }
 
     public long getUnreadCount(User user) {

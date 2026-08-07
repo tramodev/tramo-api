@@ -33,11 +33,11 @@ class CommentTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].content").value("Great project!"))
-                .andExpect(jsonPath("$[0].authorUsername").value("commentfan"))
-                .andExpect(jsonPath("$[1].content").value("Thanks!"))
-                .andExpect(jsonPath("$[1].parentId").value(topLevelId));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].content").value("Great project!"))
+                .andExpect(jsonPath("$.content[0].authorUsername").value("commentfan"))
+                .andExpect(jsonPath("$.content[1].content").value("Thanks!"))
+                .andExpect(jsonPath("$.content[1].parentId").value(topLevelId));
     }
 
     @Test
@@ -55,8 +55,8 @@ class CommentTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].type").value("COMMENT"))
-                .andExpect(jsonPath("$[0].latestActorUsername").value("notifcommentfan"));
+                .andExpect(jsonPath("$.content[0].type").value("COMMENT"))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("notifcommentfan"));
 
         mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
                         .header("Authorization", bearer(owner))
@@ -86,10 +86,10 @@ class CommentTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/public/project/" + pid(project) + "/comments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].deleted").value(true))
-                .andExpect(jsonPath("$[0].content").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$[1].parentId").value(parentId));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].deleted").value(true))
+                .andExpect(jsonPath("$.content[0].content").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.content[1].parentId").value(parentId));
     }
 
     @Test

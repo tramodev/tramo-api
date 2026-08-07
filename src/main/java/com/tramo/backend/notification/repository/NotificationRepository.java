@@ -1,6 +1,8 @@
 package com.tramo.backend.notification.repository;
 
 import com.tramo.backend.notification.entity.Notification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,8 +14,9 @@ import java.util.Optional;
 
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
-    @Query("SELECT n FROM Notification n LEFT JOIN FETCH n.project LEFT JOIN FETCH n.latestActor WHERE n.recipient.id = :recipientId ORDER BY n.updatedDate DESC")
-    List<Notification> findByRecipientIdOrderByUpdatedDateDesc(@Param("recipientId") Long recipientId);
+    @Query(value = "SELECT n FROM Notification n LEFT JOIN FETCH n.project LEFT JOIN FETCH n.latestActor WHERE n.recipient.id = :recipientId ORDER BY n.updatedDate DESC",
+            countQuery = "SELECT COUNT(n) FROM Notification n WHERE n.recipient.id = :recipientId")
+    Page<Notification> findByRecipientIdOrderByUpdatedDateDesc(@Param("recipientId") Long recipientId, Pageable pageable);
 
     long countByRecipientIdAndReadFalse(Long recipientId);
 

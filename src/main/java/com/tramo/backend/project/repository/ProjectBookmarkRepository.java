@@ -19,14 +19,14 @@ public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark
     List<Long> findBookmarkedProjectIds(@Param("userId") Long userId, @Param("projectIds") List<Long> projectIds);
 
     @Query("SELECT b FROM ProjectBookmark b LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE b.user.id = :userId ORDER BY b.createdDate DESC")
-    List<ProjectBookmark> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId);
+    List<ProjectBookmark> findByUserIdOrderByCreatedDateDesc(@Param("userId") Long userId, Pageable pageable);
 
     @Query(value = "SELECT b FROM ProjectBookmark b LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE b.user.id = :userId ORDER BY b.createdDate DESC",
             countQuery = "SELECT COUNT(b) FROM ProjectBookmark b WHERE b.user.id = :userId")
     Page<ProjectBookmark> findByUserIdOrderByCreatedDateDescPaged(@Param("userId") Long userId, Pageable pageable);
 
     @Query("SELECT b FROM ProjectBookmark b JOIN FETCH b.user LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND b.user.id <> :userId ORDER BY b.createdDate DESC")
-    List<ProjectBookmark> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);
+    List<ProjectBookmark> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId, Pageable pageable);
     @Modifying(flushAutomatically = true)
     @Query("delete from ProjectBookmark b where b.project.id = :projectId")
     void deleteByProjectId(@Param("projectId") Long projectId);

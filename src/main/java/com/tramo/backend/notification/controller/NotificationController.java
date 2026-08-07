@@ -1,6 +1,8 @@
 package com.tramo.backend.notification.controller;
 
 import com.tramo.backend.notification.dto.NotificationDTO;
+import com.tramo.backend.project.dto.PageResponseDTO;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.tramo.backend.notification.dto.UnreadCountDTO;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.user.entity.User;
@@ -27,8 +29,11 @@ public class NotificationController {
     }
 
     @GetMapping
-    public ResponseEntity<List<NotificationDTO>> getNotifications(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(notificationService.getNotifications(user));
+    public ResponseEntity<PageResponseDTO<NotificationDTO>> getNotifications(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(notificationService.getNotifications(user, page, size));
     }
 
     @GetMapping("/unread-count")

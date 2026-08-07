@@ -40,7 +40,7 @@ class NotificationTest extends AbstractIntegrationTest {
         String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        long badgeNotificationId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$[0].id")).longValue();
+        long badgeNotificationId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
         mockMvc.perform(delete("/api/notifications/" + badgeNotificationId).header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
 
@@ -62,10 +62,10 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].type").value("UPVOTE"))
-                .andExpect(jsonPath("$[0].latestActorUsername").value("notiffan"))
-                .andExpect(jsonPath("$[0].count").value(1))
-                .andExpect(jsonPath("$[0].read").value(false));
+                .andExpect(jsonPath("$.content[0].type").value("UPVOTE"))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("notiffan"))
+                .andExpect(jsonPath("$.content[0].count").value(1))
+                .andExpect(jsonPath("$.content[0].read").value(false));
     }
 
     @Test
@@ -82,8 +82,8 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].count").value(2));
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].count").value(2));
     }
 
     @Test
@@ -126,14 +126,14 @@ class NotificationTest extends AbstractIntegrationTest {
         String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$[0].id")).longValue();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
 
         mockMvc.perform(delete("/api/notifications/" + id).header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.content.length()").value(0));
     }
 
     @Test
@@ -160,9 +160,9 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].type").value("PUBLISH"))
-                .andExpect(jsonPath("$[0].latestActorUsername").value("notifpublisher"))
-                .andExpect(jsonPath("$[0].projectTitle").value("Publish me"));
+                .andExpect(jsonPath("$.content[0].type").value("PUBLISH"))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("notifpublisher"))
+                .andExpect(jsonPath("$.content[0].projectTitle").value("Publish me"));
 
         
         mockMvc.perform(put("/api/project/" + pid(project))
@@ -174,7 +174,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$.content.length()").value(1));
 
         
         
@@ -195,7 +195,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$.content.length()").value(1));
     }
 
     @Test
@@ -219,7 +219,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.content.length()").value(0));
 
         
         mockMvc.perform(put("/api/project/" + pid(project))
@@ -237,7 +237,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.content.length()").value(0));
     }
 
     @Test
@@ -255,9 +255,9 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(sharerFollower)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].type").value("SHARE"))
-                .andExpect(jsonPath("$[0].latestActorUsername").value("notifsharer"))
-                .andExpect(jsonPath("$[0].projectTitle").value("Share me"));
+                .andExpect(jsonPath("$.content[0].type").value("SHARE"))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("notifsharer"))
+                .andExpect(jsonPath("$.content[0].projectTitle").value("Share me"));
 
         mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
@@ -306,7 +306,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(author)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.type=='BADGE')]").exists());
+                .andExpect(jsonPath("$.content[?(@.type=='BADGE')]").exists());
     }
 
     @Test
@@ -356,7 +356,7 @@ class NotificationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.type=='FEATURED')]").exists());
+                .andExpect(jsonPath("$.content[?(@.type=='FEATURED')]").exists());
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().isFeatured()).isTrue();
     }
