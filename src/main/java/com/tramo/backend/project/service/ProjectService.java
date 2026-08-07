@@ -940,31 +940,17 @@ public class ProjectService {
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void refreshFeaturedProject() {
-        List<Project> published = projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED);
-        if (published.isEmpty()) return;
+        Optional<ProjectVoteRepository.TrustedVoteCount> topVoted = projectVoteRepository.findTopTrustedPublished();
+        Optional<Project> topProject = topVoted
+                .flatMap(row -> projectRepository.findById(row.getProjectId()))
+                .or(() -> projectRepository.findFirstByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED));
+        if (topProject.isEmpty()) return;
 
-        List<Long> ids = published.stream().map(Project::getId).toList();
-        Map<Long, Long> rawCounts = new HashMap<>();
-        Map<Long, Long> trustedCounts = new HashMap<>();
-        Map<Long, Set<String>> seenIps = new HashMap<>();
-        Map<Long, Set<String>> seenDevices = new HashMap<>();
-        for (ProjectVoteRepository.VoteMeta vote : projectVoteRepository.findMetaByProjectIdIn(ids)) {
-            Long projectId = vote.getProjectId();
-            rawCounts.merge(projectId, 1L, Long::sum);
-            boolean freshIp = vote.getVoterIp() == null
-                    || seenIps.computeIfAbsent(projectId, k -> new HashSet<>()).add(vote.getVoterIp());
-            boolean freshDevice = vote.getDeviceId() == null
-                    || seenDevices.computeIfAbsent(projectId, k -> new HashSet<>()).add(vote.getDeviceId());
-            if (freshIp && freshDevice) {
-                trustedCounts.merge(projectId, 1L, Long::sum);
-            }
-        }
-
-        Project top = published.stream()
-                .max(Comparator.comparingLong(p -> trustedCounts.getOrDefault(p.getId(), 0L)))
-                .orElseThrow();
+        Project top = topProject.get();
         log.info("Featured pick: project {} with {} trusted votes ({} raw)",
-                top.getId(), trustedCounts.getOrDefault(top.getId(), 0L), rawCounts.getOrDefault(top.getId(), 0L));
+                top.getId(),
+                topVoted.map(ProjectVoteRepository.TrustedVoteCount::getTrustedCount).orElse(0L),
+                topVoted.map(ProjectVoteRepository.TrustedVoteCount::getRawCount).orElse(0L));
 
         Optional<Project> currentlyFeatured = projectRepository.findByFeaturedTrue();
         if (currentlyFeatured.isPresent() && currentlyFeatured.get().getId().equals(top.getId())) {

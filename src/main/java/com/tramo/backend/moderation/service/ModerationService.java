@@ -33,6 +33,7 @@ import java.util.stream.Stream;
 @Service
 public class ModerationService {
     private static final int ADMIN_SEARCH_LIMIT = 50;
+    private static final int OPEN_REPORTS_LIMIT = 100;
     private final ProjectReportRepository projectReportRepository;
     private final CommentReportRepository commentReportRepository;
     private final ModerationLogRepository moderationLogRepository;
@@ -106,7 +107,7 @@ public class ModerationService {
     }
 
     public List<ReportDTO> listOpenReports() {
-        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows(ReportStatus.OPEN).stream()
+        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows(ReportStatus.OPEN, PageRequest.of(0, OPEN_REPORTS_LIMIT)).stream()
                 .map(r -> new ReportDTO(
                         (Long) r[0],
                         "PROJECT",
@@ -119,7 +120,7 @@ public class ModerationService {
                         ((ReportStatus) r[5]).name(),
                         (Date) r[6]
                 ));
-        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows(ReportStatus.OPEN).stream()
+        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows(ReportStatus.OPEN, PageRequest.of(0, OPEN_REPORTS_LIMIT)).stream()
                 .map(r -> new ReportDTO(
                         (Long) r[0],
                         "COMMENT",
@@ -134,6 +135,7 @@ public class ModerationService {
                 ));
         return Stream.concat(projectReports, commentReports)
                 .sorted(Comparator.comparing(ReportDTO::getCreatedDate).reversed())
+                .limit(OPEN_REPORTS_LIMIT)
                 .toList();
     }
 
@@ -159,9 +161,7 @@ public class ModerationService {
         Comment comment = report.getComment();
         commentService.delete(comment.getId(), admin);
 
-        for (CommentReport r : commentReportRepository.findByCommentIdAndStatus(comment.getId(), ReportStatus.OPEN)) {
-            r.setStatus(ReportStatus.UPHELD);
-        }
+        commentReportRepository.updateStatusByCommentId(comment.getId(), ReportStatus.OPEN, ReportStatus.UPHELD);
 
         logAction(admin, "UPHOLD_REPORT", "COMMENT_REPORT", reportId, reason);
     }
@@ -202,11 +202,7 @@ public class ModerationService {
         project.setVisibility(ProjectVisibility.PRIVATE);
         projectRepository.save(project);
 
-        for (ProjectReport report : projectReportRepository.findByStatusOrderByCreatedDateDesc(ReportStatus.OPEN)) {
-            if (report.getProject().getId().equals(projectId)) {
-                report.setStatus(ReportStatus.UPHELD);
-            }
-        }
+        projectReportRepository.updateStatusByProjectId(projectId, ReportStatus.OPEN, ReportStatus.UPHELD);
 
         logAction(admin, "UNPUBLISH_PROJECT", "PROJECT", projectId, reason);
     }

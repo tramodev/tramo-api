@@ -23,9 +23,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     long countByRecipientIdAndReadFalse(Long recipientId);
 
-    Optional<Notification> findByRecipientIdAndTypeAndProjectIdAndReadFalse(Long recipientId, String type, Long projectId);
-
-    Optional<Notification> findByRecipientIdAndTypeAndProjectIsNullAndReadFalse(Long recipientId, String type);
 
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Notification n SET n.count = n.count + 1, n.latestActor = :actor, n.updatedDate = :now "

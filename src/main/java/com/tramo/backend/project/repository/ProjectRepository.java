@@ -69,6 +69,8 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Optional<Project> findByFeaturedTrue();
 
+    Optional<Project> findFirstByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility visibility);
+
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC")
     List<Project> findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(@Param("ownerId") Long ownerId, Pageable pageable);
 

@@ -46,12 +46,21 @@ public interface ProjectVoteRepository extends JpaRepository<ProjectVote, Long> 
         Long getVoteCount();
     }
 
-    @Query("SELECT v.project.id AS projectId, v.voterIp AS voterIp, v.deviceId AS deviceId FROM ProjectVote v WHERE v.project.id IN :projectIds ORDER BY v.createdDate ASC")
-    List<VoteMeta> findMetaByProjectIdIn(@Param("projectIds") List<Long> projectIds);
+    @Query(value = "SELECT t.project_id AS projectId, "
+            + "COUNT(*) FILTER (WHERE (t.voter_ip IS NULL OR t.ip_rn = 1) AND (t.device_id IS NULL OR t.dev_rn = 1)) AS trustedCount, "
+            + "COUNT(*) AS rawCount "
+            + "FROM (SELECT v.project_id, v.voter_ip, v.device_id, p.last_published_date, "
+            + "ROW_NUMBER() OVER (PARTITION BY v.project_id, v.voter_ip ORDER BY v.created_date, v.id) AS ip_rn, "
+            + "ROW_NUMBER() OVER (PARTITION BY v.project_id, v.device_id ORDER BY v.created_date, v.id) AS dev_rn "
+            + "FROM project_vote v JOIN project p ON p.id = v.project_id WHERE p.visibility = 'published') t "
+            + "GROUP BY t.project_id "
+            + "ORDER BY 2 DESC, MAX(t.last_published_date) DESC NULLS LAST "
+            + "LIMIT 1", nativeQuery = true)
+    Optional<TrustedVoteCount> findTopTrustedPublished();
 
-    interface VoteMeta {
+    interface TrustedVoteCount {
         Long getProjectId();
-        String getVoterIp();
-        String getDeviceId();
+        Long getTrustedCount();
+        Long getRawCount();
     }
 }
