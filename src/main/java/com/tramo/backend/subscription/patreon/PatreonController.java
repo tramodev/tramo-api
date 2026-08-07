@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -34,11 +36,13 @@ public class PatreonController {
     private final PatreonClient patreonClient;
     private final SubscriptionService subscriptionService;
     private final UserRepository userRepository;
+    private final TransactionTemplate transactionTemplate;
     private final String clientId;
     private final String redirectUri;
     private final String frontendUrl;
 
-    public PatreonController(PatreonConnectTokenRepository connectTokenRepository,
+    public PatreonController(PlatformTransactionManager transactionManager,
+                              PatreonConnectTokenRepository connectTokenRepository,
                               PatreonClient patreonClient,
                               SubscriptionService subscriptionService,
                               UserRepository userRepository,
@@ -49,6 +53,7 @@ public class PatreonController {
         this.patreonClient = patreonClient;
         this.subscriptionService = subscriptionService;
         this.userRepository = userRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.clientId = clientId;
         this.redirectUri = redirectUri;
         this.frontendUrl = frontendUrl;
@@ -78,7 +83,6 @@ public class PatreonController {
     
     
     @GetMapping("/callback")
-    @Transactional
     public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
                                           @RequestParam(required = false) String state,
                                           @RequestParam(required = false) String error,
@@ -105,18 +109,20 @@ public class PatreonController {
 
         User user;
         try {
-            PatreonClient.PatreonTokens tokens = patreonClient.exchangeCode(code);
-            PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity(tokens.accessToken());
+            final PatreonClient.PatreonTokens tokens = patreonClient.exchangeCode(code);
+            final PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity(tokens.accessToken());
 
             user = connectToken.getUser();
-            user.setPatreonUserId(identity.patreonUserId());
-            user.setPatreonAccessToken(tokens.accessToken());
-            user.setPatreonRefreshToken(tokens.refreshToken());
-            userRepository.save(user);
+            transactionTemplate.executeWithoutResult(status -> {
+                user.setPatreonUserId(identity.patreonUserId());
+                user.setPatreonAccessToken(tokens.accessToken());
+                user.setPatreonRefreshToken(tokens.refreshToken());
+                userRepository.save(user);
 
-            if (identity.activePatron()) {
-                subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
-            }
+                if (identity.activePatron()) {
+                    subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
+                }
+            });
         } catch (InvalidTokenException ex) {
             log.warn("Patreon code exchange/identity fetch failed: {}", ex.getMessage(), ex.getCause());
             return redirectTo("error");

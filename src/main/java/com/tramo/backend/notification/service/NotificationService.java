@@ -13,6 +13,8 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -72,6 +74,19 @@ public class NotificationService {
     }
 
     private void publishUnreadCount(User recipient) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    sendUnreadCount(recipient);
+                }
+            });
+            return;
+        }
+        sendUnreadCount(recipient);
+    }
+
+    private void sendUnreadCount(User recipient) {
         CopyOnWriteArrayList<SseEmitter> userEmitters = emitters.get(recipient.getId());
         if (userEmitters == null || userEmitters.isEmpty()) return;
 

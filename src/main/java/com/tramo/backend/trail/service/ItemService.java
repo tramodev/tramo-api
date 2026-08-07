@@ -298,7 +298,6 @@ public class ItemService {
     }
 
     @Scheduled(fixedRate = IMAGE_DELETION_PURGE_INTERVAL_MS)
-    @Transactional
     public void purgePendingImageDeletions() {
         Date cutoff = new Date(System.currentTimeMillis() - IMAGE_DELETION_GRACE_MS);
         for (PendingImageDeletion pending : pendingImageDeletionRepository.findByRequestedAtBefore(cutoff)) {
