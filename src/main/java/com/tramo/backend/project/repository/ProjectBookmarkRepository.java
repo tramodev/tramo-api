@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark, Long> {
@@ -26,6 +27,10 @@ public interface ProjectBookmarkRepository extends JpaRepository<ProjectBookmark
 
     @Query("SELECT b FROM ProjectBookmark b JOIN FETCH b.user LEFT JOIN FETCH b.project p LEFT JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND b.user.id <> :userId ORDER BY b.createdDate DESC")
     List<ProjectBookmark> findByProjectOwnerIdAndUserIdNotOrderByCreatedDateDesc(@Param("ownerId") Long ownerId, @Param("userId") Long userId);
-    void deleteByProjectId(Long projectId);
-    void deleteByUserId(Long userId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProjectBookmark b where b.project.id = :projectId")
+    void deleteByProjectId(@Param("projectId") Long projectId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProjectBookmark b where b.user.id = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 }

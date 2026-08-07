@@ -8,10 +8,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface ItemImageReferenceRepository extends JpaRepository<ItemImageReference, Long> {
-    void deleteByItemId(Long itemId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ItemImageReference r where r.item.id = :itemId")
+    void deleteByItemId(@Param("itemId") Long itemId);
 
     @Query("SELECT r FROM ItemImageReference r JOIN FETCH r.item i WHERE i.project.id = :projectId " +
             "ORDER BY i.id ASC, r.id ASC")

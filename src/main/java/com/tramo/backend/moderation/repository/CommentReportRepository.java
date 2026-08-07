@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 public interface CommentReportRepository extends JpaRepository<CommentReport, Long> {
     List<CommentReport> findByCommentIdAndStatus(Long commentId, ReportStatus status);
 
@@ -18,7 +20,13 @@ public interface CommentReportRepository extends JpaRepository<CommentReport, Lo
 
     boolean existsByCommentIdAndReporterIdAndStatus(Long commentId, Long reporterId, ReportStatus status);
 
-    void deleteByCommentId(Long commentId);
-    void deleteByCommentIdIn(java.util.List<Long> commentIds);
-    void deleteByReporterId(Long reporterId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from CommentReport r where r.comment.id = :commentId")
+    void deleteByCommentId(@Param("commentId") Long commentId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from CommentReport r where r.comment.id in :commentIds")
+    void deleteByCommentIdIn(@Param("commentIds") java.util.List<Long> commentIds);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from CommentReport r where r.reporter.id = :reporterId")
+    void deleteByReporterId(@Param("reporterId") Long reporterId);
 }

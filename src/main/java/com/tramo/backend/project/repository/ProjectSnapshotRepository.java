@@ -8,10 +8,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface ProjectSnapshotRepository extends JpaRepository<ProjectSnapshot, Long> {
-    void deleteByProjectId(Long projectId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProjectSnapshot s where s.project.id = :projectId")
+    void deleteByProjectId(@Param("projectId") Long projectId);
 
     @Query("select max(s.version) from ProjectSnapshot s where s.project.id = :projectId and s.trigger = 'PUBLISH'")
     Optional<Integer> findMaxVersion(@Param("projectId") Long projectId);

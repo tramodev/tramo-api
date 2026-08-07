@@ -21,17 +21,23 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     Optional<Notification> findByRecipientIdAndTypeAndProjectIsNullAndReadFalse(Long recipientId, String type);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Notification n SET n.read = true WHERE n.recipient.id = :recipientId AND n.read = false")
     void markAllReadByRecipientId(@Param("recipientId") Long recipientId);
 
-    long deleteByIdAndRecipientId(Long id, Long recipientId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Notification n where n.id = :id and n.recipient.id = :recipientId")
+    int deleteByIdAndRecipientId(@Param("id") Long id, @Param("recipientId") Long recipientId);
 
-    void deleteByProjectId(Long projectId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Notification n where n.project.id = :projectId")
+    void deleteByProjectId(@Param("projectId") Long projectId);
 
-    void deleteByRecipientId(Long recipientId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Notification n where n.recipient.id = :recipientId")
+    void deleteByRecipientId(@Param("recipientId") Long recipientId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Notification n SET n.latestActor = null WHERE n.latestActor.id = :actorId")
     void clearLatestActorReferences(@Param("actorId") Long actorId);
 }

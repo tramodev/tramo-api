@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 public interface ProjectReportRepository extends JpaRepository<ProjectReport, Long> {
     List<ProjectReport> findByStatusOrderByCreatedDateDesc(ReportStatus status);
 
@@ -21,6 +23,10 @@ public interface ProjectReportRepository extends JpaRepository<ProjectReport, Lo
 
     boolean existsByProjectIdAndReporterIdAndStatus(Long projectId, Long reporterId, ReportStatus status);
 
-    void deleteByProjectId(Long projectId);
-    void deleteByReporterId(Long reporterId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProjectReport r where r.project.id = :projectId")
+    void deleteByProjectId(@Param("projectId") Long projectId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ProjectReport r where r.reporter.id = :reporterId")
+    void deleteByReporterId(@Param("reporterId") Long reporterId);
 }

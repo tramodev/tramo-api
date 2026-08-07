@@ -11,13 +11,16 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.Modifying;
 
 @Repository
 public interface FollowRepository extends JpaRepository<Follow, Long> {
     long countByFollowedId(Long followedId);
     long countByFollowerId(Long followerId);
     Optional<Follow> findByFollowerIdAndFollowedId(Long followerId, Long followedId);
-    void deleteByFollowerIdOrFollowedId(Long followerId, Long followedId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Follow f where f.follower.id = :followerId or f.followed.id = :followedId")
+    void deleteByFollowerIdOrFollowedId(@Param("followerId") Long followerId, @Param("followedId") Long followedId);
 
     @Query(value = "SELECT f FROM Follow f JOIN FETCH f.follower WHERE f.followed.id = :userId ORDER BY f.createdDate DESC",
             countQuery = "SELECT COUNT(f) FROM Follow f WHERE f.followed.id = :userId")

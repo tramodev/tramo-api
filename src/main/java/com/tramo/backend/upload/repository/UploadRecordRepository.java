@@ -9,11 +9,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.Modifying;
+
 public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long> {
     Optional<UploadRecord> findByObjectKey(String objectKey);
 
     @Transactional
-    void deleteByObjectKey(String objectKey);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from UploadRecord r where r.objectKey = :objectKey")
+    void deleteByObjectKey(@Param("objectKey") String objectKey);
 
     @Query("SELECT COALESCE(SUM(u.bytes), 0) FROM UploadRecord u WHERE u.userId = :userId")
     long sumBytesByUserId(@Param("userId") Long userId);

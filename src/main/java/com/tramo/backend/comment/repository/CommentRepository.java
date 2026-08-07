@@ -29,7 +29,9 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     @Query("UPDATE Comment c SET c.parent = null WHERE c.project.id = :projectId")
     void clearParentReferencesForProject(@Param("projectId") Long projectId);
 
-    void deleteByProjectId(Long projectId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Comment c where c.project.id = :projectId")
+    void deleteByProjectId(@Param("projectId") Long projectId);
 
     @Modifying
     @Query("UPDATE Comment c SET c.author = null, c.content = null, c.deleted = true WHERE c.author.id = :authorId")
