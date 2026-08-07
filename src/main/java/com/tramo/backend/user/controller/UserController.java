@@ -4,7 +4,6 @@ import com.tramo.backend.auth.dto.ChangePasswordRequestDTO;
 import com.tramo.backend.auth.service.AuthService;
 import com.tramo.backend.user.dto.UpdatePreferencesRequestDTO;
 import com.tramo.backend.user.dto.UserPreferencesDTO;
-import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.service.UserAccountService;
 import com.tramo.backend.user.service.UserPreferencesService;
@@ -19,24 +18,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 @RestController
 @RequestMapping("/user")
 public class UserController {
 
-        @Autowired
-        private UserRepository userRepository;
         @Autowired
         private AuthService authService;
         @Autowired
         private UserAccountService userAccountService;
         @Autowired
         private UserPreferencesService userPreferencesService;
-
-        @GetMapping("/getAll")
-        public List<User> getAll() {
-            return userRepository.findAll();
-        }
 
         @PutMapping("/password")
         public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequestDTO request,

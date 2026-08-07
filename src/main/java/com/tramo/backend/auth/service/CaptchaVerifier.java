@@ -5,14 +5,33 @@ import com.tramo.backend.exception.CaptchaVerificationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.Duration;
+
 @Component
 public class CaptchaVerifier {
-    private final RestClient restClient = RestClient.create("https://www.google.com");
+    // Without explicit timeouts a hung siteverify call pins the request thread forever, and
+    // this sits on the registration path. A timeout surfaces as ResourceAccessException, which
+    // the catch below already turns into CaptchaVerificationException (403).
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+
+    private final RestClient restClient = RestClient.builder()
+            .baseUrl("https://www.google.com")
+            .requestFactory(timeoutFactory())
+            .build();
+
+    private static SimpleClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(CONNECT_TIMEOUT);
+        factory.setReadTimeout(READ_TIMEOUT);
+        return factory;
+    }
 
     @Value("${app.captcha.secret-key}")
     private String secretKey;

@@ -6,17 +6,35 @@ import com.tramo.backend.exception.InvalidTokenException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.time.Duration;
 import java.util.List;
 
 @Component
 public class PatreonClient {
-    private final RestClient restClient = RestClient.create("https://www.patreon.com");
+    // Same reasoning as CaptchaVerifier: no timeouts means a hung Patreon endpoint holds the
+    // request thread indefinitely. Timeouts arrive as ResourceAccessException, already caught
+    // below and rethrown as InvalidTokenException.
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
+
+    private final RestClient restClient = RestClient.builder()
+            .baseUrl("https://www.patreon.com")
+            .requestFactory(timeoutFactory())
+            .build();
+
+    private static SimpleClientHttpRequestFactory timeoutFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(CONNECT_TIMEOUT);
+        factory.setReadTimeout(READ_TIMEOUT);
+        return factory;
+    }
 
     @Value("${app.patreon.client-id}")
     private String clientId;
