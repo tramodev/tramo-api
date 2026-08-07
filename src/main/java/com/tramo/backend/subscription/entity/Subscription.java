@@ -22,7 +22,8 @@ public class Subscription {
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User user;
-    @OneToOne
+    @ManyToOne
+    @JoinColumn(name = "plan_id")
     private Plan plan;
     @OneToMany
     private List<Payment> payment;

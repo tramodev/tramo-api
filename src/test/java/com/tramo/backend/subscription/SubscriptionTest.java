@@ -2,6 +2,8 @@ package com.tramo.backend.subscription;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.subscription.entity.Plan;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.entity.UploadRecord;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.entity.User;
@@ -11,6 +13,7 @@ import org.springframework.http.MediaType;
 
 import java.util.Date;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -22,6 +25,9 @@ class SubscriptionTest extends AbstractIntegrationTest {
 
     @Autowired
     private UploadRecordRepository uploadRecordRepository;
+
+    @Autowired
+    private SubscriptionService subscriptionService;
 
     private void upgrade(User user) throws Exception {
         mockMvc.perform(post("/api/subscription/mock-upgrade").header("Authorization", bearer(user)))
@@ -60,6 +66,19 @@ class SubscriptionTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.supporter").value(true))
                 .andExpect(jsonPath("$.publishesPerWeek").value(-1));
+    }
+
+    @Test
+    void twoUsersCanShareTheSameSupporterPlan() {
+        User first = createUser("patronone");
+        User second = createUser("patrontwo");
+        Plan plan = subscriptionService.findOrCreateSupporterPlan();
+
+        subscriptionService.activateSupporterSubscription(first, plan);
+        subscriptionService.activateSupporterSubscription(second, plan);
+
+        assertThat(subscriptionService.isSupporter(first)).isTrue();
+        assertThat(subscriptionService.isSupporter(second)).isTrue();
     }
 
     @Test
