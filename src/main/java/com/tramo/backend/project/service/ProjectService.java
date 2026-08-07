@@ -112,6 +112,7 @@ public class ProjectService {
 
     private volatile List<TagCountDTO> cachedHotTopics = List.of();
     private volatile List<AuthorCountDTO> cachedActiveAuthors = List.of();
+    private volatile List<ProjectFeedItemDTO> cachedTrendingProjects = List.of();
 
     private final ProjectRepository projectRepository;
     private final TrailRepository trailRepository;
@@ -896,6 +897,7 @@ public class ProjectService {
         ProjectFeedItemDTO featured = null;
         List<TagCountDTO> hotTopics = List.of();
         List<AuthorCountDTO> activeAuthors = List.of();
+        List<ProjectFeedItemDTO> trendingProjects = List.of();
         if (page == 0) {
             if (!"following".equals(sort)) {
                 featured = projectRepository.findByFeaturedTrue()
@@ -907,15 +909,31 @@ public class ProjectService {
             }
             hotTopics = cachedHotTopics;
             activeAuthors = cachedActiveAuthors;
+            trendingProjects = cachedTrendingProjects;
         }
 
-        return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors);
+        return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors, trendingProjects);
     }
 
     public List<AuthorCountDTO> getActiveAuthors(int limit) {
         return projectRepository.findActiveAuthors(ProjectVisibility.PUBLISHED, PageRequest.of(0, limit)).stream()
                 .map(a -> new AuthorCountDTO(a.getUsername(), a.getAvatar(), a.getCount()))
                 .toList();
+    }
+
+    public List<ProjectFeedItemDTO> getTrendingProjects(int limit) {
+        Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, "", PageRequest.of(0, limit));
+        List<Long> ids = idPage.getContent();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Project> byId = projectRepository.findAllByIdInWithFetch(ids).stream()
+                .collect(Collectors.toMap(Project::getId, p -> p));
+        List<Project> projects = ids.stream().map(byId::get).toList();
+        FeedContext ctx = FeedContext.forPublishedProjects(projects, null, projectRepository, projectVoteRepository,
+                projectBookmarkRepository, commentRepository, projectSnapshotRepository)
+                .withThumbnails(resolveThumbnails(projects));
+        return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
     }
 
     @Scheduled(cron = "0 0 0 * * *")
@@ -966,6 +984,7 @@ public class ProjectService {
     public void refreshExploreCache() {
         cachedHotTopics = getHotTopics(5);
         cachedActiveAuthors = getActiveAuthors(5);
+        cachedTrendingProjects = getTrendingProjects(5);
     }
 
     @Transactional

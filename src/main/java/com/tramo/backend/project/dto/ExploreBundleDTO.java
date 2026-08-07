@@ -15,4 +15,5 @@ public class ExploreBundleDTO {
     private ProjectFeedItemDTO featured;
     private List<TagCountDTO> hotTopics;
     private List<AuthorCountDTO> activeAuthors;
+    private List<ProjectFeedItemDTO> trendingProjects;
 }
