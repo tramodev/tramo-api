@@ -23,6 +23,7 @@ import com.tramo.backend.exception.UserAlreadyExistsException;
 import com.tramo.backend.security.jwt.JwtService;
 import com.tramo.backend.security.ratelimit.RateLimiterService;
 import com.tramo.backend.user.Role;
+import com.tramo.backend.subscription.patreon.PatreonWebhookSignatureRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import io.github.bucket4j.Bucket;
@@ -50,6 +51,7 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+    private static final int WEBHOOK_SIGNATURE_RETENTION_DAYS = 30;
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
@@ -66,6 +68,7 @@ public class AuthService {
     private final AgeRejectionAttemptRepository ageRejectionAttemptRepository;
     private final MinAgeValidator minAgeValidator;
     private final TransactionTemplate transactionTemplate;
+    private final PatreonWebhookSignatureRepository patreonWebhookSignatureRepository;
 
     @Value("${app.auth.rejection-cooldown-hours}")
     private long rejectionCooldownHours;
@@ -76,7 +79,8 @@ public class AuthService {
                         PasswordResetTokenRepository passwordResetTokenRepository, EmailService emailService,
                         GoogleTokenVerifier googleTokenVerifier, CaptchaVerifier captchaVerifier,
                         RateLimiterService rateLimiterService, AgeRejectionAttemptRepository ageRejectionAttemptRepository,
-                        MinAgeValidator minAgeValidator, PlatformTransactionManager transactionManager) {
+                        MinAgeValidator minAgeValidator, PlatformTransactionManager transactionManager,
+                        PatreonWebhookSignatureRepository patreonWebhookSignatureRepository) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
@@ -91,6 +95,7 @@ public class AuthService {
         this.ageRejectionAttemptRepository = ageRejectionAttemptRepository;
         this.minAgeValidator = minAgeValidator;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.patreonWebhookSignatureRepository = patreonWebhookSignatureRepository;
     }
 
     private void checkIdentityRateLimit(String scope, String identifier, int capacity, int refillTokens) {
@@ -437,6 +442,18 @@ public class AuthService {
         long deletedResetTokens = passwordResetTokenRepository.deleteByExpiresAtBefore(Instant.now());
         if (deletedResetTokens > 0) {
             log.info("purgeExpiredTokens deleted {} expired password reset tokens", deletedResetTokens);
+        }
+
+        long deletedWebhookSignatures = patreonWebhookSignatureRepository
+                .deleteByProcessedAtBefore(Instant.now().minus(WEBHOOK_SIGNATURE_RETENTION_DAYS, ChronoUnit.DAYS));
+        if (deletedWebhookSignatures > 0) {
+            log.info("purgeExpiredTokens deleted {} processed Patreon webhook signatures", deletedWebhookSignatures);
+        }
+
+        long deletedAgeRejections = ageRejectionAttemptRepository
+                .deleteByRejectedAtBefore(Instant.now().minus(rejectionCooldownHours, ChronoUnit.HOURS));
+        if (deletedAgeRejections > 0) {
+            log.info("purgeExpiredTokens deleted {} age rejection attempts past the cooldown", deletedAgeRejections);
         }
     }
 

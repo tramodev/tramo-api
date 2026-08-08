@@ -12,6 +12,9 @@ import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -28,6 +31,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Service
 public class NotificationService {
     private static final long SSE_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final int READ_RETENTION_DAYS = 90;
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final NotificationRepository notificationRepository;
     private final ProjectIdCodec projectIdCodec;
@@ -36,6 +41,16 @@ public class NotificationService {
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec) {
         this.notificationRepository = notificationRepository;
         this.projectIdCodec = projectIdCodec;
+    }
+
+    @Scheduled(cron = "0 30 3 * * *")
+    @Transactional
+    public void purgeOldReadNotifications() {
+        Date cutoff = new Date(System.currentTimeMillis() - READ_RETENTION_DAYS * 24L * 60 * 60 * 1000);
+        int deleted = notificationRepository.deleteReadOlderThan(cutoff);
+        if (deleted > 0) {
+            log.info("purgeOldReadNotifications deleted {} read notifications older than {} days", deleted, READ_RETENTION_DAYS);
+        }
     }
 
     @Transactional

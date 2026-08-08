@@ -45,6 +45,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     int deleteByIdAndRecipientId(@Param("id") Long id, @Param("recipientId") Long recipientId);
 
     @Modifying(flushAutomatically = true)
+    @Query("delete from Notification n where n.read = true and n.updatedDate < :cutoff")
+    int deleteReadOlderThan(@Param("cutoff") Date cutoff);
+
+    @Modifying(flushAutomatically = true)
     @Query("delete from Notification n where n.project.id = :projectId")
     void deleteByProjectId(@Param("projectId") Long projectId);
 
