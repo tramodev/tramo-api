@@ -131,7 +131,8 @@ public abstract class AbstractIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         List<String> tables = jdbcTemplate.queryForList(
-                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
+                String.class);
         if (!tables.isEmpty()) {
             jdbcTemplate.execute("TRUNCATE TABLE " + String.join(", ", tables) + " CASCADE");
         }

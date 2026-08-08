@@ -59,16 +59,4 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
         return null;
     }
-
-    // SseEmitter/DeferredResult endpoints (notifications stream) complete via an
-    // async dispatch on a different thread. OncePerRequestFilter skips that
-    // dispatch by default, so this filter never re-populates SecurityContextHolder
-    // for it - Spring Security's own filters DO run on that dispatch, find no
-    // Authentication, and throw AccessDeniedException after the SSE response is
-    // already committed. Re-running here re-parses the same Authorization header.
-    @Override
-    protected boolean shouldNotFilterAsyncDispatch() {
-        return false;
-    }
-
 }

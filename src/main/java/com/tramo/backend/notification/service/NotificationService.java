@@ -6,6 +6,7 @@ import com.tramo.backend.notification.dto.NotificationDTO;
 import com.tramo.backend.notification.dto.UnreadCountDTO;
 import com.tramo.backend.notification.entity.Notification;
 import com.tramo.backend.project.dto.PageResponseDTO;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.notification.repository.NotificationRepository;
@@ -32,17 +33,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 public class NotificationService {
-    private static final long SSE_TIMEOUT_MS = 30L * 60 * 1000;
     private static final int READ_RETENTION_DAYS = 90;
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final NotificationRepository notificationRepository;
     private final ProjectIdCodec projectIdCodec;
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final long sseTimeoutMs;
 
-    public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec) {
+    public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
+                                @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs) {
         this.notificationRepository = notificationRepository;
         this.projectIdCodec = projectIdCodec;
+        this.sseTimeoutMs = sseTimeoutMs;
     }
 
     @Scheduled(cron = "0 30 3 * * *")
@@ -71,7 +74,7 @@ public class NotificationService {
     }
 
     public SseEmitter subscribe(User user) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
         CopyOnWriteArrayList<SseEmitter> userEmitters =
                 emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>());
         userEmitters.add(emitter);

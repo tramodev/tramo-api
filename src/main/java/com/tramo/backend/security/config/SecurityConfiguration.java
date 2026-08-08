@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
@@ -48,7 +49,7 @@ public class SecurityConfiguration {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception
     {
-        return http
+        SecurityFilterChain chain = http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authRequest ->
                         authRequest
@@ -71,5 +72,15 @@ public class SecurityConfiguration {
                 .addFilterAfter(rateLimitFilter, JwtAuthFilter.class)
                 .addFilterAfter(birthDateGateFilter, RateLimitFilter.class)
                 .build();
+
+        chain.getFilters().stream()
+                .filter(AuthorizationFilter.class::isInstance)
+                .map(AuthorizationFilter.class::cast)
+                .forEach(filter -> {
+                    filter.setFilterAsyncDispatch(false);
+                    filter.setFilterErrorDispatch(false);
+                });
+
+        return chain;
     }
 }
