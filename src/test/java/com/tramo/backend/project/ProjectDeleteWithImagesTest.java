@@ -2,11 +2,19 @@ package com.tramo.backend.project;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+
+import java.time.Duration;
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,6 +22,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
 
     private static final String IMAGE_URL = "https://test-bucket.example.com/editor-image/1/abcdef.jpg";
+
+    @Autowired
+    private ItemService itemService;
 
     @Test
     void deletesProjectWhoseItemsReferenceEditorImages() throws Exception {
@@ -46,6 +57,19 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
         Long queued = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, IMAGE_URL);
         assertThat(queued).isEqualTo(1L);
+
+        // Age the queue past the grace window so the purge actually acts on it.
+        jdbcTemplate.update("UPDATE pending_image_deletion SET requested_at = ? WHERE url = ?",
+                new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), IMAGE_URL);
+        itemService.purgePendingImageDeletions();
+
+        ArgumentCaptor<DeleteObjectRequest> deleted = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client).deleteObject(deleted.capture());
+        assertThat(deleted.getValue().key()).isEqualTo("editor-image/1/abcdef.jpg");
+
+        Long stillQueued = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, IMAGE_URL);
+        assertThat(stillQueued).isZero();
     }
 
     private String objectMapperWrite(String lexicalJson) {

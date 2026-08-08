@@ -74,17 +74,17 @@ public class UploadController {
             throw new IllegalArgumentException(
                     "File too large (max %dMB per upload)".formatted(maxUploadBytes / (1024 * 1024)));
         }
-        if ("avatar".equals(request.getKind()) && "image/gif".equals(request.getContentType())
-                && !subscriptionService.isSupporter(user)) {
+        boolean supporter = subscriptionService.isSupporter(user);
+        if ("avatar".equals(request.getKind()) && "image/gif".equals(request.getContentType()) && !supporter) {
             throw new LimitExceededException("Animated GIF avatars are a supporter perk. Upgrade to use one.");
         }
         if ("banner".equals(request.getKind()) && "image/gif".equals(request.getContentType())) {
             throw new IllegalArgumentException("Animated GIF banners are not supported.");
         }
-        if ("banner".equals(request.getKind()) && !subscriptionService.isSupporter(user)) {
+        if ("banner".equals(request.getKind()) && !supporter) {
             throw new LimitExceededException("Profile banners are a supporter perk. Upgrade to use one.");
         }
-        subscriptionService.assertUploadAllowed(user, request.getContentBytes());
+        subscriptionService.assertUploadAllowed(user, request.getContentBytes(), supporter);
 
         Bucket byteBucket = rateLimiterService.resolveBucket(
                 "upload-bytes:" + user.getId(), maxUploadBytesPerHour, maxUploadBytesPerHour, Duration.ofHours(1));

@@ -30,6 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
+import software.amazon.awssdk.services.s3.S3Client;
 
 import java.util.Date;
 import java.util.List;
@@ -82,6 +83,10 @@ public abstract class AbstractIntegrationTest {
 
     @MockitoBean
     protected PatreonClient patreonClient;
+
+    // Keeps the suite off the network on every R2 delete, and makes those deletes assertable.
+    @MockitoBean
+    protected S3Client s3Client;
 
     @Autowired
     protected MockMvc mockMvc;

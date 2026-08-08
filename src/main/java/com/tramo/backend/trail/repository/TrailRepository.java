@@ -2,6 +2,7 @@ package com.tramo.backend.trail.repository;
 
 import com.tramo.backend.trail.entity.Trail;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -33,4 +34,8 @@ public interface TrailRepository extends JpaRepository<Trail, Long> {
     
     @Query("SELECT t.id, t.title FROM Trail t WHERE t.id IN :ids")
     List<Object[]> findIdTitleByIdIn(@Param("ids") Collection<Long> ids);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update Trail t set t.version = t.version + 1 where t.project.id = :projectId")
+    void bumpVersionsByProjectId(@Param("projectId") Long projectId);
 }

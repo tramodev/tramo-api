@@ -5,9 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -15,7 +12,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.net.URI;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -34,9 +30,8 @@ public class R2Client {
     private final UploadRecordRepository uploadRecordRepository;
 
     public R2Client(
-            @Value("${app.r2.account-id}") String accountId,
-            @Value("${app.r2.access-key}") String accessKey,
-            @Value("${app.r2.secret-key}") String secretKey,
+            S3Presigner presigner,
+            S3Client client,
             @Value("${app.r2.bucket}") String bucket,
             @Value("${app.r2.public-base-url}") String publicBaseUrl,
             UploadRecordRepository uploadRecordRepository
@@ -44,21 +39,8 @@ public class R2Client {
         this.uploadRecordRepository = uploadRecordRepository;
         this.bucket = bucket;
         this.publicBaseUrl = publicBaseUrl.endsWith("/") ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1) : publicBaseUrl;
-        URI endpoint = URI.create("https://" + accountId + ".r2.cloudflarestorage.com");
-        StaticCredentialsProvider credentials = StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey));
-        this.presigner = S3Presigner.builder()
-                .endpointOverride(endpoint)
-                .region(Region.of("auto"))
-                .credentialsProvider(credentials)
-                .build();
-        this.client = S3Client.builder()
-                .endpointOverride(endpoint)
-                .region(Region.of("auto"))
-                .credentialsProvider(credentials)
-                .overrideConfiguration(o -> o
-                        .apiCallTimeout(Duration.ofSeconds(10))
-                        .apiCallAttemptTimeout(Duration.ofSeconds(3)))
-                .build();
+        this.presigner = presigner;
+        this.client = client;
         this.editorImageUrlPattern = Pattern.compile(
                 Pattern.quote(this.publicBaseUrl + "/editor-image/") + "[\\w\\-/]+\\.(?:jpg|jpeg|png|webp|gif)"
         );

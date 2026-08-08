@@ -18,8 +18,9 @@ import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.FollowRepository;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class UserAccountService {
@@ -39,6 +40,7 @@ public class UserAccountService {
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final CommentRepository commentRepository;
     private final CommentReportRepository commentReportRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public UserAccountService(UserRepository userRepository, ProjectRepository projectRepository,
                                ProjectService projectService, ProjectVoteRepository projectVoteRepository,
@@ -50,7 +52,9 @@ public class UserAccountService {
                                PasswordResetTokenRepository passwordResetTokenRepository,
                                EmailVerificationTokenRepository emailVerificationTokenRepository,
                                CommentRepository commentRepository,
-                               CommentReportRepository commentReportRepository) {
+                               CommentReportRepository commentReportRepository,
+                               PlatformTransactionManager transactionManager) {
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.userRepository = userRepository;
         this.projectRepository = projectRepository;
         this.projectService = projectService;
@@ -69,7 +73,11 @@ public class UserAccountService {
         this.commentReportRepository = commentReportRepository;
     }
 
-    @Transactional
+    // Deliberately not @Transactional as a whole: each project delete is already a heavy
+    // multi-table transaction, and holding all of them open at once means one lock set for the
+    // lifetime of the request. Projects commit one at a time; the account teardown that follows
+    // is the part that has to be atomic. A failure part-way leaves fewer projects and a live
+    // account, which is a retryable state — the same call picks up where it stopped.
     public void deleteAccount(User user) {
         Long userId = user.getId();
 
@@ -77,6 +85,10 @@ public class UserAccountService {
             projectService.delete(project.getId(), user);
         }
 
+        transactionTemplate.executeWithoutResult(status -> deleteAccountRecords(userId));
+    }
+
+    private void deleteAccountRecords(Long userId) {
         projectVoteRepository.deleteByUserId(userId);
         projectBookmarkRepository.deleteByUserId(userId);
         userBadgeRepository.deleteByUserId(userId);

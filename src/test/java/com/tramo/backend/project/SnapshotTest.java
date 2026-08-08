@@ -75,6 +75,7 @@ class SnapshotTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.content.trails[0].title").value("Trail 0"))
+                .andExpect(jsonPath("$.content.trails[0].version").value(2))
                 .andExpect(jsonPath("$.content.trails[0].items[0].content").value("Hello frozen world"));
 
         

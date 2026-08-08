@@ -21,10 +21,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -137,6 +139,42 @@ public class NotificationService {
             notificationRepository.save(notification);
         }
         publishUnreadCount(recipient);
+    }
+
+    // Same semantics as recordEvent, but for a whole follower list in a fixed number of
+    // statements instead of two per recipient.
+    @Transactional
+    public void recordEventForAll(List<User> recipients, String type, Project project, User actor) {
+        List<User> targets = recipients.stream()
+                .filter(recipient -> !recipient.getId().equals(actor.getId()))
+                .toList();
+        if (targets.isEmpty()) return;
+
+        Date now = new Date();
+        List<Long> targetIds = targets.stream().map(User::getId).toList();
+        Set<Long> merged = Set.copyOf(
+                notificationRepository.findUnreadRecipientIds(targetIds, type, project.getId()));
+        if (!merged.isEmpty()) {
+            notificationRepository.incrementForProjectIn(merged, type, project.getId(), actor, now);
+        }
+
+        List<Notification> fresh = new ArrayList<>();
+        for (User recipient : targets) {
+            if (merged.contains(recipient.getId())) continue;
+            Notification notification = new Notification();
+            notification.setRecipient(recipient);
+            notification.setType(type);
+            notification.setProject(project);
+            notification.setLatestActor(actor);
+            notification.setCount(1);
+            notification.setCreatedDate(now);
+            notification.setUpdatedDate(now);
+            fresh.add(notification);
+        }
+        if (!fresh.isEmpty()) {
+            notificationRepository.saveAll(fresh);
+        }
+        targets.forEach(this::publishUnreadCount);
     }
 
     @Transactional

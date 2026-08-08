@@ -48,10 +48,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AuthService {
     private static final int WEBHOOK_SIGNATURE_RETENTION_DAYS = 30;
+    private static final int SEQUENTIAL_USERNAME_ATTEMPTS = 5;
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
@@ -322,11 +324,14 @@ public class AuthService {
         base = base.substring(0, Math.min(base.length(), 20));
 
         String candidate = base;
-        int suffix = 0;
-        while (userRepository.existsByUsernameIgnoreCase(candidate)) {
-            suffix++;
-            String suffixStr = String.valueOf(suffix);
-            candidate = base.substring(0, Math.min(base.length(), 20 - suffixStr.length())) + suffixStr;
+        // Sequential suffixes read nicely for the first few collisions, but a common local part
+        // like info@ or contact@ would walk the range one query at a time forever. After a
+        // handful of misses, switch to a random suffix so the expected cost stays ~1 more query.
+        for (int attempt = 0; userRepository.existsByUsernameIgnoreCase(candidate); attempt++) {
+            String suffix = attempt < SEQUENTIAL_USERNAME_ATTEMPTS
+                    ? String.valueOf(attempt + 1)
+                    : String.valueOf(ThreadLocalRandom.current().nextInt(1_000_000, 10_000_000));
+            candidate = base.substring(0, Math.min(base.length(), 20 - suffix.length())) + suffix;
         }
         return candidate;
     }

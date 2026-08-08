@@ -4,6 +4,7 @@ import com.tramo.backend.user.entity.UserBadge;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -14,6 +15,10 @@ public interface UserBadgeRepository extends JpaRepository<UserBadge, Long> {
     List<UserBadge> findByUserId(Long userId);
 
     boolean existsByUserIdAndBadgeCode(Long userId, String badgeCode);
+
+    @Query("select count(b) from UserBadge b where b.user.id = :userId and b.badgeCode in :badgeCodes")
+    long countByUserIdAndBadgeCodeIn(@Param("userId") Long userId,
+                                     @Param("badgeCodes") Collection<String> badgeCodes);
     @Modifying(flushAutomatically = true)
     @Query("delete from UserBadge b where b.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);

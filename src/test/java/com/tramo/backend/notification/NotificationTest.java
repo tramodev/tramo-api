@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -262,6 +264,32 @@ class NotificationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void repeatedSharesMergeIntoOneNotificationPerFollower() throws Exception {
+        User owner = createUser("notifmergeowner");
+        User sharer = createUser("notifmergesharer");
+        User firstFollower = createUser("notifmergefan1");
+        User secondFollower = createUser("notifmergefan2");
+        for (User follower : List.of(firstFollower, secondFollower)) {
+            mockMvc.perform(post("/api/users/notifmergesharer/follow").header("Authorization", bearer(follower)))
+                    .andExpect(status().isOk());
+        }
+
+        Project project = publishedProject(owner, "Shared twice");
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/project/" + pid(project) + "/share").header("Authorization", bearer(sharer)))
+                    .andExpect(status().isOk());
+        }
+
+        for (User follower : List.of(firstFollower, secondFollower)) {
+            mockMvc.perform(get("/api/notifications").header("Authorization", bearer(follower)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].type").value("SHARE"))
+                    .andExpect(jsonPath("$.content[0].count").value(2));
+        }
     }
 
     @Test

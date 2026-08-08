@@ -60,14 +60,9 @@ public class SubscriptionService {
                 .isPresent();
     }
 
-    public long storageQuotaBytes(User user) {
-        return isSupporter(user) ? supporterStorageBytes : freeStorageBytes;
-    }
-
-    
-    public void assertUploadAllowed(User user, long contentBytes) {
+    public void assertUploadAllowed(User user, long contentBytes, boolean supporter) {
         long used = uploadRecordRepository.sumBytesByUserId(user.getId());
-        long quota = storageQuotaBytes(user);
+        long quota = supporter ? supporterStorageBytes : freeStorageBytes;
         if (used + contentBytes > quota) {
             throw new LimitExceededException(
                     "Storage limit reached (%dMB). Free up space or upgrade for more.".formatted(quota / (1024 * 1024)));

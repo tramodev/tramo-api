@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +30,17 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             + "WHERE n.recipient.id = :recipientId AND n.type = :type AND n.project.id = :projectId AND n.read = false")
     int incrementForProject(@Param("recipientId") Long recipientId, @Param("type") String type,
                             @Param("projectId") Long projectId, @Param("actor") User actor, @Param("now") Date now);
+
+    @Query("SELECT n.recipient.id FROM Notification n WHERE n.recipient.id IN :recipientIds "
+            + "AND n.type = :type AND n.project.id = :projectId AND n.read = false")
+    List<Long> findUnreadRecipientIds(@Param("recipientIds") Collection<Long> recipientIds,
+                                      @Param("type") String type, @Param("projectId") Long projectId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Notification n SET n.count = n.count + 1, n.latestActor = :actor, n.updatedDate = :now "
+            + "WHERE n.recipient.id IN :recipientIds AND n.type = :type AND n.project.id = :projectId AND n.read = false")
+    int incrementForProjectIn(@Param("recipientIds") Collection<Long> recipientIds, @Param("type") String type,
+                              @Param("projectId") Long projectId, @Param("actor") User actor, @Param("now") Date now);
 
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Notification n SET n.count = n.count + 1, n.latestActor = :actor, n.updatedDate = :now "

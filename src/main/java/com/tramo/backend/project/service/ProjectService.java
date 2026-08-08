@@ -109,6 +109,7 @@ public class ProjectService {
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
     private static final long ON_THE_MAP_VIEW_THRESHOLD = 1000;
     private static final long TRENDSETTER_VIEW_THRESHOLD = 10000;
+    private static final List<String> VIEW_BADGE_CODES = List.of("on_the_map", "trendsetter");
     private static final long EXPLORE_CACHE_REFRESH_MS = 5 * 60 * 1000;
     private static final int ACTIVITY_FEED_LIMIT = 50;
 
@@ -266,10 +267,10 @@ public class ProjectService {
             if (previousVisibility != ProjectVisibility.PUBLISHED) {
 
 
-                for (Trail trail : trailRepository.findByProjectId(project.getId())) {
-                    trail.setVersion(trail.getVersion() + 1);
-                    trailRepository.save(trail);
-                }
+                // The bulk bump clears the persistence context, so project has to be re-read
+                // before it's touched again — createSnapshot reads the fresh trail versions.
+                trailRepository.bumpVersionsByProjectId(project.getId());
+                project = projectRepository.findById(project.getId()).orElseThrow();
                 createSnapshot(project, "PUBLISH");
                 project.setLastPublishedDate(firstPublish ? firstPublishTimestamp : new Date());
             }
@@ -300,10 +301,8 @@ public class ProjectService {
         project.setModifiedDate(new Date());
         project = projectRepository.save(project);
 
-        for (Trail trail : trailRepository.findByProjectId(project.getId())) {
-            trail.setVersion(trail.getVersion() + 1);
-            trailRepository.save(trail);
-        }
+        trailRepository.bumpVersionsByProjectId(project.getId());
+        project = projectRepository.findById(project.getId()).orElseThrow();
         createSnapshot(project, "PUBLISH");
         checkAndAwardBadges(project.getOwner());
         if (firstPublish) {
@@ -352,7 +351,7 @@ public class ProjectService {
         // images still embedded in item content, so those must never be deleted here.
         if (previousType == ProjectThumbnailType.DEDICATED && previousImageUrl != null
                 && !previousImageUrl.equals(saved.getThumbnailImageUrl())) {
-            r2Client.deleteByPublicUrl(previousImageUrl);
+            imageDeletionQueue.queue(previousImageUrl, requester.getId());
         }
         return toResponse(saved, liveTagNames(saved));
     }
@@ -373,9 +372,8 @@ public class ProjectService {
     }
 
     private void notifyFollowers(User actor, String type, Project project) {
-        for (User follower : followRepository.findFollowersByFollowedId(actor.getId())) {
-            notificationService.recordEvent(follower, type, project, actor);
-        }
+        notificationService.recordEventForAll(
+                followRepository.findFollowersByFollowedId(actor.getId()), type, project, actor);
     }
 
     @Transactional
@@ -383,6 +381,12 @@ public class ProjectService {
         Project project = getOwnedProject(id, requester);
         tagService.applyProjectTags(project, List.of(), requester.getId());
         imageDeletionQueue.queue(project.getThumbnailImageUrl(), requester.getId());
+        // Queued up front in one query: the item rows (and their image references) are gone by
+        // the time the loops below finish. The purge revalidates before touching R2, so queuing
+        // a URL some surviving item still uses is harmless.
+        for (String url : itemImageReferenceRepository.findUrlsByProjectId(id)) {
+            imageDeletionQueue.queue(url, requester.getId());
+        }
         project.setThumbnailTrail(null);
         for (Trail trail : trailRepository.findByProjectId(id)) {
             List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trail.getId());
@@ -390,7 +394,6 @@ public class ProjectService {
                 Long itemId = membership.getItem().getId();
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                    imageDeletionQueue.queueItemImages(itemId, requester.getId());
                     itemLinkRepository.deleteBySourceItemId(itemId);
                     itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
                     itemRepository.deleteById(itemId);
@@ -401,7 +404,6 @@ public class ProjectService {
         }
         
         for (com.tramo.backend.trail.entity.Item item : itemRepository.findByProjectId(id)) {
-            imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
             itemLinkRepository.deleteBySourceItemId(item.getId());
             itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
             trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
@@ -758,7 +760,13 @@ public class ProjectService {
             projectRepository.incrementViewCount(id);
             viewCount++;
 
-            if (project.getVisibility() == ProjectVisibility.PUBLISHED) {
+            // The SUM below runs per new viewer and grows with the owner's project count, but its
+            // only purpose is spotting the exact view where a badge threshold is crossed. Once
+            // both view badges are earned that can never happen again, so skip it — and that's
+            // precisely the high-traffic owner the SUM costs the most for.
+            if (project.getVisibility() == ProjectVisibility.PUBLISHED
+                    && userBadgeRepository.countByUserIdAndBadgeCodeIn(
+                            project.getOwner().getId(), VIEW_BADGE_CODES) < VIEW_BADGE_CODES.size()) {
                 long viewsAfter = projectRepository.sumViewCountByOwnerIdAndPublished(project.getOwner().getId());
                 if (crossedViewBadgeThreshold(viewsAfter - 1, viewsAfter)) {
                     checkAndAwardBadges(project.getOwner());
@@ -1089,10 +1097,10 @@ public class ProjectService {
         }
         User saved = userRepository.save(user);
         if (request.getImageUrl() != null && !request.getImageUrl().equals(previousImageUrl)) {
-            r2Client.deleteByPublicUrl(previousImageUrl);
+            imageDeletionQueue.queue(previousImageUrl, user.getId());
         }
         if (request.getBannerUrl() != null && !request.getBannerUrl().equals(previousBannerUrl)) {
-            r2Client.deleteByPublicUrl(previousBannerUrl);
+            imageDeletionQueue.queue(previousBannerUrl, user.getId());
         }
         return new UserProfileDTO(saved.getUsername(), saved.getEmail(), saved.getBio(), saved.getBirthDate(), saved.getLocation(), saved.getWebsite(), saved.getImageUrl(), saved.getBannerUrl(), saved.getCreatedAt(), saved.getRole().name(), saved.getSelectedBadge());
     }
