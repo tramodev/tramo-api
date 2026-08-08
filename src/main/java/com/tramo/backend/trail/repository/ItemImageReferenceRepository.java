@@ -16,6 +16,13 @@ public interface ItemImageReferenceRepository extends JpaRepository<ItemImageRef
     @Query("delete from ItemImageReference r where r.item.id = :itemId")
     void deleteByItemId(@Param("itemId") Long itemId);
 
+    @Query("SELECT r.url FROM ItemImageReference r WHERE r.item.id = :itemId")
+    List<String> findUrlsByItemId(@Param("itemId") Long itemId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ItemImageReference r where r.item.id = :itemId and r.url in :urls")
+    void deleteByItemIdAndUrlIn(@Param("itemId") Long itemId, @Param("urls") Collection<String> urls);
+
     @Query("SELECT r FROM ItemImageReference r JOIN FETCH r.item i WHERE i.project.id = :projectId " +
             "ORDER BY i.id ASC, r.id ASC")
     List<ItemImageReference> findByProjectIdOrderByItemIdAsc(@Param("projectId") Long projectId);

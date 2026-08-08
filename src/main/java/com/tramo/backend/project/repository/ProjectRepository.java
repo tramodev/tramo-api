@@ -81,6 +81,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH p.owner WHERE fo.owner.id = :forkedFromOwnerId AND p.owner.id <> :ownerId ORDER BY p.creationDate DESC")
     List<Project> findByForkedFromOwnerIdAndOwnerIdNotOrderByCreationDateDesc(@Param("forkedFromOwnerId") Long forkedFromOwnerId, @Param("ownerId") Long ownerId, Pageable pageable);
 
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Project p SET p.lastEditedDate = :now WHERE p.id = :id "
+            + "AND (p.lastEditedDate IS NULL OR p.lastEditedDate < :staleBefore)")
+    void touchLastEditedDate(@Param("id") Long id, @Param("now") java.util.Date now, @Param("staleBefore") java.util.Date staleBefore);
+
     @Modifying
     @Query("UPDATE Project p SET p.viewCount = p.viewCount + 1 WHERE p.id = :id")
     void incrementViewCount(@Param("id") Long id);

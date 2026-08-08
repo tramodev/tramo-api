@@ -45,6 +45,7 @@ public class ItemService {
     private static final Logger log = LoggerFactory.getLogger(ItemService.class);
     private static final long IMAGE_DELETION_GRACE_MS = 24 * 60 * 60 * 1000L;
     private static final long IMAGE_DELETION_PURGE_INTERVAL_MS = 60 * 60 * 1000L;
+    private static final long LAST_EDITED_THROTTLE_MS = 60 * 1000L;
 
     private final ItemRepository itemRepository;
     private final TrailItemRepository trailItemRepository;
@@ -160,9 +161,7 @@ public class ItemService {
     @Transactional
     public void updateStep(Long trailId, Long itemId, String annotation, Long associationId, User requester) {
         trailService.getOwnedTrail(trailId, requester);
-        TrailItem step = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
-                .filter(ti -> ti.getItem().getId().equals(itemId))
-                .findFirst()
+        TrailItem step = trailItemRepository.findByTrailIdAndItemId(trailId, itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Step not found"));
 
         step.setAnnotation(annotation);
@@ -227,7 +226,7 @@ public class ItemService {
         itemContent.setContent(content);
         itemContent.setUpdatedDate(new Date());
         itemRepository.save(item);
-        bumpOwningProjectLastEditedDate(id);
+        bumpOwningProjectLastEditedDate(item);
         Set<String> newUrls = deleteOrphanedEditorImages(item, id, requester, previousContent, content);
         resyncImageReferences(item, newUrls);
     }
@@ -288,8 +287,15 @@ public class ItemService {
     
     
     private void resyncImageReferences(Item item, Set<String> newUrls) {
-        itemImageReferenceRepository.deleteByItemId(item.getId());
+        Set<String> existing = Set.copyOf(itemImageReferenceRepository.findUrlsByItemId(item.getId()));
+        if (existing.equals(newUrls)) return;
+
+        Set<String> stale = existing.stream().filter(url -> !newUrls.contains(url)).collect(Collectors.toSet());
+        if (!stale.isEmpty()) {
+            itemImageReferenceRepository.deleteByItemIdAndUrlIn(item.getId(), stale);
+        }
         for (String url : newUrls) {
+            if (existing.contains(url)) continue;
             ItemImageReference reference = new ItemImageReference();
             reference.setItem(item);
             reference.setUrl(url);
@@ -309,21 +315,21 @@ public class ItemService {
         }
     }
 
-    private void bumpOwningProjectLastEditedDate(Long itemId) {
-        trailItemRepository.findByItemId(itemId).stream().findFirst().ifPresent(trailItem -> {
-            Project project = trailItem.getTrail().getProject();
-            project.setLastEditedDate(new Date());
-            projectRepository.save(project);
-        });
+    private void bumpOwningProjectLastEditedDate(Item item) {
+        Long projectId = item.getProject() != null
+                ? item.getProject().getId()
+                : trailItemRepository.findByItemId(item.getId()).stream().findFirst()
+                        .map(trailItem -> trailItem.getTrail().getProject().getId()).orElse(null);
+        if (projectId == null) return;
+        Date now = new Date();
+        projectRepository.touchLastEditedDate(projectId, now, new Date(now.getTime() - LAST_EDITED_THROTTLE_MS));
     }
 
     @Transactional
     public void attachToTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrail(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
-        boolean alreadyAttached = trailItemRepository.findByItemId(item.getId()).stream()
-                .anyMatch(pi -> pi.getTrail().getId().equals(trail.getId()));
-        if (alreadyAttached) {
+        if (trailItemRepository.existsByTrailIdAndItemId(trail.getId(), item.getId())) {
             return;
         }
         TrailItem trailItem = new TrailItem();
@@ -338,9 +344,7 @@ public class ItemService {
         trailService.getOwnedTrail(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
 
-        trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
-                .filter(pi -> pi.getItem().getId().equals(item.getId()))
-                .findFirst()
+        trailItemRepository.findByTrailIdAndItemId(trailId, item.getId())
                 .ifPresent(trailItemRepository::delete);
 
         

@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
@@ -25,6 +26,11 @@ public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
     List<TrailItem> findByItemId(@Param("itemId") Long itemId);
 
     int countByTrailId(Long trailId);
+
+    @Query("SELECT pi FROM TrailItem pi LEFT JOIN FETCH pi.association WHERE pi.trail.id = :trailId AND pi.item.id = :itemId")
+    Optional<TrailItem> findByTrailIdAndItemId(@Param("trailId") Long trailId, @Param("itemId") Long itemId);
+
+    boolean existsByTrailIdAndItemId(Long trailId, Long itemId);
 
     @Query("SELECT pi FROM TrailItem pi JOIN FETCH pi.item i LEFT JOIN FETCH i.content WHERE pi.trail.id IN :trailIds ORDER BY pi.orderIndex ASC, pi.id ASC")
     List<TrailItem> findByTrailIdInWithItemAndContent(@Param("trailIds") List<Long> trailIds);
