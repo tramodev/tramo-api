@@ -14,13 +14,11 @@ import java.util.List;
 public class TagSeeder implements ApplicationRunner {
 
     private final TagRepository tagRepository;
-    private final TagCache tagCache;
     private final List<String> seedNames;
 
-    public TagSeeder(TagRepository tagRepository, TagCache tagCache,
+    public TagSeeder(TagRepository tagRepository,
                       @Value("${app.tags.seed:}") List<String> seedNames) {
         this.tagRepository = tagRepository;
-        this.tagCache = tagCache;
         this.seedNames = seedNames;
     }
 
@@ -42,7 +40,6 @@ public class TagSeeder implements ApplicationRunner {
             }
         }
         if (changed) {
-            tagCache.invalidate();
         }
     }
 }

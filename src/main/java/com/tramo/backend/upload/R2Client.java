@@ -55,6 +55,9 @@ public class R2Client {
                 .endpointOverride(endpoint)
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials)
+                .overrideConfiguration(o -> o
+                        .apiCallTimeout(Duration.ofSeconds(10))
+                        .apiCallAttemptTimeout(Duration.ofSeconds(3)))
                 .build();
         this.editorImageUrlPattern = Pattern.compile(
                 Pattern.quote(this.publicBaseUrl + "/editor-image/") + "[\\w\\-/]+\\.(?:jpg|jpeg|png|webp|gif)"

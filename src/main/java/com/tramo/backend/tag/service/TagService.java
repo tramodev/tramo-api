@@ -9,6 +9,7 @@ import com.tramo.backend.tag.repository.TagRepository;
 import io.github.bucket4j.Bucket;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +23,6 @@ import java.util.Set;
 public class TagService {
 
     private final TagRepository tagRepository;
-    private final TagCache tagCache;
     private final RateLimiterService rateLimiterService;
     private final int visibilityThreshold;
     private final int rateLimitCapacity;
@@ -30,14 +30,12 @@ public class TagService {
     private final Duration rateLimitRefillDuration;
 
     public TagService(TagRepository tagRepository,
-                       TagCache tagCache,
                        RateLimiterService rateLimiterService,
                        @Value("${app.tags.visibility-threshold:3}") int visibilityThreshold,
                        @Value("${app.tags.rate-limit.capacity:5}") int rateLimitCapacity,
                        @Value("${app.tags.rate-limit.refill-tokens:5}") int rateLimitRefillTokens,
                        @Value("${app.tags.rate-limit.refill-duration-minutes:10}") long rateLimitRefillMinutes) {
         this.tagRepository = tagRepository;
-        this.tagCache = tagCache;
         this.rateLimiterService = rateLimiterService;
         this.visibilityThreshold = visibilityThreshold;
         this.rateLimitCapacity = rateLimitCapacity;
@@ -52,22 +50,14 @@ public class TagService {
     
     public List<TagDTO> autocomplete(String query, int limit) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        return tagCache.all().stream()
-                .filter(this::isVisible)
-                .filter(tag -> q.isEmpty() || tag.getName().contains(q))
-                .sorted(Comparator.comparing(Tag::isOfficial).reversed()
-                        .thenComparing(Comparator.comparingLong(Tag::getUsageCount).reversed()))
-                .limit(limit)
+        return tagRepository.findVisibleMatching(q, visibilityThreshold, PageRequest.of(0, limit)).stream()
                 .map(tag -> new TagDTO(tag.getName(), tag.isOfficial(), tag.getUsageCount()))
                 .toList();
     }
 
     
     public List<TagDTO> hotTopics(int limit) {
-        return tagCache.all().stream()
-                .filter(this::isVisible)
-                .sorted(Comparator.comparingLong(Tag::getUsageCount).reversed())
-                .limit(limit)
+        return tagRepository.findVisibleByUsage(visibilityThreshold, PageRequest.of(0, limit)).stream()
                 .map(tag -> new TagDTO(tag.getName(), tag.isOfficial(), tag.getUsageCount()))
                 .toList();
     }
@@ -100,7 +90,6 @@ public class TagService {
 
         try {
             Tag created = tagRepository.save(new Tag(name, false, userId));
-            tagCache.invalidate();
             return created;
         } catch (DataIntegrityViolationException e) {
             
@@ -146,7 +135,6 @@ public class TagService {
         }
 
         if (!toRemove.isEmpty() || !currentNames.containsAll(targetNames)) {
-            tagCache.invalidate();
         }
     }
 }
