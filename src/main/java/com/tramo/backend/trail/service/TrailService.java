@@ -13,7 +13,9 @@ import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
@@ -30,16 +32,19 @@ public class TrailService {
     private final AssociationRepository itemLinkRepository;
     private final ProjectService projectService;
     private final ProjectIdCodec projectIdCodec;
+    private final ImageDeletionQueue imageDeletionQueue;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
                         ItemRepository itemRepository, AssociationRepository itemLinkRepository,
-                        ProjectService projectService, ProjectIdCodec projectIdCodec) {
+                        ProjectService projectService, ProjectIdCodec projectIdCodec,
+                        ImageDeletionQueue imageDeletionQueue) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
         this.itemLinkRepository = itemLinkRepository;
         this.projectService = projectService;
         this.projectIdCodec = projectIdCodec;
+        this.imageDeletionQueue = imageDeletionQueue;
     }
 
     @Transactional
@@ -88,13 +93,15 @@ public class TrailService {
     @Transactional
     public void delete(Long id, User requester) {
         Trail trail = getOwnedTrail(id, requester);
+        clearThumbnailReference(trail);
         List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(id);
         for (TrailItem membership : memberships) {
             Item item = membership.getItem();
             trailItemRepository.delete(membership);
             if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
                 if (item.getProject() == null) {
-                    
+
+                    imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
                     itemLinkRepository.deleteBySourceItemId(item.getId());
                     itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
                     itemRepository.delete(item);
@@ -108,6 +115,14 @@ public class TrailService {
         
         itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, id);
         trailRepository.delete(trail);
+    }
+
+    private void clearThumbnailReference(Trail trail) {
+        Project project = trail.getProject();
+        if (project.getThumbnailTrail() != null && project.getThumbnailTrail().getId().equals(trail.getId())) {
+            project.setThumbnailTrail(null);
+            project.setThumbnailType(ProjectThumbnailType.NONE);
+        }
     }
 
     public Trail getOwnedTrail(Long id, User requester) {

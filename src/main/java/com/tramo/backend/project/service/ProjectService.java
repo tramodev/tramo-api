@@ -3,6 +3,7 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.auth.service.MinAgeValidator;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -140,6 +141,7 @@ public class ProjectService {
     private final ObjectMapper objectMapper;
     private final TagService tagService;
     private final MinAgeValidator minAgeValidator;
+    private final ImageDeletionQueue imageDeletionQueue;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -154,7 +156,9 @@ public class ProjectService {
                            R2Client r2Client, SubscriptionService subscriptionService,
                            UploadRecordRepository uploadRecordRepository,
                            ProjectSnapshotRepository projectSnapshotRepository, ObjectMapper objectMapper,
-                           TagService tagService, MinAgeValidator minAgeValidator) {
+                           TagService tagService, MinAgeValidator minAgeValidator,
+                           ImageDeletionQueue imageDeletionQueue) {
+        this.imageDeletionQueue = imageDeletionQueue;
         this.minAgeValidator = minAgeValidator;
         this.tagService = tagService;
         this.subscriptionService = subscriptionService;
@@ -378,12 +382,15 @@ public class ProjectService {
     public void delete(Long id, User requester) {
         Project project = getOwnedProject(id, requester);
         tagService.applyProjectTags(project, List.of(), requester.getId());
+        imageDeletionQueue.queue(project.getThumbnailImageUrl(), requester.getId());
+        project.setThumbnailTrail(null);
         for (Trail trail : trailRepository.findByProjectId(id)) {
             List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trail.getId());
             for (TrailItem membership : memberships) {
                 Long itemId = membership.getItem().getId();
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
+                    imageDeletionQueue.queueItemImages(itemId, requester.getId());
                     itemLinkRepository.deleteBySourceItemId(itemId);
                     itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
                     itemRepository.deleteById(itemId);
@@ -394,6 +401,7 @@ public class ProjectService {
         }
         
         for (com.tramo.backend.trail.entity.Item item : itemRepository.findByProjectId(id)) {
+            imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
             itemLinkRepository.deleteBySourceItemId(item.getId());
             itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
             trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));

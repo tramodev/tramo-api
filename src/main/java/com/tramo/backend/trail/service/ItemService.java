@@ -21,6 +21,7 @@ import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
+import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.upload.entity.PendingImageDeletion;
 import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
@@ -56,13 +57,15 @@ public class ItemService {
     private final R2Client r2Client;
     private final PendingImageDeletionRepository pendingImageDeletionRepository;
     private final ItemImageReferenceRepository itemImageReferenceRepository;
+    private final ImageDeletionQueue imageDeletionQueue;
     private final ObjectMapper objectMapper;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         AssociationRepository itemLinkRepository, TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
-                        ItemImageReferenceRepository itemImageReferenceRepository, ObjectMapper objectMapper) {
+                        ItemImageReferenceRepository itemImageReferenceRepository,
+                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemLinkRepository = itemLinkRepository;
@@ -72,6 +75,7 @@ public class ItemService {
         this.r2Client = r2Client;
         this.pendingImageDeletionRepository = pendingImageDeletionRepository;
         this.itemImageReferenceRepository = itemImageReferenceRepository;
+        this.imageDeletionQueue = imageDeletionQueue;
         this.objectMapper = objectMapper;
     }
 
@@ -196,13 +200,14 @@ public class ItemService {
     @Transactional
     public void delete(Long id, User requester) {
         Item item = getOwnedItem(id, requester);
-        deleteItemCompletely(item);
+        deleteItemCompletely(item, requester.getId());
     }
 
-    private void deleteItemCompletely(Item item) {
+    private void deleteItemCompletely(Item item, Long ownerId) {
         itemLinkRepository.deleteBySourceItemId(item.getId());
         itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
         trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
+        imageDeletionQueue.queueItemImages(item.getId(), ownerId);
         itemImageReferenceRepository.deleteByItemId(item.getId());
         itemRepository.delete(item);
     }
@@ -352,7 +357,7 @@ public class ItemService {
         
         if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
             if (item.getProject() == null) {
-                deleteItemCompletely(item);
+                deleteItemCompletely(item, requester.getId());
             } else {
                 item.setUnfiled(true);
                 itemRepository.save(item);
