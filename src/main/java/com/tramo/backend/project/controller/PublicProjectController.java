@@ -103,4 +103,12 @@ public class PublicProjectController {
                                                                               @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getPublishedPageForUser(username, user, page, size));
     }
+
+    @GetMapping("/users/{username}/upvoted")
+    public ResponseEntity<PageResponseDTO<ProjectFeedItemDTO>> getUpvoted(@PathVariable String username,
+                                                                            @RequestParam(defaultValue = "0") int page,
+                                                                            @RequestParam(defaultValue = "10") int size,
+                                                                            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getPublicUpvotedPage(username, user, page, size));
+    }
 }

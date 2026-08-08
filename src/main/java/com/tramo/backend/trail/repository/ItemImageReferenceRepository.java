@@ -19,8 +19,6 @@ public interface ItemImageReferenceRepository extends JpaRepository<ItemImageRef
     @Query("SELECT r.url FROM ItemImageReference r WHERE r.item.id = :itemId")
     List<String> findUrlsByItemId(@Param("itemId") Long itemId);
 
-    // Covers both kinds of item a project owns: unfiled ones hanging off the project directly,
-    // and the ones reachable only through its trails.
     @Query("SELECT DISTINCT r.url FROM ItemImageReference r WHERE r.item.project.id = :projectId " +
             "OR r.item.id IN (SELECT ti.item.id FROM TrailItem ti WHERE ti.trail.project.id = :projectId)")
     List<String> findUrlsByProjectId(@Param("projectId") Long projectId);

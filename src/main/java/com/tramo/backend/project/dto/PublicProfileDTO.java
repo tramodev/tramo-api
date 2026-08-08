@@ -25,4 +25,5 @@ public class PublicProfileDTO {
     private boolean following;
     private boolean self;
     private boolean blocked;
+    private boolean showUpvotes;
 }

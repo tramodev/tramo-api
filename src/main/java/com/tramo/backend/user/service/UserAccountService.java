@@ -73,11 +73,6 @@ public class UserAccountService {
         this.commentReportRepository = commentReportRepository;
     }
 
-    // Deliberately not @Transactional as a whole: each project delete is already a heavy
-    // multi-table transaction, and holding all of them open at once means one lock set for the
-    // lifetime of the request. Projects commit one at a time; the account teardown that follows
-    // is the part that has to be atomic. A failure part-way leaves fewer projects and a live
-    // account, which is a retryable state — the same call picks up where it stopped.
     public void deleteAccount(User user) {
         Long userId = user.getId();
 

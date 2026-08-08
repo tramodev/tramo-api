@@ -141,8 +141,6 @@ public class NotificationService {
         publishUnreadCount(recipient);
     }
 
-    // Same semantics as recordEvent, but for a whole follower list in a fixed number of
-    // statements instead of two per recipient.
     @Transactional
     public void recordEventForAll(List<User> recipients, String type, Project project, User actor) {
         List<User> targets = recipients.stream()

@@ -12,9 +12,6 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import java.net.URI;
 import java.time.Duration;
 
-// The S3 clients are beans rather than constructor-built inside R2Client so tests can replace
-// them. Without this seam nothing that talks to R2 is assertable, which is how image deletion
-// stayed broken on every delete path without a single test noticing.
 @Configuration
 public class R2Config {
 

@@ -58,7 +58,6 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
                 "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, IMAGE_URL);
         assertThat(queued).isEqualTo(1L);
 
-        // Age the queue past the grace window so the purge actually acts on it.
         jdbcTemplate.update("UPDATE pending_image_deletion SET requested_at = ? WHERE url = ?",
                 new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), IMAGE_URL);
         itemService.purgePendingImageDeletions();

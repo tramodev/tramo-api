@@ -84,7 +84,6 @@ public abstract class AbstractIntegrationTest {
     @MockitoBean
     protected PatreonClient patreonClient;
 
-    // Keeps the suite off the network on every R2 delete, and makes those deletes assertable.
     @MockitoBean
     protected S3Client s3Client;
 

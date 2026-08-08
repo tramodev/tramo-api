@@ -324,9 +324,6 @@ public class AuthService {
         base = base.substring(0, Math.min(base.length(), 20));
 
         String candidate = base;
-        // Sequential suffixes read nicely for the first few collisions, but a common local part
-        // like info@ or contact@ would walk the range one query at a time forever. After a
-        // handful of misses, switch to a random suffix so the expected cost stays ~1 more query.
         for (int attempt = 0; userRepository.existsByUsernameIgnoreCase(candidate); attempt++) {
             String suffix = attempt < SEQUENTIAL_USERNAME_ATTEMPTS
                     ? String.valueOf(attempt + 1)

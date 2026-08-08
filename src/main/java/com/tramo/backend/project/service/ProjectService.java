@@ -77,6 +77,7 @@ import com.tramo.backend.user.repository.FollowRepository;
 import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
+import com.tramo.backend.user.service.PrivacyPolicy;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -143,6 +144,7 @@ public class ProjectService {
     private final TagService tagService;
     private final MinAgeValidator minAgeValidator;
     private final ImageDeletionQueue imageDeletionQueue;
+    private final PrivacyPolicy privacyPolicy;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -158,7 +160,8 @@ public class ProjectService {
                            UploadRecordRepository uploadRecordRepository,
                            ProjectSnapshotRepository projectSnapshotRepository, ObjectMapper objectMapper,
                            TagService tagService, MinAgeValidator minAgeValidator,
-                           ImageDeletionQueue imageDeletionQueue) {
+                           ImageDeletionQueue imageDeletionQueue, PrivacyPolicy privacyPolicy) {
+        this.privacyPolicy = privacyPolicy;
         this.imageDeletionQueue = imageDeletionQueue;
         this.minAgeValidator = minAgeValidator;
         this.tagService = tagService;
@@ -267,8 +270,6 @@ public class ProjectService {
             if (previousVisibility != ProjectVisibility.PUBLISHED) {
 
 
-                // The bulk bump clears the persistence context, so project has to be re-read
-                // before it's touched again — createSnapshot reads the fresh trail versions.
                 trailRepository.bumpVersionsByProjectId(project.getId());
                 project = projectRepository.findById(project.getId()).orElseThrow();
                 createSnapshot(project, "PUBLISH");
@@ -381,9 +382,6 @@ public class ProjectService {
         Project project = getOwnedProject(id, requester);
         tagService.applyProjectTags(project, List.of(), requester.getId());
         imageDeletionQueue.queue(project.getThumbnailImageUrl(), requester.getId());
-        // Queued up front in one query: the item rows (and their image references) are gone by
-        // the time the loops below finish. The purge revalidates before touching R2, so queuing
-        // a URL some surviving item still uses is harmless.
         for (String url : itemImageReferenceRepository.findUrlsByProjectId(id)) {
             imageDeletionQueue.queue(url, requester.getId());
         }
@@ -446,6 +444,9 @@ public class ProjectService {
         }
         if (blockedUserRepository.existsEitherDirection(requester.getId(), source.getOwner().getId())) {
             throw new AccessDeniedException("Cannot fork this project");
+        }
+        if (!privacyPolicy.canFork(source.getOwner())) {
+            throw new AccessDeniedException("Forking is disabled for this project");
         }
 
         Project fork = new Project();
@@ -760,10 +761,6 @@ public class ProjectService {
             projectRepository.incrementViewCount(id);
             viewCount++;
 
-            // The SUM below runs per new viewer and grows with the owner's project count, but its
-            // only purpose is spotting the exact view where a badge threshold is crossed. Once
-            // both view badges are earned that can never happen again, so skip it — and that's
-            // precisely the high-traffic owner the SUM costs the most for.
             if (project.getVisibility() == ProjectVisibility.PUBLISHED
                     && userBadgeRepository.countByUserIdAndBadgeCodeIn(
                             project.getOwner().getId(), VIEW_BADGE_CODES) < VIEW_BADGE_CODES.size()) {
@@ -854,7 +851,9 @@ public class ProjectService {
                 project.getVisibility().toJson(),
                 publicSource != null ? projectIdCodec.encode(publicSource.getId()) : null,
                 publicSource != null ? publicSource.getTitle() : null,
-                publicSource != null ? publicSource.getOwner().getUsername() : null
+                publicSource != null ? publicSource.getOwner().getUsername() : null,
+                privacyPolicy.canFork(project.getOwner()),
+                privacyPolicy.canComment(project.getOwner(), requester)
         );
     }
 
@@ -1136,10 +1135,18 @@ public class ProjectService {
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getUpvotedPage(User user, int page, int size) {
+        return upvotedPage(user.getId(), user, page, size, false);
+    }
+
+    private PageResponseDTO<ProjectFeedItemDTO> upvotedPage(Long targetId, User requester, int page, int size, boolean publishedOnly) {
         Page<ProjectVote> result = projectVoteRepository.findByUserIdOrderByCreatedDateDescPaged(
-                user.getId(), PageRequest.of(page, size));
-        List<Project> projects = result.getContent().stream().map(ProjectVote::getProject).toList();
-        return new PageResponseDTO<>(toFeedItems(projects, user), result.hasNext());
+                targetId, PageRequest.of(page, size));
+        List<Project> projects = result.getContent().stream()
+                .map(ProjectVote::getProject)
+                .filter(p -> !publishedOnly
+                        || (p.getVisibility() == ProjectVisibility.PUBLISHED && !p.getOwner().isBanned()))
+                .toList();
+        return new PageResponseDTO<>(toFeedItems(projects, requester), result.hasNext());
     }
 
     public PageResponseDTO<ForkFeedItemDTO> getForksPage(User user, int page, int size) {
@@ -1188,9 +1195,17 @@ public class ProjectService {
                 || (before < TRENDSETTER_VIEW_THRESHOLD && after >= TRENDSETTER_VIEW_THRESHOLD);
     }
 
-    public PublicProfileDTO getPublicProfile(String username, User requester) {
+    private User publicProfileTarget(String username, User requester) {
         User target = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (!privacyPolicy.isProfileViewable(target, requester)) {
+            throw new ResourceNotFoundException("User not found");
+        }
+        return target;
+    }
+
+    public PublicProfileDTO getPublicProfile(String username, User requester) {
+        User target = publicProfileTarget(username, requester);
 
         ProfileStatsDTO stats = getProfileStats(target);
         boolean self = requester != null && requester.getId().equals(target.getId());
@@ -1201,7 +1216,8 @@ public class ProjectService {
 
         Integer publicAge = Boolean.FALSE.equals(target.getShowAge()) ? null : computeAge(target.getBirthDate());
         return new PublicProfileDTO(target.getUsername(), target.getBio(), publicAge, target.getLocation(), target.getWebsite(), target.getImageUrl(), target.getBannerUrl(), target.getCreatedAt(),
-                stats, buildBadges(stats, subscriptionService.isSupporter(target)), target.getSelectedBadge(), following, self, blocked);
+                stats, buildBadges(stats, subscriptionService.isSupporter(target)), target.getSelectedBadge(), following, self, blocked,
+                target.getShowUpvotes() == null || target.getShowUpvotes());
     }
 
     // ponytail: findAll is fine at current scale, paginate if the published-project
@@ -1219,11 +1235,19 @@ public class ProjectService {
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {
-        User target = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User target = publicProfileTarget(username, requester);
         Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
                 target.getId(), ProjectVisibility.PUBLISHED, PageRequest.of(page, size));
         return new PageResponseDTO<>(toPublishedFeedItems(result.getContent(), requester), result.hasNext());
+    }
+
+    public PageResponseDTO<ProjectFeedItemDTO> getPublicUpvotedPage(String username, User requester, int page, int size) {
+        User target = publicProfileTarget(username, requester);
+        boolean self = requester != null && requester.getId().equals(target.getId());
+        if (!self && Boolean.FALSE.equals(target.getShowUpvotes())) {
+            throw new ResourceNotFoundException("User not found");
+        }
+        return upvotedPage(target.getId(), requester, page, size, true);
     }
 
     @Transactional
@@ -1255,16 +1279,14 @@ public class ProjectService {
     }
 
     public PageResponseDTO<FollowUserDTO> getFollowers(String username, User requester, int page, int size) {
-        User target = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User target = publicProfileTarget(username, requester);
         Page<Follow> result = followRepository.findByFollowedIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
         List<User> users = result.getContent().stream().map(Follow::getFollower).toList();
         return toFollowUserPage(users, requester, result.hasNext());
     }
 
     public PageResponseDTO<FollowUserDTO> getFollowing(String username, User requester, int page, int size) {
-        User target = userRepository.findByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User target = publicProfileTarget(username, requester);
         Page<Follow> result = followRepository.findByFollowerIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
         List<User> users = result.getContent().stream().map(Follow::getFollowed).toList();
         return toFollowUserPage(users, requester, result.hasNext());
@@ -1466,7 +1488,8 @@ public class ProjectService {
                 project.isFeatured(),
                 source != null ? projectIdCodec.encode(source.getId()) : null,
                 source != null ? source.getTitle() : null,
-                source != null ? source.getOwner().getUsername() : null
+                source != null ? source.getOwner().getUsername() : null,
+                privacyPolicy.canFork(project.getOwner())
         );
     }
 

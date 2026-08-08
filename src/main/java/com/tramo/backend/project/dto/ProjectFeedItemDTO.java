@@ -34,4 +34,5 @@ public class ProjectFeedItemDTO {
     private String forkedFromProjectId;
     private String forkedFromTitle;
     private String forkedFromOwnerUsername;
+    private boolean canFork;
 }

@@ -27,4 +27,6 @@ public class PublicProjectResponseDTO {
     private String forkedFromProjectId;
     private String forkedFromTitle;
     private String forkedFromOwnerUsername;
+    private boolean canFork;
+    private boolean canComment;
 }

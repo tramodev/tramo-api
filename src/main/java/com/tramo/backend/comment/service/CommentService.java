@@ -15,6 +15,7 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.BlockedUserRepository;
+import com.tramo.backend.user.service.PrivacyPolicy;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -29,13 +30,16 @@ public class CommentService {
     private final ProjectRepository projectRepository;
     private final NotificationService notificationService;
     private final BlockedUserRepository blockedUserRepository;
+    private final PrivacyPolicy privacyPolicy;
 
     public CommentService(CommentRepository commentRepository, ProjectRepository projectRepository,
-                           NotificationService notificationService, BlockedUserRepository blockedUserRepository) {
+                           NotificationService notificationService, BlockedUserRepository blockedUserRepository,
+                           PrivacyPolicy privacyPolicy) {
         this.commentRepository = commentRepository;
         this.projectRepository = projectRepository;
         this.notificationService = notificationService;
         this.blockedUserRepository = blockedUserRepository;
+        this.privacyPolicy = privacyPolicy;
     }
 
     @Transactional
@@ -45,6 +49,9 @@ public class CommentService {
         assertViewable(project, author);
         if (blockedUserRepository.existsEitherDirection(author.getId(), project.getOwner().getId())) {
             throw new AccessDeniedException("Cannot comment on this project");
+        }
+        if (!privacyPolicy.canComment(project.getOwner(), author)) {
+            throw new AccessDeniedException("Comments are limited on this project");
         }
 
         Comment parent = null;
