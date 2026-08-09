@@ -137,9 +137,12 @@ public class NotificationService {
         for (SseEmitter emitter : userEmitters) {
             try {
                 emitter.send(event);
-            } catch (IOException | IllegalStateException e) {
-                emitter.complete();
+            } catch (Exception subscriberIsGone) {
                 userEmitters.remove(emitter);
+                try {
+                    emitter.complete();
+                } catch (Exception responseAlreadyTornDown) {
+                }
             }
         }
     }
