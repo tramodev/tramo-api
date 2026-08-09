@@ -81,11 +81,17 @@ public class NotificationService {
 
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        CopyOnWriteArrayList<SseEmitter> userEmitters =
-                emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>());
-        userEmitters.add(emitter);
+        emitters.compute(user.getId(), (id, userEmitters) -> {
+            CopyOnWriteArrayList<SseEmitter> list =
+                    userEmitters != null ? userEmitters : new CopyOnWriteArrayList<>();
+            list.add(emitter);
+            return list;
+        });
 
-        Runnable cleanup = () -> userEmitters.remove(emitter);
+        Runnable cleanup = () -> emitters.computeIfPresent(user.getId(), (id, userEmitters) -> {
+            userEmitters.remove(emitter);
+            return userEmitters.isEmpty() ? null : userEmitters;
+        });
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(e -> cleanup.run());

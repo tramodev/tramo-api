@@ -67,13 +67,15 @@ class SseAsyncDispatchTest extends AbstractIntegrationTest {
 
             Thread.sleep(500);
 
-            List<String> securityFailures = logs.list.stream()
+            List<String> failures = logs.list.stream()
                     .filter(event -> describe(event).contains("response is already committed")
-                            || describe(event).contains("AuthorizationDeniedException"))
+                            || describe(event).contains("AuthorizationDeniedException")
+                            || describe(event).contains("Unhandled exception")
+                            || describe(event).contains("HttpMessageNotWritableException"))
                     .map(SseAsyncDispatchTest::describe)
                     .toList();
-            assertTrue(securityFailures.isEmpty(),
-                    "the async dispatch after the emitter timed out tripped Spring Security: " + securityFailures);
+            assertTrue(failures.isEmpty(),
+                    "the async dispatch after the emitter timed out was not handled cleanly: " + failures);
         } finally {
             root.detachAppender(logs);
         }
