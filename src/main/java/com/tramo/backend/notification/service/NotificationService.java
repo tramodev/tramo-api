@@ -2,6 +2,7 @@ package com.tramo.backend.notification.service;
 
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.notification.NotificationTypes;
 import com.tramo.backend.notification.dto.NotificationDTO;
 import com.tramo.backend.notification.dto.UnreadCountDTO;
 import com.tramo.backend.notification.entity.Notification;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.user.service.UserPreferencesService;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,6 +126,7 @@ public class NotificationService {
     @Transactional
     public void recordEvent(User recipient, String type, Project project, User actor) {
         if (recipient.getId().equals(actor.getId())) return;
+        if (muted(recipient, type)) return;
 
         Date now = new Date();
         int merged = project != null
@@ -148,6 +151,7 @@ public class NotificationService {
     public void recordEventForAll(List<User> recipients, String type, Project project, User actor) {
         List<User> targets = recipients.stream()
                 .filter(recipient -> !recipient.getId().equals(actor.getId()))
+                .filter(recipient -> !muted(recipient, type))
                 .toList();
         if (targets.isEmpty()) return;
 
@@ -180,9 +184,11 @@ public class NotificationService {
 
     @Transactional
     public void recordBadge(User recipient, String badgeCode, String badgeName) {
+        if (muted(recipient, NotificationTypes.BADGE)) return;
+
         Notification notification = new Notification();
         notification.setRecipient(recipient);
-        notification.setType("BADGE");
+        notification.setType(NotificationTypes.BADGE);
         notification.setBadgeCode(badgeCode);
         notification.setBadgeName(badgeName);
         Date now = new Date();
@@ -194,15 +200,24 @@ public class NotificationService {
 
     @Transactional
     public void recordFeatured(User recipient, Project project) {
+        if (muted(recipient, NotificationTypes.FEATURED)) return;
+
         Notification notification = new Notification();
         notification.setRecipient(recipient);
-        notification.setType("FEATURED");
+        notification.setType(NotificationTypes.FEATURED);
         notification.setProject(project);
         Date now = new Date();
         notification.setCreatedDate(now);
         notification.setUpdatedDate(now);
         notificationRepository.save(notification);
         publishUnreadCount(recipient);
+    }
+
+    private boolean muted(User recipient, String type) {
+        if (Boolean.FALSE.equals(recipient.getNotificationsEnabled())) {
+            return true;
+        }
+        return UserPreferencesService.decodeMutedTypes(recipient.getMutedNotificationTypes()).contains(type);
     }
 
     public PageResponseDTO<NotificationDTO> getNotifications(User user, int page, int size) {

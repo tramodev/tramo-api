@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 public class UpdatePreferencesRequestDTO {
@@ -24,4 +26,8 @@ public class UpdatePreferencesRequestDTO {
     private String commentsPolicy;
 
     private Boolean editorTourSeen;
+
+    private Boolean notificationsEnabled;
+
+    private List<String> mutedNotificationTypes;
 }

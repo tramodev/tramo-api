@@ -65,6 +65,8 @@ public class User implements UserDetails {
     private Boolean allowForks;
     private String commentsPolicy;
     private Boolean editorTourSeen;
+    private Boolean notificationsEnabled;
+    private String mutedNotificationTypes;
 
     @Column(unique = true)
     private String patreonUserId;
