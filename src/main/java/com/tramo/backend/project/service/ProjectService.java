@@ -424,14 +424,7 @@ public class ProjectService {
     }
 
     private void assertViewable(Project project, User requester) {
-        ProjectVisibility visibility = project.getVisibility();
-        if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
-            throw new ResourceNotFoundException("Project not found");
-        }
-        boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
-        if (!isOwner && project.getOwner().isBanned()) {
-            throw new ResourceNotFoundException("Project not found");
-        }
+        privacyPolicy.assertProjectViewable(project, requester);
     }
 
     @Transactional
@@ -875,11 +868,13 @@ public class ProjectService {
         // the JPQL below already short-circuits filtering on `:query = ''`.
         if (q.length() < 3) q = "";
         Pageable pageable = PageRequest.of(page, size);
+        Long viewerId = requester == null ? null : requester.getId();
+        Set<String> blockRelated = blockRelatedUsernames(requester);
 
         List<Project> pageProjects;
         boolean hasMore;
         if ("hot".equals(sort)) {
-            Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, q, pageable);
+            Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, q, viewerId, pageable);
             List<Long> ids = idPage.getContent();
             Map<Long, Project> byId = ids.isEmpty()
                     ? Map.of()
@@ -893,12 +888,12 @@ public class ProjectService {
                 pageProjects = List.of();
                 hasMore = false;
             } else {
-                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners(ProjectVisibility.PUBLISHED, followedIds, q, pageable);
+                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners(ProjectVisibility.PUBLISHED, followedIds, q, viewerId, pageable);
                 pageProjects = projectPage.getContent();
                 hasMore = projectPage.hasNext();
             }
         } else {
-            Page<Project> projectPage = projectRepository.findPublishedRecent(ProjectVisibility.PUBLISHED, q, pageable);
+            Page<Project> projectPage = projectRepository.findPublishedRecent(ProjectVisibility.PUBLISHED, q, viewerId, pageable);
             pageProjects = projectPage.getContent();
             hasMore = projectPage.hasNext();
         }
@@ -907,7 +902,7 @@ public class ProjectService {
                 projectBookmarkRepository, commentRepository, projectSnapshotRepository)
                 .withThumbnails(resolveThumbnails(pageProjects));
         List<ProjectFeedItemDTO> feed = pageProjects.stream()
-                .map(project -> toFeedItem(project, ctx))
+                .map(project -> toFeedItem(project, ctx, blockRelated))
                 .toList();
 
         ProjectFeedItemDTO featured = null;
@@ -918,14 +913,23 @@ public class ProjectService {
             if (!"following".equals(sort)) {
                 featured = projectRepository.findByFeaturedTrue()
                         .filter(project -> project.getVisibility() == ProjectVisibility.PUBLISHED)
+                        .filter(project -> !blockRelated.contains(project.getOwner().getUsername()))
                         .map(project -> toFeedItem(project, FeedContext.forPublishedProjects(List.of(project), requester, projectRepository,
                                 projectVoteRepository, projectBookmarkRepository, commentRepository, projectSnapshotRepository)
                                 .withThumbnails(resolveThumbnails(List.of(project)))))
                         .orElse(null);
             }
             hotTopics = cachedHotTopics;
-            activeAuthors = cachedActiveAuthors;
-            trendingProjects = cachedTrendingProjects;
+            activeAuthors = blockRelated.isEmpty()
+                    ? cachedActiveAuthors
+                    : cachedActiveAuthors.stream()
+                        .filter(author -> !blockRelated.contains(author.getUsername()))
+                        .toList();
+            trendingProjects = blockRelated.isEmpty()
+                    ? cachedTrendingProjects
+                    : cachedTrendingProjects.stream()
+                        .filter(item -> !blockRelated.contains(item.getOwnerUsername()))
+                        .toList();
         }
 
         return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors, trendingProjects);
@@ -938,7 +942,7 @@ public class ProjectService {
     }
 
     public List<ProjectFeedItemDTO> getTrendingProjects(int limit) {
-        Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, "", PageRequest.of(0, limit));
+        Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, "", null, PageRequest.of(0, limit));
         List<Long> ids = idPage.getContent();
         if (ids.isEmpty()) {
             return List.of();
@@ -1292,7 +1296,11 @@ public class ProjectService {
         return toFollowUserPage(users, requester, result.hasNext());
     }
 
-    private PageResponseDTO<FollowUserDTO> toFollowUserPage(List<User> users, User requester, boolean hasMore) {
+    private PageResponseDTO<FollowUserDTO> toFollowUserPage(List<User> allUsers, User requester, boolean hasMore) {
+        Set<Long> blockRelated = privacyPolicy.blockRelatedIds(requester);
+        List<User> users = blockRelated.isEmpty()
+                ? allUsers
+                : allUsers.stream().filter(u -> !blockRelated.contains(u.getId())).toList();
         List<Long> ids = users.stream().map(User::getId).toList();
         Set<Long> followingIds = requester == null || ids.isEmpty()
                 ? Set.of()
@@ -1349,25 +1357,46 @@ public class ProjectService {
             items.add(new ActivityItemDTO("received_bookmark", bookmark.getCreatedDate(), projectIdCodec.encode(bookmark.getProject().getId()), bookmark.getProject().getTitle(), bookmark.getUser().getUsername()));
         }
 
+        Set<String> blockRelated = blockRelatedUsernames(user);
         return items.stream()
+                .filter(item -> item.getOtherUsername() == null || !blockRelated.contains(item.getOtherUsername()))
                 .sorted(Comparator.comparing(ActivityItemDTO::getTimestamp).reversed())
                 .limit(ACTIVITY_FEED_LIMIT)
                 .toList();
     }
 
-    private List<ProjectFeedItemDTO> toFeedItems(List<Project> projects, User requester) {
-        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)
-                .withThumbnails(resolveThumbnails(projects));
-        return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
+    private Set<String> blockRelatedUsernames(User requester) {
+        if (requester == null) {
+            return Set.of();
+        }
+        List<String> usernames = blockedUserRepository.findRelatedUsernames(requester.getId());
+        return usernames.isEmpty() ? Set.of() : Set.copyOf(usernames);
     }
 
+    private List<Project> withoutBlockRelatedOwners(List<Project> projects, Set<String> blockRelated) {
+        if (blockRelated.isEmpty()) {
+            return projects;
+        }
+        return projects.stream()
+                .filter(project -> !blockRelated.contains(project.getOwner().getUsername()))
+                .toList();
+    }
 
+    private List<ProjectFeedItemDTO> toFeedItems(List<Project> allProjects, User requester) {
+        Set<String> blockRelated = blockRelatedUsernames(requester);
+        List<Project> projects = withoutBlockRelatedOwners(allProjects, blockRelated);
+        FeedContext ctx = FeedContext.forProjects(projects, requester, projectRepository, projectVoteRepository, projectBookmarkRepository, commentRepository)
+                .withThumbnails(resolveThumbnails(projects));
+        return projects.stream().map(project -> toFeedItem(project, ctx, blockRelated)).toList();
+    }
 
-    private List<ProjectFeedItemDTO> toPublishedFeedItems(List<Project> projects, User requester) {
+    private List<ProjectFeedItemDTO> toPublishedFeedItems(List<Project> allProjects, User requester) {
+        Set<String> blockRelated = blockRelatedUsernames(requester);
+        List<Project> projects = withoutBlockRelatedOwners(allProjects, blockRelated);
         FeedContext ctx = FeedContext.forPublishedProjects(projects, requester, projectRepository, projectVoteRepository,
                 projectBookmarkRepository, commentRepository, projectSnapshotRepository)
                 .withThumbnails(resolveThumbnails(projects));
-        return projects.stream().map(project -> toFeedItem(project, ctx)).toList();
+        return projects.stream().map(project -> toFeedItem(project, ctx, blockRelated)).toList();
     }
 
     private List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
@@ -1458,6 +1487,10 @@ public class ProjectService {
     }
 
     private ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx) {
+        return toFeedItem(project, ctx, Set.of());
+    }
+
+    private ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx, Set<String> blockRelated) {
         ProjectSnapshot latestPublish = ctx.latestPublishByProjectId().get(project.getId());
         ProjectSnapshotData snapshot = latestPublish != null
                 ? objectMapper.readValue(latestPublish.getContent(), ProjectSnapshotData.class) : null;
@@ -1466,6 +1499,9 @@ public class ProjectService {
                 ? project.getLastPublishedDate() : null;
         ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         Project source = project.getForkedFrom();
+        if (source != null && blockRelated.contains(source.getOwner().getUsername())) {
+            source = null;
+        }
         return new ProjectFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
                 snapshot != null ? snapshot.title() : project.getTitle(),

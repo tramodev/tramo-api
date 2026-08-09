@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.user.service.PrivacyPolicy;
 import com.tramo.backend.user.service.UserPreferencesService;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -42,12 +43,15 @@ public class NotificationService {
     private final ProjectIdCodec projectIdCodec;
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final long sseTimeoutMs;
+    private final PrivacyPolicy privacyPolicy;
 
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
-                                @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs) {
+                                @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs,
+                                PrivacyPolicy privacyPolicy) {
         this.notificationRepository = notificationRepository;
         this.projectIdCodec = projectIdCodec;
         this.sseTimeoutMs = sseTimeoutMs;
+        this.privacyPolicy = privacyPolicy;
     }
 
     @Scheduled(cron = "0 30 3 * * *")
@@ -113,10 +117,21 @@ public class NotificationService {
         if (userEmitters == null || userEmitters.isEmpty()) return;
 
         UnreadCountDTO payload = new UnreadCountDTO(getUnreadCount(recipient));
+        sendToAll(userEmitters, SseEmitter.event().name("unread-count").data(payload));
+    }
+
+    @Scheduled(fixedRateString = "${app.notifications.sse-heartbeat-ms:25000}")
+    public void sendHeartbeat() {
+        for (CopyOnWriteArrayList<SseEmitter> userEmitters : emitters.values()) {
+            sendToAll(userEmitters, SseEmitter.event().comment("keep-alive"));
+        }
+    }
+
+    private void sendToAll(CopyOnWriteArrayList<SseEmitter> userEmitters, SseEmitter.SseEventBuilder event) {
         for (SseEmitter emitter : userEmitters) {
             try {
-                emitter.send(SseEmitter.event().name("unread-count").data(payload));
-            } catch (IOException e) {
+                emitter.send(event);
+            } catch (IOException | IllegalStateException e) {
                 emitter.complete();
                 userEmitters.remove(emitter);
             }
@@ -223,7 +238,9 @@ public class NotificationService {
     public PageResponseDTO<NotificationDTO> getNotifications(User user, int page, int size) {
         Page<Notification> result = notificationRepository.findByRecipientIdOrderByUpdatedDateDesc(
                 user.getId(), PageRequest.of(page, size));
+        Set<Long> blockRelated = privacyPolicy.blockRelatedIds(user);
         List<NotificationDTO> items = result.getContent().stream()
+                .filter(n -> n.getLatestActor() == null || !blockRelated.contains(n.getLatestActor().getId()))
                 .map(n -> new NotificationDTO(
                         n.getId(),
                         n.getType(),

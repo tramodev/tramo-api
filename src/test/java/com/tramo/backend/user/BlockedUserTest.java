@@ -62,8 +62,7 @@ class BlockedUserTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.blocked").value(true));
 
         mockMvc.perform(get("/api/public/users/blockfollowalice").header("Authorization", bearer(bob)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.following").value(false));
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -83,10 +82,10 @@ class BlockedUserTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content":"Let me in"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(blocked)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test

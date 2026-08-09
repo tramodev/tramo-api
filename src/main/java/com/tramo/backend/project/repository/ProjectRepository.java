@@ -20,39 +20,51 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.lastPublishedDate DESC")
     List<Project> findByVisibilityOrderByLastPublishedDateDesc(@Param("visibility") ProjectVisibility visibility);
 
-    @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
-            + "ORDER BY p.lastPublishedDate DESC",
-            countQuery = "SELECT COUNT(p) FROM Project p "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
-    Page<Project> findPublishedRecent(@Param("visibility") ProjectVisibility visibility, @Param("query") String query, Pageable pageable);
+    String NOT_BLOCK_RELATED = "AND (:viewerId IS NULL OR NOT EXISTS ("
+            + "SELECT 1 FROM BlockedUser b WHERE (b.blocker.id = :viewerId AND b.blocked.id = p.owner.id) "
+            + "OR (b.blocker.id = p.owner.id AND b.blocked.id = :viewerId))) ";
 
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
             + "ORDER BY p.lastPublishedDate DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
+    Page<Project> findPublishedRecent(@Param("visibility") ProjectVisibility visibility, @Param("query") String query,
+                                        @Param("viewerId") Long viewerId, Pageable pageable);
+
+    @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
+            + "ORDER BY p.lastPublishedDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
     Page<Project> findPublishedRecentByOwners(@Param("visibility") ProjectVisibility visibility, @Param("ownerIds") List<Long> ownerIds,
-                                                @Param("query") String query, Pageable pageable);
+                                                @Param("query") String query, @Param("viewerId") Long viewerId, Pageable pageable);
 
     @Query(value = "SELECT p.id FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
             + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.lastPublishedDate) DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
-            + "WHERE p.visibility = :visibility AND p.owner.banned = false AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
+            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
-    Page<Long> findPublishedHotIds(@Param("visibility") ProjectVisibility visibility, @Param("query") String query, Pageable pageable);
+    Page<Long> findPublishedHotIds(@Param("visibility") ProjectVisibility visibility, @Param("query") String query,
+                                     @Param("viewerId") Long viewerId, Pageable pageable);
 
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.id IN :ids")
     List<Project> findAllByIdInWithFetch(@Param("ids") List<Long> ids);

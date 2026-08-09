@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.Modifying;
 
@@ -22,6 +23,14 @@ public interface BlockedUserRepository extends JpaRepository<BlockedUser, Long> 
     @Query(value = "SELECT b FROM BlockedUser b JOIN FETCH b.blocked WHERE b.blocker.id = :userId ORDER BY b.createdDate DESC",
             countQuery = "SELECT COUNT(b) FROM BlockedUser b WHERE b.blocker.id = :userId")
     Page<BlockedUser> findByBlockerIdOrderByCreatedDateDesc(@Param("userId") Long userId, Pageable pageable);
+
+    @Query("SELECT CASE WHEN b.blocker.id = :userId THEN b.blocked.id ELSE b.blocker.id END "
+            + "FROM BlockedUser b WHERE b.blocker.id = :userId OR b.blocked.id = :userId")
+    List<Long> findRelatedUserIds(@Param("userId") Long userId);
+
+    @Query("SELECT CASE WHEN b.blocker.id = :userId THEN b.blocked.username ELSE b.blocker.username END "
+            + "FROM BlockedUser b WHERE b.blocker.id = :userId OR b.blocked.id = :userId")
+    List<String> findRelatedUsernames(@Param("userId") Long userId);
 
     default boolean existsEitherDirection(Long userA, Long userB) {
         return existsByBlockerIdAndBlockedId(userA, userB) || existsByBlockerIdAndBlockedId(userB, userA);

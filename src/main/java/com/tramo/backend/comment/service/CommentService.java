@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import java.util.Date;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class CommentService {
@@ -89,11 +90,14 @@ public class CommentService {
         List<Long> rootIds = roots.getContent().stream().map(Comment::getId).toList();
         List<Comment> replies = rootIds.isEmpty() ? List.of() : commentRepository.findRepliesByParentIdIn(rootIds);
 
+        Set<Long> blockRelated = privacyPolicy.blockRelatedIds(requester);
         List<CommentDTO> thread = new ArrayList<>();
         for (Comment root : roots.getContent()) {
+            if (hiddenAuthor(root, blockRelated)) continue;
             thread.add(toDto(root, requester));
         }
         for (Comment reply : replies) {
+            if (hiddenAuthor(reply, blockRelated)) continue;
             thread.add(toDto(reply, requester));
         }
         return new PageResponseDTO<>(thread, roots.hasNext());
@@ -115,14 +119,11 @@ public class CommentService {
     }
 
     private void assertViewable(Project project, User requester) {
-        ProjectVisibility visibility = project.getVisibility();
-        if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
-            throw new ResourceNotFoundException("Project not found");
-        }
-        boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
-        if (!isOwner && project.getOwner().isBanned()) {
-            throw new ResourceNotFoundException("Project not found");
-        }
+        privacyPolicy.assertProjectViewable(project, requester);
+    }
+
+    private boolean hiddenAuthor(Comment comment, Set<Long> blockRelated) {
+        return comment.getAuthor() != null && blockRelated.contains(comment.getAuthor().getId());
     }
 
     private CommentDTO toDto(Comment comment, User requester) {
