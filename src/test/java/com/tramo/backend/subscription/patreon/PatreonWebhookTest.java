@@ -3,13 +3,17 @@ package com.tramo.backend.subscription.patreon;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,6 +22,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 
 class PatreonWebhookTest extends AbstractIntegrationTest {
+
+    @Autowired
+    PatreonWebhookSignatureRepository patreonWebhookSignatureRepository;
+
+    @Autowired
+    PatreonWebhookSignatureService patreonWebhookSignatureService;
 
     private String sign(String body) throws Exception {
         Mac mac = Mac.getInstance("HmacMD5");
@@ -137,5 +147,23 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                         .header("X-Patreon-Signature", sign(body))
                         .content(body))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void purgeDeletesOnlySignaturesPastRetention() {
+        PatreonWebhookSignature old = new PatreonWebhookSignature("sig-old");
+        old.setProcessedAt(Instant.now().minus(60, ChronoUnit.DAYS));
+        patreonWebhookSignatureRepository.save(old);
+
+        PatreonWebhookSignature recent = new PatreonWebhookSignature("sig-recent");
+        recent.setProcessedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+        patreonWebhookSignatureRepository.save(recent);
+
+        patreonWebhookSignatureService.purgeProcessedSignatures();
+
+        assertThat(patreonWebhookSignatureRepository.findAll())
+                .extracting(PatreonWebhookSignature::getSignature)
+                .contains("sig-recent")
+                .doesNotContain("sig-old");
     }
 }

@@ -1,11 +1,15 @@
 package com.tramo.backend.auth;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.auth.entity.AgeRejectionAttempt;
 import com.tramo.backend.auth.entity.EmailVerificationToken;
 import com.tramo.backend.auth.entity.PasswordResetToken;
+import com.tramo.backend.auth.repository.AgeRejectionAttemptRepository;
 import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
-import com.tramo.backend.auth.service.AuthService;
+import com.tramo.backend.auth.service.AgeGateService;
+import com.tramo.backend.auth.service.PasswordService;
+import com.tramo.backend.auth.service.RegistrationService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +29,34 @@ class TokenPurgeTest extends AbstractIntegrationTest {
     PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
-    AuthService authService;
+    RegistrationService registrationService;
+
+    @Autowired
+    PasswordService passwordService;
+
+    @Autowired
+    AgeGateService ageGateService;
+
+    @Autowired
+    AgeRejectionAttemptRepository ageRejectionAttemptRepository;
+
+    @Test
+    void purgeDeletesOnlyAgeRejectionsPastCooldown() {
+        AgeRejectionAttempt stale = new AgeRejectionAttempt();
+        stale.setIpAddress("203.0.113.7");
+        stale.setRejectedAt(Instant.now().minus(48, ChronoUnit.HOURS));
+        ageRejectionAttemptRepository.save(stale);
+
+        AgeRejectionAttempt recent = new AgeRejectionAttempt();
+        recent.setIpAddress("203.0.113.8");
+        recent.setRejectedAt(Instant.now().minus(1, ChronoUnit.HOURS));
+        ageRejectionAttemptRepository.save(recent);
+
+        ageGateService.purgeExpiredRejections();
+
+        assertThat(ageRejectionAttemptRepository.findById(stale.getId())).isEmpty();
+        assertThat(ageRejectionAttemptRepository.findById(recent.getId())).isPresent();
+    }
 
     @Test
     void purgeDeletesOnlyExpiredVerificationAndResetTokens() {
@@ -55,7 +86,8 @@ class TokenPurgeTest extends AbstractIntegrationTest {
         liveReset.setExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
         passwordResetTokenRepository.save(liveReset);
 
-        authService.purgeExpiredTokens();
+        registrationService.purgeExpiredVerificationTokens();
+        passwordService.purgeExpiredResetTokens();
 
         assertThat(emailVerificationTokenRepository.findByToken(expiredVerification.getToken())).isEmpty();
         assertThat(emailVerificationTokenRepository.findByToken(liveVerification.getToken())).isPresent();
