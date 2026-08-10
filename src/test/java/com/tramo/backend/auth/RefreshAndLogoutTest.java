@@ -3,7 +3,7 @@ package com.tramo.backend.auth;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.entity.RefreshToken;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
-import com.tramo.backend.auth.service.AuthService;
+import com.tramo.backend.auth.service.SessionService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +27,7 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     RefreshTokenRepository refreshTokenRepository;
 
     @Autowired
-    AuthService authService;
+    SessionService sessionService;
 
     private RefreshToken issueRefreshToken(User user, Instant expiresAt) {
         RefreshToken token = new RefreshToken();
@@ -126,7 +126,7 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
         refreshTokenRepository.save(revokedRecently);
         RefreshToken liveActive = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
 
-        authService.purgeExpiredTokens();
+        sessionService.purgeExpiredRefreshTokens();
 
         assertThat(refreshTokenRepository.findByToken(expiredRevoked.getToken())).isEmpty();
         assertThat(refreshTokenRepository.findByToken(expiredActive.getToken())).isEmpty();

@@ -292,4 +292,87 @@ class SnapshotTest extends AbstractIntegrationTest {
         assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(
                 feedJsonAfterRepublish, feedIndexPath + ".lastPublishedDate").get(0)).isNotNull();
     }
+
+    @Test
+    void publishRequiresOwnership() throws Exception {
+        User owner = createUser("pubowner1");
+        User other = createUser("pubother1");
+        Project project = seedProject(owner, "Guarded");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                        .header("Authorization", bearer(other)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publishRequiresAuthentication() throws Exception {
+        User owner = createUser("pubowner2");
+        Project project = seedProject(owner, "Anon");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void publishUnknownProjectIs404() throws Exception {
+        User owner = createUser("pubowner3");
+
+        mockMvc.perform(post("/api/project/999999/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void publishWithoutDescriptionIsRejected() throws Exception {
+        User owner = createUser("pubowner4");
+        Project project = createProject(owner, "No description", "private");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void publishSnapshotsAssociationsBetweenItems() throws Exception {
+        User owner = createUser("pubowner5");
+        Project project = seedProject(owner, "Linked");
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"T"}""");
+        long itemA = postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"A"}""");
+        long itemB = postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"B"}""");
+        mockMvc.perform(post("/api/item/" + itemA + "/tie")
+                        .header("Authorization", bearer(owner))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"REQUIRES\",\"targetType\":\"ITEM\",\"targetId\":" + itemB + "}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+
+        String versionsJson = mockMvc.perform(get("/api/project/" + pid(project) + "/versions")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long snapshotId = ((Number) com.jayway.jsonpath.JsonPath.read(versionsJson, "$[0].id")).longValue();
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/versions/" + snapshotId)
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.trails[0].items[0].associations.length()").value(1))
+                .andExpect(jsonPath("$.content.trails[0].items[0].associations[0].targetTitle").value("B"));
+    }
+
+    @Test
+    void versionDetailOfAnotherOwnerIsRejected() throws Exception {
+        User owner = createUser("pubowner6");
+        User other = createUser("pubother6");
+        Project project = seedProject(owner, "Private versions");
+        setVisibility(owner, project, "published");
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/versions")
+                        .header("Authorization", bearer(other)))
+                .andExpect(status().isForbidden());
+    }
 }

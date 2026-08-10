@@ -1,7 +1,7 @@
 package com.tramo.backend.user.controller;
 
 import com.tramo.backend.auth.dto.ChangePasswordRequestDTO;
-import com.tramo.backend.auth.service.AuthService;
+import com.tramo.backend.auth.service.PasswordService;
 import com.tramo.backend.user.dto.UpdatePreferencesRequestDTO;
 import com.tramo.backend.user.dto.UserPreferencesDTO;
 import com.tramo.backend.user.entity.User;
@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
         @Autowired
-        private AuthService authService;
+        private PasswordService passwordService;
         @Autowired
         private UserAccountService userAccountService;
         @Autowired
@@ -32,7 +32,7 @@ public class UserController {
         @PutMapping("/password")
         public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequestDTO request,
                                                     @AuthenticationPrincipal User user) {
-            authService.changePassword(user, request.getCurrentPassword(), request.getNewPassword());
+            passwordService.changePassword(user, request.getCurrentPassword(), request.getNewPassword());
             return ResponseEntity.noContent().build();
         }
 
