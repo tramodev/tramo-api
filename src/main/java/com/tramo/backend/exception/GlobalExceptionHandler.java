@@ -206,9 +206,21 @@ public class GlobalExceptionHandler {
     public void handleDeadAsyncRequest() {
     }
 
+    private static boolean clientIsGone(Throwable ex) {
+        for (Throwable cause = ex; cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+            if (cause instanceof AsyncRequestNotUsableException || cause instanceof AsyncRequestTimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ResponseEntity<ErrorResponse> handleGlobalException(Exception ex) {
+        if (clientIsGone(ex)) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
         log.error("Unhandled exception", ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
