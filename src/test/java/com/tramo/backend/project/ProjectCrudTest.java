@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -440,5 +441,155 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                                 {"bio":"New bio","imageUrl":"%s"}""".formatted(imageUrl)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bio").value("New bio"));
+    }
+
+    @Test
+    void setThumbnailToGraphRequiresATrailOfTheSameProject() throws Exception {
+        User owner = createUser("thumbowner1");
+        User other = createUser("thumbother1");
+        Project mine = createProject(owner, "Mine", "private", "A description", null);
+        Project theirs = createProject(other, "Theirs", "private", "A description", null);
+        long theirTrail = postForId(other, "/api/project/" + pid(theirs) + "/trail", """
+                {"title":"Their trail"}""");
+
+        mockMvc.perform(put("/api/project/" + pid(mine) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"GRAPH\",\"trailId\":\"" + theirTrail + "\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void setThumbnailToGraphUsesTheChosenTrail() throws Exception {
+        User owner = createUser("thumbowner2");
+        Project project = createProject(owner, "Graphed", "private", "A description", null);
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"T"}""");
+        postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"I"}""");
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"GRAPH\",\"trailId\":\"" + trailId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailGraph.trailId").value(String.valueOf(trailId)));
+    }
+
+    @Test
+    void setThumbnailToGraphRequiresATrailId() throws Exception {
+        User owner = createUser("thumbowner3");
+        Project project = createProject(owner, "NoTrail", "private", "A description", null);
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"GRAPH"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void setThumbnailToImageRequiresAnImageUrl() throws Exception {
+        User owner = createUser("thumbowner4");
+        Project project = createProject(owner, "NoImage", "private", "A description", null);
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"DEDICATED","imageUrl":"  "}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void setThumbnailToDedicatedImageThenNoneClearsIt() throws Exception {
+        User owner = createUser("thumbowner5");
+        Project project = createProject(owner, "Imaged", "private", "A description", null);
+        String url = "https://test-bucket.example.com/thumbnail/1/hash.jpg";
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"DEDICATED\",\"imageUrl\":\"" + url + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailImageUrl").value(url));
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"NONE"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.thumbnailImageUrl").value(nullValue()));
+    }
+
+    @Test
+    void setThumbnailRejectsAnUnknownType() throws Exception {
+        User owner = createUser("thumbowner6");
+        Project project = createProject(owner, "Bad", "private", "A description", null);
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"BANANA"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void setThumbnailRequiresOwnership() throws Exception {
+        User owner = createUser("thumbowner7");
+        User other = createUser("thumbother7");
+        Project project = createProject(owner, "Guarded", "private", "A description", null);
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                        .header("Authorization", bearer(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"NONE"}"""))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listProjectImagesReturnsImagesReferencedByItems() throws Exception {
+        User owner = createUser("imglistowner");
+        Project project = createProject(owner, "WithImages", "private", "A description", null);
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"T"}""");
+        long itemId = postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"Illustrated"}""");
+        String url = "https://test-bucket.example.com/editor-image/999999/deadbeefcafefeed.jpg";
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"see " + url + " here\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/images").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].url").value(url))
+                .andExpect(jsonPath("$[0].itemTitle").value("Illustrated"));
+    }
+
+    @Test
+    void listProjectImagesIsEmptyWithoutImages() throws Exception {
+        User owner = createUser("imglistempty");
+        Project project = createProject(owner, "NoImages", "private", "A description", null);
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/images").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void listProjectImagesRequiresOwnership() throws Exception {
+        User owner = createUser("imglistowner2");
+        User other = createUser("imglistother2");
+        Project project = createProject(owner, "Guarded", "private", "A description", null);
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/images").header("Authorization", bearer(other)))
+                .andExpect(status().isForbidden());
     }
 }

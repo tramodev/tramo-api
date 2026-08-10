@@ -241,4 +241,72 @@ class ProfileTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bannerUrl").value(url));
     }
+
+    private User userWithFirstPublishBadge(String username) throws Exception {
+        User user = createUser(username);
+        createProject(user, "Published one", "published", "A description", null);
+        mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.badges[?(@.code=='first_publish')].earned").value(true));
+        return user;
+    }
+
+    @Test
+    void updateProfileSetsAnEarnedBadge() throws Exception {
+        User user = userWithFirstPublishBadge("badgeowner");
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"selectedBadge":"first_publish"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.selectedBadge").value("first_publish"));
+    }
+
+    @Test
+    void updateProfileRejectsABadgeTheUserHasNotEarned() throws Exception {
+        User user = createUser("badgecheater");
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"selectedBadge":"remix_king"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateProfileClearsTheSelectedBadgeWithABlankValue() throws Exception {
+        User user = userWithFirstPublishBadge("badgeclearer");
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"selectedBadge":"first_publish"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"selectedBadge":""}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.selectedBadge").value(nullValue()));
+    }
+
+    @Test
+    void selectedBadgeIsVisibleOnThePublicProfile() throws Exception {
+        User user = userWithFirstPublishBadge("badgepublic");
+        mockMvc.perform(put("/api/profile/me")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"selectedBadge":"first_publish"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/public/users/badgepublic"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.selectedBadge").value("first_publish"));
+    }
 }
