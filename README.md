@@ -126,11 +126,18 @@ everything else expects a bearer token.
 | `/api/public` | Public projects and profiles for the explore feed (cacheable) |
 | `/api/project` | Authoring: projects, trails, items, associations, publishing |
 | `/api/profile` | The signed-in user's own content |
+| `/api/comment` | Comments on projects, and reporting them |
+| `/api/tags` | Tag autocomplete |
 | `/api/uploads` | Image upload to R2 |
-| `/api/notifications` | User notifications |
+| `/api/notifications` | User notifications, including the SSE stream |
 | `/api/subscription` | Plans and supporter subscription |
+| `/api/auth/patreon`, `/api/webhooks/patreon` | Patreon OAuth and webhook callbacks |
 | `/api/users` | User lookup |
 | `/api/admin` | Moderation and admin actions |
+
+`GET /api/notifications/stream` is a **Server-Sent Events** endpoint: the frontend keeps it
+open and receives unread-count updates live. It sends periodic heartbeat comments so proxies
+don't drop the connection, and emitters are evicted as soon as a write to a gone client fails.
 
 ## Project layout
 
@@ -142,13 +149,23 @@ src/main/java/com/tramo/backend/
 ├── project       # projects, votes, bookmarks, views
 ├── comment       # comments on projects
 ├── moderation    # reports and moderation log
-├── notification  # user notifications
+├── notification  # user notifications and the SSE stream
 ├── subscription  # plans, payments, subscriptions
+├── tag           # project tags and autocomplete
 ├── upload        # R2 image records and cleanup
-├── security      # JWT filters, auth config
+├── security      # JWT filters, rate limiting, age gate, auth config
 ├── common        # shared utilities
 └── exception     # global error handling
 ```
+
+Every domain package is cut the same way: `controller/ dto/ entity/ repository/ service/`.
+
+## Image lifecycle
+
+Editor images are uploaded to R2 and tracked per item by `ItemImageReference`. Because an item
+can be transcluded into several trails, an image that stops being used is **not deleted right
+away**: it goes to `PendingImageDeletion`, and a scheduled job removes it from R2 only after a
+grace period *and* only if no other item still references that URL.
 
 ## Testing notes
 

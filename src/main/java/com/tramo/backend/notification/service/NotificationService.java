@@ -24,7 +24,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -98,8 +97,12 @@ public class NotificationService {
 
         try {
             emitter.send(SseEmitter.event().name("unread-count").data(new UnreadCountDTO(getUnreadCount(user))));
-        } catch (IOException e) {
+        } catch (Exception subscriberIsGone) {
             cleanup.run();
+            try {
+                emitter.complete();
+            } catch (Exception responseAlreadyTornDown) {
+            }
         }
 
         return emitter;
