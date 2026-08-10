@@ -2,7 +2,7 @@ package com.tramo.backend.project;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ProjectPublishService;
 import com.tramo.backend.user.entity.User;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
 
     @Autowired
-    private ProjectService projectService;
+    private ProjectPublishService publishService;
 
     private void setVisibility(User owner, Project project, String visibility) throws Exception {
         mockMvc.perform(put("/api/project/" + pid(project))
@@ -85,7 +85,7 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
         
         Project project = createProject(owner, "Legacy Published", "published", "Legacy description", "tag");
 
-        projectService.backfillMissingPublishSnapshots();
+        publishService.backfillMissingPublishSnapshots();
 
         renameProject(owner, project, "Legacy Edited After Backfill");
 

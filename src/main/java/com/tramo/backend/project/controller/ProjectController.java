@@ -11,6 +11,9 @@ import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
 import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.dto.VoteResponseDTO;
+import com.tramo.backend.project.service.ProjectEngagementService;
+import com.tramo.backend.project.service.ProjectForkService;
+import com.tramo.backend.project.service.ProjectPublishService;
 import com.tramo.backend.project.service.ProjectService;
 import com.tramo.backend.security.ClientIp;
 import com.tramo.backend.user.entity.User;
@@ -26,12 +29,18 @@ import java.util.List;
 @RequestMapping("/api/project")
 public class ProjectController {
     private final ProjectService projectService;
+    private final ProjectPublishService publishService;
+    private final ProjectForkService forkService;
+    private final ProjectEngagementService engagementService;
     private final ModerationService moderationService;
     private final ProjectIdCodec projectIdCodec;
     private final ClientIp clientIp;
 
-    public ProjectController(ProjectService projectService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
+    public ProjectController(ProjectService projectService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
         this.projectService = projectService;
+        this.publishService = publishService;
+        this.forkService = forkService;
+        this.engagementService = engagementService;
         this.moderationService = moderationService;
         this.projectIdCodec = projectIdCodec;
         this.clientIp = clientIp;
@@ -69,12 +78,12 @@ public class ProjectController {
     public ResponseEntity<VoteResponseDTO> toggleVote(@PathVariable String id, @AuthenticationPrincipal User user,
                                                       @RequestHeader(value = "X-Anon-Id", required = false) String anonId,
                                                       HttpServletRequest request) {
-        return ResponseEntity.ok(projectService.toggleVote(projectIdCodec.decode(id), user, clientIp.from(request), anonId));
+        return ResponseEntity.ok(engagementService.toggleVote(projectIdCodec.decode(id), user, clientIp.from(request), anonId));
     }
 
     @PostMapping("/{id}/publish")
     public ResponseEntity<ProjectResponseDTO> publish(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.publish(projectIdCodec.decode(id), user));
+        return ResponseEntity.ok(publishService.publish(projectIdCodec.decode(id), user));
     }
 
     @PutMapping("/{id}/thumbnail")
@@ -90,12 +99,12 @@ public class ProjectController {
 
     @PostMapping("/{id}/fork")
     public ResponseEntity<ProjectResponseDTO> fork(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.fork(projectIdCodec.decode(id), user));
+        return ResponseEntity.ok(forkService.fork(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/bookmark")
     public ResponseEntity<BookmarkResponseDTO> toggleBookmark(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.toggleBookmark(projectIdCodec.decode(id), user));
+        return ResponseEntity.ok(engagementService.toggleBookmark(projectIdCodec.decode(id), user));
     }
 
     @PostMapping("/{id}/report")
@@ -107,18 +116,18 @@ public class ProjectController {
 
     @PostMapping("/{id}/share")
     public ResponseEntity<Void> share(@PathVariable String id, @AuthenticationPrincipal User user) {
-        projectService.shareProject(projectIdCodec.decode(id), user);
+        publishService.shareProject(projectIdCodec.decode(id), user);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/{id}/versions")
     public ResponseEntity<List<ProjectSnapshotSummaryDTO>> listVersions(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.listSnapshots(projectIdCodec.decode(id), user));
+        return ResponseEntity.ok(publishService.listSnapshots(projectIdCodec.decode(id), user));
     }
 
     @GetMapping("/{id}/versions/{snapshotId}")
     public ResponseEntity<ProjectSnapshotDetailDTO> getVersion(@PathVariable String id, @PathVariable Long snapshotId,
                                                                 @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getSnapshotDetail(projectIdCodec.decode(id), snapshotId, user));
+        return ResponseEntity.ok(publishService.getSnapshotDetail(projectIdCodec.decode(id), snapshotId, user));
     }
 }

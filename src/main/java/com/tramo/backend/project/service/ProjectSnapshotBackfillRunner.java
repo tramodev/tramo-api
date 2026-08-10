@@ -13,15 +13,15 @@ import org.springframework.stereotype.Component;
 public class ProjectSnapshotBackfillRunner implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(ProjectSnapshotBackfillRunner.class);
 
-    private final ProjectService projectService;
+    private final ProjectPublishService publishService;
 
-    public ProjectSnapshotBackfillRunner(ProjectService projectService) {
-        this.projectService = projectService;
+    public ProjectSnapshotBackfillRunner(ProjectPublishService publishService) {
+        this.publishService = publishService;
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        projectService.backfillMissingPublishSnapshots();
+        publishService.backfillMissingPublishSnapshots();
         log.info("ProjectSnapshot backfill check complete");
     }
 }

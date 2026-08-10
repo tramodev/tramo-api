@@ -11,7 +11,12 @@ import com.tramo.backend.project.dto.PublicProjectResponseDTO;
 import com.tramo.backend.project.dto.SitemapProjectDTO;
 import com.tramo.backend.project.dto.SitemapUserDTO;
 import com.tramo.backend.project.dto.TagCountDTO;
-import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ExploreService;
+import com.tramo.backend.project.service.FollowService;
+import com.tramo.backend.project.service.ProfileFeedService;
+import com.tramo.backend.project.service.ProfileService;
+import com.tramo.backend.project.service.PublicProjectService;
+import com.tramo.backend.project.service.ProjectPublishService;
 import com.tramo.backend.user.entity.User;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,11 +32,21 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/public")
 public class PublicProjectController {
-    private final ProjectService projectService;
+    private final ProjectPublishService publishService;
+    private final ExploreService exploreService;
+    private final PublicProjectService publicProjectService;
+    private final ProfileService profileService;
+    private final ProfileFeedService profileFeedService;
+    private final FollowService followService;
     private final ProjectIdCodec projectIdCodec;
 
-    public PublicProjectController(ProjectService projectService, ProjectIdCodec projectIdCodec) {
-        this.projectService = projectService;
+    public PublicProjectController(ProjectPublishService publishService, ExploreService exploreService, PublicProjectService publicProjectService, ProfileService profileService, ProfileFeedService profileFeedService, FollowService followService, ProjectIdCodec projectIdCodec) {
+        this.publishService = publishService;
+        this.exploreService = exploreService;
+        this.publicProjectService = publicProjectService;
+        this.profileService = profileService;
+        this.profileFeedService = profileFeedService;
+        this.followService = followService;
         this.projectIdCodec = projectIdCodec;
     }
 
@@ -39,13 +54,13 @@ public class PublicProjectController {
     public ResponseEntity<PublicProjectResponseDTO> getPublic(@PathVariable String id,
                                                                 @AuthenticationPrincipal User user,
                                                                 @RequestHeader(value = "X-Anon-Id", required = false) String anonId) {
-        return ResponseEntity.ok(projectService.getPublicProject(projectIdCodec.decode(id), user, anonId));
+        return ResponseEntity.ok(publicProjectService.getPublicProject(projectIdCodec.decode(id), user, anonId));
     }
 
     @GetMapping("/project/{id}/versions/{snapshotId}")
     public ResponseEntity<ProjectSnapshotDetailDTO> getPublicVersion(@PathVariable String id, @PathVariable Long snapshotId,
                                                                         @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublicSnapshotDetail(projectIdCodec.decode(id), snapshotId, user));
+        return ResponseEntity.ok(publishService.getPublicSnapshotDetail(projectIdCodec.decode(id), snapshotId, user));
     }
 
     @GetMapping("/explore")
@@ -55,28 +70,28 @@ public class PublicProjectController {
             @RequestParam(required = false, defaultValue = "0") int page,
             @RequestParam(required = false, defaultValue = "10") int size,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getExploreBundle(q, sort, page, size, user));
+        return ResponseEntity.ok(exploreService.getExploreBundle(q, sort, page, size, user));
     }
 
     @GetMapping("/tags")
     public ResponseEntity<List<TagCountDTO>> getHotTopics() {
-        return ResponseEntity.ok(projectService.getHotTopics(5));
+        return ResponseEntity.ok(exploreService.getHotTopics(5));
     }
 
     @GetMapping("/sitemap/projects")
     public ResponseEntity<List<SitemapProjectDTO>> getSitemapProjects() {
-        return ResponseEntity.ok(projectService.getSitemapProjects());
+        return ResponseEntity.ok(publicProjectService.getSitemapProjects());
     }
 
     @GetMapping("/sitemap/users")
     public ResponseEntity<List<SitemapUserDTO>> getSitemapUsers() {
-        return ResponseEntity.ok(projectService.getSitemapUsers());
+        return ResponseEntity.ok(publicProjectService.getSitemapUsers());
     }
 
     @GetMapping("/users/{username}")
     public ResponseEntity<PublicProfileDTO> getPublicProfile(@PathVariable String username,
                                                               @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublicProfile(username, user));
+        return ResponseEntity.ok(profileService.getPublicProfile(username, user));
     }
 
     @GetMapping("/users/{username}/followers")
@@ -84,7 +99,7 @@ public class PublicProjectController {
                                                                          @RequestParam(defaultValue = "0") int page,
                                                                          @RequestParam(defaultValue = "20") int size,
                                                                          @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getFollowers(username, user, page, size));
+        return ResponseEntity.ok(followService.getFollowers(username, user, page, size));
     }
 
     @GetMapping("/users/{username}/following")
@@ -92,7 +107,7 @@ public class PublicProjectController {
                                                                          @RequestParam(defaultValue = "0") int page,
                                                                          @RequestParam(defaultValue = "20") int size,
                                                                          @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getFollowing(username, user, page, size));
+        return ResponseEntity.ok(followService.getFollowing(username, user, page, size));
     }
 
     @GetMapping("/users/{username}/published")
@@ -100,7 +115,7 @@ public class PublicProjectController {
                                                                               @RequestParam(defaultValue = "0") int page,
                                                                               @RequestParam(defaultValue = "10") int size,
                                                                               @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublishedPageForUser(username, user, page, size));
+        return ResponseEntity.ok(profileFeedService.getPublishedPageForUser(username, user, page, size));
     }
 
     @GetMapping("/users/{username}/upvoted")
@@ -108,6 +123,6 @@ public class PublicProjectController {
                                                                             @RequestParam(defaultValue = "0") int page,
                                                                             @RequestParam(defaultValue = "10") int size,
                                                                             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(projectService.getPublicUpvotedPage(username, user, page, size));
+        return ResponseEntity.ok(profileFeedService.getPublicUpvotedPage(username, user, page, size));
     }
 }

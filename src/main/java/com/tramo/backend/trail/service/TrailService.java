@@ -14,7 +14,7 @@ import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
-import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
@@ -30,19 +30,19 @@ public class TrailService {
     private final TrailItemRepository trailItemRepository;
     private final ItemRepository itemRepository;
     private final AssociationRepository itemLinkRepository;
-    private final ProjectService projectService;
+    private final AccessGuard accessGuard;
     private final ProjectIdCodec projectIdCodec;
     private final ImageDeletionQueue imageDeletionQueue;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
                         ItemRepository itemRepository, AssociationRepository itemLinkRepository,
-                        ProjectService projectService, ProjectIdCodec projectIdCodec,
+                        AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
                         ImageDeletionQueue imageDeletionQueue) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
         this.itemLinkRepository = itemLinkRepository;
-        this.projectService = projectService;
+        this.accessGuard = accessGuard;
         this.projectIdCodec = projectIdCodec;
         this.imageDeletionQueue = imageDeletionQueue;
     }
@@ -52,7 +52,7 @@ public class TrailService {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new IllegalArgumentException("Title is required");
         }
-        Project project = projectService.getOwnedProject(projectId, requester);
+        Project project = accessGuard.getOwnedProject(projectId, requester);
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
         trail.setDescription(request.getDescription());
@@ -64,7 +64,7 @@ public class TrailService {
     }
 
     public List<TrailResponseDTO> getAllForProject(Long projectId, User requester) {
-        projectService.getOwnedProject(projectId, requester);
+        accessGuard.getOwnedProject(projectId, requester);
         return trailRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();

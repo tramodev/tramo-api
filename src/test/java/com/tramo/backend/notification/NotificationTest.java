@@ -2,7 +2,7 @@ package com.tramo.backend.notification;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ExploreService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class NotificationTest extends AbstractIntegrationTest {
 
     @Autowired
-    ProjectService projectService;
+    ExploreService exploreService;
 
     
     
@@ -380,7 +380,7 @@ class NotificationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
                 .andExpect(status().isOk());
 
-        projectService.refreshFeaturedProject();
+        exploreService.refreshFeaturedProject();
 
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())

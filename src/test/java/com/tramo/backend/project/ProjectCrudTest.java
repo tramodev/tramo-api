@@ -47,6 +47,17 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void createRejectsPublishedVisibility() throws Exception {
+        User owner = createUser("makerpub");
+        mockMvc.perform(post("/api/project")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Insta","visibility":"published"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void createRejectsInvalidVisibility() throws Exception {
         User owner = createUser("maker2");
         mockMvc.perform(post("/api/project")

@@ -3,7 +3,7 @@ package com.tramo.backend.project;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
-import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ExploreService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FeaturedProjectTest extends AbstractIntegrationTest {
 
     @Autowired
-    ProjectService projectService;
+    ExploreService exploreService;
 
     @Autowired
     ProjectVoteRepository projectVoteRepository;
@@ -58,7 +58,7 @@ class FeaturedProjectTest extends AbstractIntegrationTest {
         vote(createUser("real1"), organic, "203.0.113.1", "device-1");
         vote(createUser("real2"), organic, "203.0.113.2", "device-2");
 
-        projectService.refreshFeaturedProject();
+        exploreService.refreshFeaturedProject();
 
         assertThat(projectRepository.findById(organic.getId()).orElseThrow().isFeatured()).isTrue();
         assertThat(projectRepository.findById(farmed.getId()).orElseThrow().isFeatured()).isFalse();
@@ -77,7 +77,7 @@ class FeaturedProjectTest extends AbstractIntegrationTest {
         vote(createUser("real1"), organic, "203.0.113.1", "device-1");
         vote(createUser("real2"), organic, "203.0.113.2", "device-2");
 
-        projectService.refreshFeaturedProject();
+        exploreService.refreshFeaturedProject();
 
         assertThat(projectRepository.findById(organic.getId()).orElseThrow().isFeatured()).isTrue();
     }
@@ -93,7 +93,7 @@ class FeaturedProjectTest extends AbstractIntegrationTest {
         }
         jdbcTemplate.update("UPDATE project_vote SET voter_ip = NULL, device_id = NULL");
 
-        projectService.refreshFeaturedProject();
+        exploreService.refreshFeaturedProject();
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().isFeatured()).isTrue();
     }

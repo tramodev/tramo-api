@@ -37,6 +37,14 @@ public class PrivacyPolicy {
         return ids.isEmpty() ? Set.of() : Set.copyOf(ids);
     }
 
+    public Set<String> blockRelatedUsernames(User viewer) {
+        if (viewer == null) {
+            return Set.of();
+        }
+        List<String> usernames = blockedUserRepository.findRelatedUsernames(viewer.getId());
+        return usernames.isEmpty() ? Set.of() : Set.copyOf(usernames);
+    }
+
     public boolean isProfileViewable(User target, User requester) {
         if (blockedBy(target, requester)) {
             return false;
