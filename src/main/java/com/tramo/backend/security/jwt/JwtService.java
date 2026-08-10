@@ -57,10 +57,6 @@ public class JwtService {
         return getClaim(token, Claims::getSubject);
     }
 
-    // Reconstructs a lightweight, claims-only principal without hitting the DB. Only
-    // id/username/role/emailVerified/banned are populated — every other field on the
-    // returned User is null/default. Callers that need anything else (profile fields,
-    // password hash, preferences, ...) must re-fetch a fresh row from the repository.
     public User buildPrincipalFromClaims(String token) {
         try {
             Claims claims = getAllClaims(token);
@@ -73,9 +69,6 @@ public class JwtService {
             user.setRequiresBirthDate(Boolean.TRUE.equals(claims.get("requiresBirthDate", Boolean.class)));
             return user;
         } catch (JwtException | IllegalArgumentException | NullPointerException | ClassCastException e) {
-            // Missing/malformed claims - e.g. a token issued by the previous version of
-            // this code during a rolling deploy. Treat as no principal, same as any
-            // other invalid token.
             return null;
         }
     }

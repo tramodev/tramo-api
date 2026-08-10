@@ -13,9 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 
-// AES/GCM with a random IV per value, stored as base64(iv || ciphertext). Spring Boot
-// registers Spring-managed beans as the Hibernate AttributeConverter provider, so this
-// @Component gets its key injected like any other bean.
 @Converter
 @Component
 public class EncryptedStringConverter implements AttributeConverter<String, String> {

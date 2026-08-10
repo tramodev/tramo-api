@@ -48,9 +48,6 @@ class ProjectCrudTest extends AbstractIntegrationTest {
 
     @Test
     void createRejectsInvalidVisibility() throws Exception {
-        // visibility is now a Java enum (ProjectVisibility) - an unrecognized value fails
-        // Jackson deserialization before the request body even becomes a DTO, so this is a
-        // generic malformed-body 400 rather than a field-level @Pattern validation error.
         User owner = createUser("maker2");
         mockMvc.perform(post("/api/project")
                         .header("Authorization", bearer(owner))

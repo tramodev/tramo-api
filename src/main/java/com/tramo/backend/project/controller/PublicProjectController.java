@@ -63,7 +63,6 @@ public class PublicProjectController {
         return ResponseEntity.ok(projectService.getHotTopics(5));
     }
 
-    // For the frontend's sitemap generator only - not used by the app UI.
     @GetMapping("/sitemap/projects")
     public ResponseEntity<List<SitemapProjectDTO>> getSitemapProjects() {
         return ResponseEntity.ok(projectService.getSitemapProjects());

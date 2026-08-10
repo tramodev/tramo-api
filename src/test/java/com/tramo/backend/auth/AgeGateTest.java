@@ -76,12 +76,10 @@ class AgeGateTest extends AbstractIntegrationTest {
         register(registerJson("firsttry", "firsttry@example.com", LocalDate.now().minusYears(5).toString()), ip)
                 .andExpect(status().isForbidden());
 
-        // Same IP retries with a perfectly valid adult birth date - still blocked by cooldown.
         register(registerJson("secondtry", "secondtry@example.com", LocalDate.now().minusYears(30).toString()), ip)
                 .andExpect(status().isForbidden());
         assertThat(userRepository.findByUsernameIgnoreCase("secondtry")).isEmpty();
 
-        // A different IP is unaffected.
         register(registerJson("differentip", "differentip@example.com", LocalDate.now().minusYears(30).toString()), uniqueIp())
                 .andExpect(status().isOk());
     }

@@ -77,9 +77,6 @@ public class User implements UserDetails {
     @Convert(converter = EncryptedStringConverter.class)
     private String patreonRefreshToken;
 
-    // Not persisted - populated from the JWT's requiresBirthDate claim when the
-    // principal is reconstructed from a token (JwtService.buildPrincipalFromClaims),
-    // since that path never hits the DB and birthDate itself is never a claim.
     @Transient
     private Boolean requiresBirthDate;
 

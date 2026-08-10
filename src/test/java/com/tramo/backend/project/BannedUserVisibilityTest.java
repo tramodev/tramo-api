@@ -25,9 +25,6 @@ class BannedUserVisibilityTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk());
 
-        // Captured before the ban: simulates a session already open when the admin bans the
-        // user (the JWT filter trusts the "banned" claim baked into the token at issuance, so
-        // a token minted while still active stays authenticated until it expires/is refreshed).
         String ownerTokenFromBeforeTheBan = bearer(owner);
 
         owner.setBanned(true);

@@ -67,11 +67,6 @@ class JwtFilterTest extends AbstractIntegrationTest {
 
     @Test
     void tokenForDeletedUserStaysValidUntilExpiry() throws Exception {
-        // The filter no longer hits the DB per request (id/role/emailVerified/banned
-        // are embedded as JWT claims at issuance) - an already-issued token keeps
-        // authenticating even after the user row is gone, until it naturally expires.
-        // /api/profile/me itself still re-fetches fresh (see ProjectService.getProfile),
-        // so it 404s rather than returning stale data.
         User user = createUser("goner");
         String token = bearer(user);
         userRepository.delete(user);
@@ -82,11 +77,6 @@ class JwtFilterTest extends AbstractIntegrationTest {
 
     @Test
     void banDoesNotInvalidateAlreadyIssuedTokenButBlocksNewOnes() throws Exception {
-        // Accepted tradeoff of embedding banned/role/emailVerified as JWT claims instead
-        // of re-checking the DB every request: an existing token keeps authenticating
-        // until it expires or the user hits /api/auth/refresh (which does re-check
-        // banned against a fresh row and rejects - see AuthService.refresh). A freshly
-        // issued token for an already-banned user is rejected immediately.
         User user = createUser("banme");
         String token = bearer(user);
 

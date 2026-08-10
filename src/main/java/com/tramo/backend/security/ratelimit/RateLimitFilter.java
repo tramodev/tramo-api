@@ -93,9 +93,6 @@ public class RateLimitFilter implements Filter {
                 }
             }
         } else if (path.startsWith("/api/public/") && "GET".equals(req.getMethod())) {
-            // Anonymous, unauthenticated traffic - the only identity available is the IP.
-            // One shared bucket for the whole prefix (not per-endpoint), same "default tier"
-            // philosophy as the authenticated routes.
             Bucket bucket = rateLimiterService.resolveBucket(ip + ":public", 120, 120, Duration.ofMinutes(1));
             if (!tryConsumeOrReject(bucket, res)) {
                 return;

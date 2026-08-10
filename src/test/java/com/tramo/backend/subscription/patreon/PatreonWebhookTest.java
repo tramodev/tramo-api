@@ -29,9 +29,6 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
         return pledgePayload(patreonUserId, "member-1");
     }
 
-    // Real Patreon deliveries for the same member differ in body between events
-    // (timestamps, charge status, etc.), so the signature (an HMAC of the raw body)
-    // differs too. memberId stands in for that variation in these fixtures.
     private String pledgePayload(String patreonUserId, String memberId) {
         return """
                 {"data":{"id":"%s","type":"member","relationships":{"user":{"data":{"id":"%s","type":"user"}}}}}"""
@@ -108,7 +105,6 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                         .content(deleteBody))
                 .andExpect(status().isOk());
 
-        // Attacker replays the originally captured pledge:create request+signature.
         mockMvc.perform(post("/api/webhooks/patreon")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Patreon-Event", "members:pledge:create")

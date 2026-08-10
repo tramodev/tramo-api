@@ -117,8 +117,6 @@ public class AuthService {
     private static final String REGISTERED_MESSAGE = "Account created. Check your email to verify your account.";
 
     public RegisterResponseDTO register(RegisterRequestDTO registerRequest, String ip) {
-        // Checked before captcha/uniqueness so a rejected-then-retried underage signup
-        // can't just try a different year - see MinAgeValidator/AgeRejectionAttempt below.
         if (ageRejectionAttemptRepository.existsByIpAddressAndRejectedAtAfter(
                 ip, Instant.now().minus(rejectionCooldownHours, ChronoUnit.HOURS))) {
             throw new UnderageRegistrationException(
@@ -131,9 +129,6 @@ public class AuthService {
             throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
         }
 
-        // Unlike username, email isn't a public identifier - responding the same way
-        // whether or not it's taken keeps this endpoint from being an email-enumeration
-        // oracle for a social platform. No account is created, no email is sent.
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
             return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
@@ -166,8 +161,6 @@ public class AuthService {
                 return createVerificationToken(user);
             });
         } catch (DataIntegrityViolationException e) {
-            // Lost a race against a concurrent registration for the same username/email -
-            // the existsBy* checks above passed for both, only one insert can win.
             if (userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
                 throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
             }
@@ -310,8 +303,6 @@ public class AuthService {
         try {
             return userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
-            // Lost a race against a concurrent Google sign-in for the same email -
-            // the other request already inserted the row, use it.
             return userRepository.findByEmail(payload.email()).orElseThrow(() -> e);
         }
     }

@@ -65,9 +65,6 @@ public class R2Client {
         return publicBaseUrl + "/" + key;
     }
 
-    // Confirms `url` is one of OUR R2 objects, of the expected kind, owned by the expected
-    // user - not just "starts with our domain" (which alone wouldn't stop pointing at
-    // someone else's image, or at a different upload kind that skips a kind-specific gate).
     public boolean isOwnedUrl(String url, String expectedKind, Long ownerId) {
         if (url == null || !url.startsWith(publicBaseUrl + "/")) {
             return false;

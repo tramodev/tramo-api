@@ -236,14 +236,6 @@ public class ItemService {
         resyncImageReferences(item, newUrls);
     }
 
-    // Item content is the raw serialized Lexical editor tree - a JSON blob a client controls
-    // directly via this endpoint, independent of the editor UI (which only ever inserts images
-    // through the upload flow). Without this, a direct API call could embed an image node
-    // pointing anywhere (e.g. a tracking pixel), rendered as a raw <img> for anyone who views
-    // the item. Walking the actual JSON tree (rather than a regex over the raw string) avoids
-    // false positives on plain text that happens to contain the substring "src". Content that
-    // isn't valid JSON can't deserialize into a renderable image node in the editor either way,
-    // so it's skipped rather than rejected here.
     private void assertImagesAreFromOurDomain(String content) {
         if (content == null || content.isBlank()) {
             return;

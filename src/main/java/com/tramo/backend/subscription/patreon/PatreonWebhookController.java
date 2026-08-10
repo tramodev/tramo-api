@@ -61,10 +61,6 @@ public class PatreonWebhookController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        // The signature is an HMAC of the raw body, so it's already a stable content
-        // fingerprint — recording it here rejects replays of a captured request (and
-        // no-ops Patreon's own retries of the same delivery) without needing a nonce
-        // or timestamp that Patreon's payload doesn't actually send.
         try {
             webhookSignatureRepository.save(new PatreonWebhookSignature(signature));
         } catch (DataIntegrityViolationException ex) {

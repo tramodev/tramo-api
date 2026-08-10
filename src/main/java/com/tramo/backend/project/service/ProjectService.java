@@ -312,8 +312,6 @@ public class ProjectService {
         return toResponse(project, liveTagNames(project));
     }
 
-    // Thumbnail choice is only ever set here (the publish flow) — it's sticky afterwards,
-    // read live by resolveThumbnail() regardless of later edits or unpublishing.
     @Transactional
     public ProjectResponseDTO setThumbnail(Long id, SetThumbnailRequestDTO request, User requester) {
         Project project = getOwnedProject(id, requester);
@@ -348,8 +346,6 @@ public class ProjectService {
         }
 
         Project saved = projectRepository.save(project);
-        // Only DEDICATED uploads are thumbnail-exclusive — PROJECT_IMAGE URLs point at
-        // images still embedded in item content, so those must never be deleted here.
         if (previousType == ProjectThumbnailType.DEDICATED && previousImageUrl != null
                 && !previousImageUrl.equals(saved.getThumbnailImageUrl())) {
             imageDeletionQueue.queue(previousImageUrl, requester.getId());
@@ -862,10 +858,6 @@ public class ProjectService {
 
     public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        // Trigram indexes need >=3 chars to generate tokens; shorter terms can't use
-        // idx_project_title_trgm/idx_project_description_trgm/idx_tag_name_trgm and
-        // fall back to a full scan on `project`. Treat them like an empty query —
-        // the JPQL below already short-circuits filtering on `:query = ''`.
         if (q.length() < 3) q = "";
         Pageable pageable = PageRequest.of(page, size);
         Long viewerId = requester == null ? null : requester.getId();
@@ -1224,8 +1216,6 @@ public class ProjectService {
                 target.getShowUpvotes() == null || target.getShowUpvotes());
     }
 
-    // ponytail: findAll is fine at current scale, paginate if the published-project
-    // count reaches the thousands.
     public List<SitemapProjectDTO> getSitemapProjects() {
         return projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED).stream()
                 .map(project -> new SitemapProjectDTO(projectIdCodec.encode(project.getId()), project.getModifiedDate()))
@@ -1678,11 +1668,6 @@ public class ProjectService {
         );
     }
 
-    // --- Thumbnail resolution -------------------------------------------------
-    // Order: explicit choice (sticky, set only via publish flow) > first trail with
-    // substantive associations (live graph) > first inserted image > nothing (placeholder).
-    // Batched over a whole project list (feeds, "my projects") so query count doesn't
-    // scale with list size or per-project trail count — see resolveThumbnails.
 
     private record ThumbnailResolution(String imageUrl, GraphPreviewDTO graph) {
         static final ThumbnailResolution EMPTY = new ThumbnailResolution(null, null);
@@ -1760,8 +1745,6 @@ public class ProjectService {
         return result;
     }
 
-    // Pre-fetched trail memberships + outgoing associations for a batch of trails, so
-    // building each trail's graph preview is pure in-memory work (no per-trail queries).
     private record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, List<Association>> outgoingByItemId) {
         static GraphLookup forTrailIds(List<Long> trailIds, TrailItemRepository trailItemRepository,
                                         AssociationRepository itemLinkRepository) {
@@ -1777,8 +1760,6 @@ public class ProjectService {
             return new GraphLookup(membershipsByTrailId, outgoingByItemId);
         }
 
-        // ponytail: only includes this trail's own items (no cross-trail "loose" association
-        // targets) — keeps this cheap for a thumbnail; the full editor graph view isn't bound by this.
         GraphPreviewDTO buildGraphPreview(Trail trail) {
             List<TrailItem> memberships = membershipsByTrailId.getOrDefault(trail.getId(), List.of());
             if (memberships.isEmpty()) return null;

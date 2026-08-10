@@ -93,10 +93,6 @@ class RegistrationTest extends AbstractIntegrationTest {
 
     @Test
     void registerRespondsIdenticallyToSuccessOnDuplicateEmailWithoutCreatingAnAccount() throws Exception {
-        // Deliberately not distinguishable from the real-success response - an
-        // email/username-existence oracle isn't worth the UX convenience on a
-        // social platform. Username stays enumerable (see checkUsernameReportsAvailability):
-        // it's already public, unlike an email address.
         createUser("existing", "shared@example.com", true, false, Role.USER);
 
         register(registerJson("someoneelse", "shared@example.com", "Passw0rd123!"))

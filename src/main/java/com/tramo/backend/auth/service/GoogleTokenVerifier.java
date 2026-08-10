@@ -17,10 +17,6 @@ public class GoogleTokenVerifier {
     private final GoogleIdTokenVerifier verifier;
 
     public GoogleTokenVerifier(@Value("${app.google.client-id}") String clientId) {
-        // Verifies the signature locally against Google's public certs, which the
-        // underlying HTTP transport fetches once and caches in memory per their
-        // Cache-Control headers - no per-login network call to Google, unlike the
-        // old /tokeninfo-based approach.
         this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
                 .setAudience(Collections.singletonList(clientId))
                 .build();
