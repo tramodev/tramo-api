@@ -18,6 +18,7 @@ public class PublicProjectResponseDTO {
     private Date modifiedDate;
     private String thumbnailImageUrl;
     private List<PublicTrailDTO> trails;
+    private List<PublicItemDTO> looseItems;
     private long voteCount;
     private boolean votedByRequester;
     private boolean bookmarkedByRequester;

@@ -17,6 +17,7 @@ import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.repository.AssociationRepository;
+import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.user.entity.User;
@@ -39,6 +40,7 @@ public class ProjectPublishService {
     private final ProjectRepository projectRepository;
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
+    private final ItemRepository itemRepository;
     private final AssociationRepository itemLinkRepository;
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final FollowRepository followRepository;
@@ -49,6 +51,7 @@ public class ProjectPublishService {
 
     public ProjectPublishService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                   TrailRepository trailRepository, TrailItemRepository trailItemRepository,
+                                  ItemRepository itemRepository,
                                   AssociationRepository itemLinkRepository,
                                   ProjectSnapshotRepository projectSnapshotRepository,
                                   FollowRepository followRepository, NotificationService notificationService,
@@ -58,6 +61,7 @@ public class ProjectPublishService {
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
+        this.itemRepository = itemRepository;
         this.itemLinkRepository = itemLinkRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
         this.followRepository = followRepository;
@@ -123,6 +127,20 @@ public class ProjectPublishService {
                 followRepository.findFollowersByFollowedId(actor.getId()), type, project, actor);
     }
 
+    private ProjectSnapshotData.ItemData toItemData(Item item, String annotation, Long associationId,
+                                                     Map<Long, List<Association>> outgoingByItemId,
+                                                     Map<Long, Item> itemById) {
+        List<ProjectSnapshotData.AssociationData> associations = outgoingByItemId
+                .getOrDefault(item.getId(), List.of()).stream()
+                .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && itemById.containsKey(a.getTargetId()))
+                .map(a -> new ProjectSnapshotData.AssociationData(a.getId(), a.getType().name(),
+                        a.getTargetType().name(), a.getTargetId(), itemById.get(a.getTargetId()).getTitle()))
+                .toList();
+        return new ProjectSnapshotData.ItemData(item.getId(), item.getTitle(), item.getType(),
+                item.getTitleAlign(), item.getContent() != null ? item.getContent().getContent() : null,
+                annotation, associationId, associations);
+    }
+
     void createSnapshot(Project project, String trigger) {
         List<Trail> projectTrails = trailRepository.findByProjectId(project.getId());
         List<Long> trailIds = projectTrails.stream().map(Trail::getId).toList();
@@ -131,9 +149,14 @@ public class ProjectPublishService {
                 : trailItemRepository.findByTrailIdInWithItemContentAndAssociation(trailIds).stream()
                         .collect(Collectors.groupingBy(ti -> ti.getTrail().getId(), LinkedHashMap::new, Collectors.toList()));
 
-        Map<Long, Item> itemById = membershipsByTrailId.values().stream()
+        Set<Long> trailItemIds = membershipsByTrailId.values().stream()
                 .flatMap(List::stream)
-                .collect(Collectors.toMap(ti -> ti.getItem().getId(), TrailItem::getItem, (a, b) -> a));
+                .map(ti -> ti.getItem().getId())
+                .collect(Collectors.toSet());
+
+        List<Item> projectItems = itemRepository.findByProjectId(project.getId());
+        Map<Long, Item> itemById = projectItems.stream()
+                .collect(Collectors.toMap(Item::getId, item -> item, (a, b) -> a));
         Map<Long, List<Association>> outgoingByItemId = itemById.isEmpty() ? Map.of()
                 : itemLinkRepository.findBySourceItemIdIn(itemById.keySet()).stream()
                         .collect(Collectors.groupingBy(a -> a.getSourceItem().getId()));
@@ -144,25 +167,23 @@ public class ProjectPublishService {
             for (TrailItem membership : membershipsByTrailId.getOrDefault(trail.getId(), List.of())) {
                 Item item = membership.getItem();
                 Association assoc = membership.getAssociation();
-                List<ProjectSnapshotData.AssociationData> associations = outgoingByItemId
-                        .getOrDefault(item.getId(), List.of()).stream()
-                        .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && itemById.containsKey(a.getTargetId()))
-                        .map(a -> new ProjectSnapshotData.AssociationData(a.getId(), a.getType().name(),
-                                a.getTargetType().name(), a.getTargetId(), itemById.get(a.getTargetId()).getTitle()))
-                        .toList();
-                items.add(new ProjectSnapshotData.ItemData(item.getId(), item.getTitle(), item.getType(),
-                        item.getTitleAlign(), item.getContent() != null ? item.getContent().getContent() : null,
-                        membership.getAnnotation(), assoc != null ? assoc.getId() : null, associations));
+                items.add(toItemData(item, membership.getAnnotation(),
+                        assoc != null ? assoc.getId() : null, outgoingByItemId, itemById));
             }
             trails.add(new ProjectSnapshotData.TrailData(trail.getId(), trail.getTitle(), trail.getDescription(),
                     trail.getVisibility(), trail.getVersion(),
                     trail.getForkedFrom() != null ? trail.getForkedFrom().getId() : null, items));
         }
 
+        List<ProjectSnapshotData.ItemData> looseItems = projectItems.stream()
+                .filter(item -> !trailItemIds.contains(item.getId()))
+                .map(item -> toItemData(item, null, null, outgoingByItemId, itemById))
+                .toList();
+
         ProjectSnapshotData data = new ProjectSnapshotData(ProjectSnapshotData.CURRENT_SCHEMA_VERSION,
                 project.getId(), project.getTitle(), project.getDescription(),
                 project.getVisibility().toJson(), project.getThumbnailImageUrl(),
-                String.join(",", responseMapper.liveTagNames(project)), trails);
+                String.join(",", responseMapper.liveTagNames(project)), trails, looseItems);
 
         ProjectSnapshot snapshot = new ProjectSnapshot();
         snapshot.setProject(project);

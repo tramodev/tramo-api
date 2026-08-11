@@ -25,6 +25,7 @@ import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.repository.AssociationRepository;
+import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.user.entity.User;
@@ -39,6 +40,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -51,6 +53,7 @@ public class PublicProjectService {
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
+    private final ItemRepository itemRepository;
     private final AssociationRepository itemLinkRepository;
     private final CommentRepository commentRepository;
     private final UserBadgeRepository userBadgeRepository;
@@ -65,7 +68,8 @@ public class PublicProjectService {
                                  ProjectViewRepository projectViewRepository, ProjectVoteRepository projectVoteRepository,
                                  ProjectBookmarkRepository projectBookmarkRepository,
                                  ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
-                                 TrailItemRepository trailItemRepository, AssociationRepository itemLinkRepository,
+                                 TrailItemRepository trailItemRepository, ItemRepository itemRepository,
+                                 AssociationRepository itemLinkRepository,
                                  CommentRepository commentRepository, UserBadgeRepository userBadgeRepository,
                                  UserRepository userRepository, BadgeService badgeService,
                                  ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
@@ -78,6 +82,7 @@ public class PublicProjectService {
         this.projectSnapshotRepository = projectSnapshotRepository;
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
+        this.itemRepository = itemRepository;
         this.itemLinkRepository = itemLinkRepository;
         this.commentRepository = commentRepository;
         this.userBadgeRepository = userBadgeRepository;
@@ -126,6 +131,7 @@ public class PublicProjectService {
         String description;
         Date displayDate;
         List<PublicTrailDTO> trails;
+        List<PublicItemDTO> looseItems;
         if (snapshotOpt.isPresent()) {
             ProjectSnapshot snapshot = snapshotOpt.get();
             ProjectSnapshotData data = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
@@ -139,6 +145,7 @@ public class PublicProjectService {
                             t.items().stream().map(this::toPublicItem).toList()
                     ))
                     .toList();
+            looseItems = data.looseItems().stream().map(this::toPublicItem).toList();
         } else {
             List<Trail> projectTrails = trailRepository.findByProjectId(id);
             List<TrailItem> allTrailItems = projectTrails.isEmpty()
@@ -147,8 +154,12 @@ public class PublicProjectService {
             Map<Long, List<TrailItem>> itemsByTrailId = allTrailItems.stream()
                     .collect(Collectors.groupingBy(trailItem -> trailItem.getTrail().getId()));
 
-            Map<Long, Item> projectItemById = allTrailItems.stream()
-                    .collect(Collectors.toMap(ti -> ti.getItem().getId(), TrailItem::getItem, (a, b) -> a));
+            Set<Long> trailItemIds = allTrailItems.stream()
+                    .map(ti -> ti.getItem().getId())
+                    .collect(Collectors.toSet());
+            List<Item> projectItems = itemRepository.findByProjectId(id);
+            Map<Long, Item> projectItemById = projectItems.stream()
+                    .collect(Collectors.toMap(Item::getId, item -> item, (a, b) -> a));
             Map<Long, List<Association>> outgoingByItemId = projectItemById.isEmpty()
                     ? Map.of()
                     : itemLinkRepository.findBySourceItemIdIn(projectItemById.keySet()).stream()
@@ -169,6 +180,10 @@ public class PublicProjectService {
                                     .toList()
                     ))
                     .toList();
+            looseItems = projectItems.stream()
+                    .filter(item -> !trailItemIds.contains(item.getId()))
+                    .map(item -> toPublicItem(item, null, null, projectItemById, outgoingByItemId))
+                    .toList();
         }
 
         Project publicSource = project.getForkedFrom();
@@ -180,6 +195,7 @@ public class PublicProjectService {
                 displayDate,
                 thumbnailResolver.resolveThumbnail(project).imageUrl(),
                 trails,
+                looseItems,
                 projectVoteRepository.countByProjectId(id),
                 requester != null && projectVoteRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
                 requester != null && projectBookmarkRepository.findByProjectIdAndUserId(id, requester.getId()).isPresent(),
@@ -209,7 +225,14 @@ public class PublicProjectService {
 
     private PublicItemDTO toPublicItem(TrailItem trailItem, Map<Long, Item> projectItemById,
                                         Map<Long, List<Association>> outgoingByItemId) {
-        Item item = trailItem.getItem();
+        return toPublicItem(trailItem.getItem(), trailItem.getAnnotation(),
+                trailItem.getAssociation() != null ? String.valueOf(trailItem.getAssociation().getId()) : null,
+                projectItemById, outgoingByItemId);
+    }
+
+    private PublicItemDTO toPublicItem(Item item, String annotation, String associationId,
+                                        Map<Long, Item> projectItemById,
+                                        Map<Long, List<Association>> outgoingByItemId) {
         String content = item.getContent() != null ? item.getContent().getContent() : "";
         List<AssociationDTO> associations = outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
                 .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && projectItemById.containsKey(a.getTargetId()))
@@ -222,9 +245,7 @@ public class PublicProjectService {
                 ))
                 .toList();
         return new PublicItemDTO(item.getId(), item.getTitle(), item.getType(), content, item.getTitleAlign(),
-                trailItem.getAnnotation(),
-                trailItem.getAssociation() != null ? String.valueOf(trailItem.getAssociation().getId()) : null,
-                associations);
+                annotation, associationId, associations);
     }
 
     public List<SitemapProjectDTO> getSitemapProjects() {

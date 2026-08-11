@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 @Service
 public class ProjectForkService {
@@ -134,7 +135,7 @@ public class ProjectForkService {
 
             for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
                 Item itemCopy = itemCopies.computeIfAbsent(membership.getItem().getId(),
-                        ignored -> copyItem(membership.getItem()));
+                        ignored -> copyItem(membership.getItem(), fork, false));
 
                 TrailItem membershipCopy = new TrailItem();
                 membershipCopy.setTrail(trailCopy);
@@ -183,8 +184,10 @@ public class ProjectForkService {
         }
     }
 
-    private Item copyItem(Item source) {
+    private Item copyItem(Item source, Project fork, boolean unfiled) {
         Item copy = new Item();
+        copy.setProject(fork);
+        copy.setUnfiled(unfiled);
         copy.setTitle(source.getTitle());
         copy.setType(source.getType());
         copy.setCreatedDate(new Date());
@@ -218,7 +221,8 @@ public class ProjectForkService {
 
             int orderIndex = 0;
             for (ProjectSnapshotData.ItemData itemData : trailData.items()) {
-                Item itemCopy = itemCopies.computeIfAbsent(itemData.id(), ignored -> copyItemFromData(itemData));
+                Item itemCopy = itemCopies.computeIfAbsent(itemData.id(),
+                        ignored -> copyItemFromData(itemData, fork, false));
 
                 TrailItem membershipCopy = new TrailItem();
                 membershipCopy.setTrail(trailCopy);
@@ -231,23 +235,29 @@ public class ProjectForkService {
             }
         }
 
-        Map<Long, Association> assocCopies = new HashMap<>();
-        for (ProjectSnapshotData.TrailData trailData : data.trails()) {
-            for (ProjectSnapshotData.ItemData itemData : trailData.items()) {
-                Item sourceCopy = itemCopies.get(itemData.id());
-                for (ProjectSnapshotData.AssociationData assocData : itemData.associations()) {
-                    if (assocCopies.containsKey(assocData.id())) continue;
-                    Item targetCopy = itemCopies.get(assocData.targetId());
-                    if (targetCopy == null) continue;
+        for (ProjectSnapshotData.ItemData itemData : data.looseItems()) {
+            itemCopies.computeIfAbsent(itemData.id(), ignored -> copyItemFromData(itemData, fork, true));
+        }
 
-                    Association copy = new Association();
-                    copy.setSourceItem(sourceCopy);
-                    copy.setType(AssociationType.valueOf(assocData.type()));
-                    copy.setTargetType(AssociationTargetType.ITEM);
-                    copy.setTargetId(targetCopy.getId());
-                    copy.setCreatedDate(new Date());
-                    assocCopies.put(assocData.id(), itemLinkRepository.save(copy));
-                }
+        List<ProjectSnapshotData.ItemData> allItemData = Stream.concat(
+                data.trails().stream().flatMap(trailData -> trailData.items().stream()),
+                data.looseItems().stream()).toList();
+
+        Map<Long, Association> assocCopies = new HashMap<>();
+        for (ProjectSnapshotData.ItemData itemData : allItemData) {
+            Item sourceCopy = itemCopies.get(itemData.id());
+            for (ProjectSnapshotData.AssociationData assocData : itemData.associations()) {
+                if (assocCopies.containsKey(assocData.id())) continue;
+                Item targetCopy = itemCopies.get(assocData.targetId());
+                if (targetCopy == null) continue;
+
+                Association copy = new Association();
+                copy.setSourceItem(sourceCopy);
+                copy.setType(AssociationType.valueOf(assocData.type()));
+                copy.setTargetType(AssociationTargetType.ITEM);
+                copy.setTargetId(targetCopy.getId());
+                copy.setCreatedDate(new Date());
+                assocCopies.put(assocData.id(), itemLinkRepository.save(copy));
             }
         }
 
@@ -262,8 +272,10 @@ public class ProjectForkService {
         }
     }
 
-    private Item copyItemFromData(ProjectSnapshotData.ItemData itemData) {
+    private Item copyItemFromData(ProjectSnapshotData.ItemData itemData, Project fork, boolean unfiled) {
         Item copy = new Item();
+        copy.setProject(fork);
+        copy.setUnfiled(unfiled);
         copy.setTitle(itemData.title());
         copy.setType(itemData.type());
         copy.setTitleAlign(itemData.titleAlign());

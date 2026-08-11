@@ -11,9 +11,14 @@ public record ProjectSnapshotData(
         String visibility,
         String thumbnail,
         String tags,
-        List<TrailData> trails
+        List<TrailData> trails,
+        List<ItemData> looseItems
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
+
+    public List<ItemData> looseItems() {
+        return looseItems == null ? List.of() : looseItems;
+    }
 
     public record TrailData(Long id, String title, String description, String visibility, int version,
                              Long forkedFromId, List<ItemData> items) {

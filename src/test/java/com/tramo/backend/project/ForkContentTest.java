@@ -218,6 +218,35 @@ class ForkContentTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void forkFromSnapshotCopiesItemsThatBelongToNoTrail() throws Exception {
+        User owner = createUser("fsowner6");
+        User forker = createUser("fsforker6");
+        Project source = createProject(owner, "Loose", "private", "A description", null);
+        long trailId = createTrail(owner, source, "T");
+        long filedId = createItem(owner, trailId, "Filed");
+        long looseId = postForId(owner, "/api/project/" + pid(source) + "/item", """
+                {"title":"Loose one"}""");
+        setContent(owner, looseId, "loose body");
+        tie(owner, filedId, "RELATED", "ITEM", looseId).andExpect(status().isNoContent());
+        publish(owner, source);
+
+        Project fork = forkOf(forker, source);
+
+        List<Item> all = itemRepository.findByProjectId(fork.getId());
+        assertThat(all).extracting(Item::getTitle).containsExactlyInAnyOrder("Filed", "Loose one");
+
+        Item looseCopy = all.stream().filter(i -> i.getTitle().equals("Loose one")).findFirst().orElseThrow();
+        assertThat(looseCopy.getContent().getContent()).isEqualTo("loose body");
+        assertThat(looseCopy.getProject().getId()).isEqualTo(fork.getId());
+        assertThat(itemsOf(fork)).extracting(Item::getTitle).containsExactly("Filed");
+
+        Item filedCopy = all.stream().filter(i -> i.getTitle().equals("Filed")).findFirst().orElseThrow();
+        assertThat(associationRepository.findBySourceItemIdIn(List.of(filedCopy.getId())))
+                .singleElement()
+                .satisfies(a -> assertThat(a.getTargetId()).isEqualTo(looseCopy.getId()));
+    }
+
+    @Test
     void forkedProjectIsPrivateAndOwnedByTheForker() throws Exception {
         User owner = createUser("fsowner4");
         User forker = createUser("fsforker4");
