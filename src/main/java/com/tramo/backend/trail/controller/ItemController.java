@@ -48,6 +48,13 @@ public class ItemController {
         return ResponseEntity.ok(itemService.getItemsForProject(projectIdCodec.decode(projectId), user));
     }
 
+    @GetMapping("/project/{projectId}/item/search")
+    public ResponseEntity<List<Long>> searchItems(@PathVariable String projectId,
+                                                  @RequestParam(required = false) String q,
+                                                  @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.searchItemIds(projectIdCodec.decode(projectId), q, user));
+    }
+
     @GetMapping("/trail/{trailId}/item")
     public ResponseEntity<List<TrailItemDTO>> getAllForTrail(@PathVariable Long trailId, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.getAllForTrail(trailId, user));

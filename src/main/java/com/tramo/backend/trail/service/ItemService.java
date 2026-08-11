@@ -47,6 +47,7 @@ public class ItemService {
     private static final long IMAGE_DELETION_GRACE_MS = 24 * 60 * 60 * 1000L;
     private static final long IMAGE_DELETION_PURGE_INTERVAL_MS = 60 * 60 * 1000L;
     private static final long LAST_EDITED_THROTTLE_MS = 60 * 1000L;
+    private static final int MIN_SEARCH_LENGTH = 3;
 
     private final ItemRepository itemRepository;
     private final TrailItemRepository trailItemRepository;
@@ -138,6 +139,51 @@ public class ItemService {
         return itemRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public List<Long> searchItemIds(Long projectId, String q, User requester) {
+        getOwnedProject(projectId, requester);
+        String needle = q == null ? "" : q.trim().toLowerCase();
+        if (needle.length() < MIN_SEARCH_LENGTH) {
+            return List.of();
+        }
+        return itemRepository.findByProjectId(projectId).stream()
+                .filter(item -> plainTextForSearch(item.getContent()).contains(needle))
+                .map(Item::getId)
+                .toList();
+    }
+
+    private String plainTextForSearch(ItemContent content) {
+        if (content == null || content.getContent() == null || content.getContent().isBlank()) {
+            return "";
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(content.getContent());
+        } catch (Exception e) {
+            return "";
+        }
+        StringBuilder text = new StringBuilder();
+        appendPlainText(root.has("root") ? root.get("root") : root, text);
+        return text.toString().toLowerCase();
+    }
+
+    private void appendPlainText(JsonNode node, StringBuilder out) {
+        String text = node.path("text").asText(null);
+        if (text != null) {
+            out.append(text);
+        } else {
+            String equation = node.path("equation").asText(null);
+            if (equation != null) {
+                out.append(equation);
+            }
+        }
+        JsonNode children = node.path("children");
+        if (children.isArray()) {
+            for (JsonNode child : children) {
+                appendPlainText(child, out);
+            }
+        }
     }
 
     public List<TrailItemDTO> getAllForTrail(Long trailId, User requester) {
