@@ -56,6 +56,28 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void getContentsForTrailQueryCountDoesNotScaleWithItemCount() throws Exception {
+        User owner = createUser("eqcowner6");
+        Project project = createProject(owner, "TrailContents", "private");
+        long trailId = createTrail(owner, project, "T");
+        createItem(owner, trailId, "Item 0");
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/trail/" + trailId + "/content")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        for (int i = 1; i < 6; i++) {
+            createItem(owner, trailId, "Item " + i);
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/trail/" + trailId + "/content")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void getItemsForProjectQueryCountDoesNotScaleWithItemCount() throws Exception {
         User owner = createUser("eqcowner2");
         Project project = createProject(owner, "ProjectItems", "private");
