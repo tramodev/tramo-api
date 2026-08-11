@@ -5,6 +5,7 @@ import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
+import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.dto.TrailItemDTO;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
@@ -190,6 +191,17 @@ public class ItemService {
         trailService.getOwnedTrail(trailId, requester);
         return trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
                 .map(this::toStepResponse)
+                .toList();
+    }
+
+    public List<TrailItemContentDTO> getContentsForTrail(Long trailId, User requester) {
+        trailService.getOwnedTrail(trailId, requester);
+        return trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
+                .map(step -> {
+                    Item item = step.getItem();
+                    ItemContent content = item.getContent();
+                    return new TrailItemContentDTO(item.getId(), content != null ? content.getContent() : "");
+                })
                 .toList();
     }
 
