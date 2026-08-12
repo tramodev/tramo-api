@@ -194,6 +194,21 @@ public class ItemService {
                 .toList();
     }
 
+    @Transactional
+    public void reorderTrailItems(Long trailId, List<Long> itemIds, User requester) {
+        trailService.getOwnedTrail(trailId, requester);
+        List<TrailItem> steps = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId);
+        Map<Long, TrailItem> byItemId = steps.stream()
+                .collect(Collectors.toMap(step -> step.getItem().getId(), step -> step));
+        if (itemIds.size() != byItemId.size() || !byItemId.keySet().containsAll(itemIds)) {
+            throw new IllegalArgumentException("The new order must list every item in the trail exactly once");
+        }
+        for (int index = 0; index < itemIds.size(); index++) {
+            byItemId.get(itemIds.get(index)).setOrderIndex(index);
+        }
+        trailItemRepository.saveAll(steps);
+    }
+
     public List<TrailItemContentDTO> getContentsForTrail(Long trailId, User requester) {
         trailService.getOwnedTrail(trailId, requester);
         return trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()

@@ -9,6 +9,7 @@ import com.tramo.backend.trail.dto.ItemResponseDTO;
 import com.tramo.backend.trail.dto.StepUpdateRequestDTO;
 import com.tramo.backend.trail.dto.TieRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
+import com.tramo.backend.trail.dto.TrailOrderRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemDTO;
 import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.service.ItemService;
@@ -54,6 +55,14 @@ public class ItemController {
                                                   @RequestParam(required = false) String q,
                                                   @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.searchItemIds(projectIdCodec.decode(projectId), q, user));
+    }
+
+    @PutMapping("/trail/{trailId}/item/order")
+    public ResponseEntity<Void> reorderTrailItems(@PathVariable Long trailId,
+                                                  @Valid @RequestBody TrailOrderRequestDTO request,
+                                                  @AuthenticationPrincipal User user) {
+        itemService.reorderTrailItems(trailId, request.itemIds(), user);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/trail/{trailId}/content")
