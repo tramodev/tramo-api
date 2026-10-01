@@ -34,4 +34,6 @@ public class RefreshToken {
 
     private Instant revokedAt;
 
+    private String replacementToken;
+
 }

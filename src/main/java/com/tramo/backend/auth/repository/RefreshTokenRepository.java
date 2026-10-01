@@ -2,6 +2,8 @@ package com.tramo.backend.auth.repository;
 
 import com.tramo.backend.auth.entity.RefreshToken;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -15,6 +17,10 @@ import org.springframework.data.repository.query.Param;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
     Optional<RefreshToken> findByToken(String token);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from RefreshToken t where t.token = :token")
+    Optional<RefreshToken> findByTokenForUpdate(@Param("token") String token);
 
     @Modifying(flushAutomatically = true)
     @Query("delete from RefreshToken t where t.token = :token")

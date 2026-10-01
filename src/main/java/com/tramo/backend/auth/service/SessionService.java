@@ -19,11 +19,13 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Service
 public class SessionService {
+    private static final Duration REFRESH_RETRY_WINDOW = Duration.ofSeconds(5);
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
     private final UserRepository userRepository;
@@ -78,15 +80,11 @@ public class SessionService {
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public AuthResponse refresh(RefreshTokenRequestDTO request) {
         RefreshToken refreshToken = refreshTokenRepository
-                .findByToken(request.getRefreshToken())
+                .findByTokenForUpdate(request.getRefreshToken())
                 .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
 
-        if (refreshToken.isRevoked()) {
-            refreshTokenRepository.deleteByUserId(refreshToken.getUser().getId());
-            throw new InvalidTokenException("Invalid refresh token");
-        }
-
-        if (refreshToken.getExpiresAt().isBefore(Instant.now())) {
+        Instant now = Instant.now();
+        if (!refreshToken.getExpiresAt().isAfter(now)) {
             throw new InvalidTokenException("Refresh token expired");
         }
 
@@ -95,11 +93,26 @@ public class SessionService {
             throw new InvalidTokenException("Invalid refresh token");
         }
 
-        refreshToken.setRevoked(true);
-        refreshToken.setRevokedAt(Instant.now());
-        refreshTokenRepository.save(refreshToken);
+        if (refreshToken.isRevoked()) {
+            if (refreshToken.getRevokedAt() != null
+                    && now.isBefore(refreshToken.getRevokedAt().plus(REFRESH_RETRY_WINDOW))) {
+                RefreshToken replacement = refreshTokenRepository
+                        .findByTokenForUpdate(refreshToken.getReplacementToken())
+                        .filter(token -> !token.isRevoked() && token.getExpiresAt().isAfter(Instant.now()))
+                        .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
+                return new AuthResponse(jwtService.getToken(user), replacement.getToken(),
+                        user.getUsername(), user.getBirthDate() == null);
+            }
+            refreshTokenRepository.deleteByUserId(user.getId());
+            throw new InvalidTokenException("Invalid refresh token");
+        }
 
-        return issueSession(user);
+        AuthResponse response = issueSession(user);
+        refreshToken.setRevoked(true);
+        refreshToken.setRevokedAt(now);
+        refreshToken.setReplacementToken(response.getRefreshToken());
+        refreshTokenRepository.save(refreshToken);
+        return response;
     }
 
     @Transactional
