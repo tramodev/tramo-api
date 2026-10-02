@@ -1,5 +1,6 @@
 package com.tramo.backend.trail.controller;
 
+import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentRequestDTO;
@@ -48,6 +49,12 @@ public class ItemController {
     @GetMapping("/project/{projectId}/item")
     public ResponseEntity<List<ItemResponseDTO>> getItemsForProject(@PathVariable String projectId, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.getItemsForProject(projectIdCodec.decode(projectId), user));
+    }
+
+    @GetMapping("/project/{projectId}/text-stats")
+    public ResponseEntity<ProjectTextStatsDTO> getProjectTextStats(
+            @PathVariable String projectId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getProjectTextStats(projectIdCodec.decode(projectId), user));
     }
 
     @GetMapping("/project/{projectId}/item/search")

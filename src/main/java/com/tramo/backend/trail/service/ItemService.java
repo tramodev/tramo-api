@@ -1,5 +1,7 @@
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.trail.dto.ItemTextStatsDTO;
+import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
@@ -152,6 +154,14 @@ public class ItemService {
                 .filter(item -> plainTextForSearch(item.getContent()).contains(needle))
                 .map(Item::getId)
                 .toList();
+    }
+
+    public ProjectTextStatsDTO getProjectTextStats(Long projectId, User requester) {
+        getOwnedProject(projectId, requester);
+        var items = itemRepository.findTextStatsByProjectId(projectId);
+        return new ProjectTextStatsDTO(
+                items.stream().mapToLong(ItemTextStatsDTO::words).sum(),
+                items.stream().mapToLong(ItemTextStatsDTO::characters).sum(), items);
     }
 
     private String plainTextForSearch(ItemContent content) {
