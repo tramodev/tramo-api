@@ -107,8 +107,8 @@ class ProjectStartTest extends AbstractIntegrationTest {
         Long projectId = projectIdCodec.decode(result.projectId());
         var projectTrails = trailService.getAllForProject(projectId, owner);
         assertThat(projectTrails).hasSize(2);
-        Long basics = projectTrails.stream().filter(t -> t.getTitle().equals("API basics")).findFirst().orElseThrow().getId();
-        Long tokens = projectTrails.stream().filter(t -> t.getTitle().equals("Token authentication")).findFirst().orElseThrow().getId();
+        Long basics = projectTrails.stream().filter(t -> t.getTitle().equals("Bush’s vision")).findFirst().orElseThrow().getId();
+        Long tokens = projectTrails.stream().filter(t -> t.getTitle().equals("Thinking in trails")).findFirst().orElseThrow().getId();
         var basicNotes = itemService.getAllForTrail(basics, owner);
         var tokenNotes = itemService.getAllForTrail(tokens, owner);
         assertThat(itemService.getItemsForProject(projectId, owner)).hasSize(5);
@@ -116,7 +116,7 @@ class ProjectStartTest extends AbstractIntegrationTest {
         assertThat(tokenNotes.get(0).id()).isEqualTo(shared);
         assertThat(basicNotes.get(1).annotation()).isNotBlank();
         assertThat(tokenNotes.get(1).annotation()).isNotBlank();
-        String edited = "{\"root\":{\"children\":[{\"text\":\"Edited authentication\"}]}}";
+        String edited = "{\"root\":{\"children\":[{\"text\":\"Edited Memex\"}]}}";
         itemService.updateContent(shared, edited, owner);
         for (Long trailId : new Long[]{basics, tokens}) {
             assertThat(itemService.getContentsForTrail(trailId, owner).stream().filter(note -> note.id().equals(shared)).findFirst().orElseThrow().content()).isEqualTo(edited);
