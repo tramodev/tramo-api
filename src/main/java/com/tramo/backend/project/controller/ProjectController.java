@@ -4,6 +4,9 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.moderation.dto.ReportRequestDTO;
 import com.tramo.backend.moderation.service.ModerationService;
 import com.tramo.backend.project.dto.BookmarkResponseDTO;
+import com.tramo.backend.project.dto.StartProjectRequest;
+import com.tramo.backend.project.dto.StartedProjectDTO;
+import com.tramo.backend.project.service.ProjectStartService;
 import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
@@ -28,6 +31,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/project")
 public class ProjectController {
+    private final ProjectStartService startService;
     private final ProjectService projectService;
     private final ProjectPublishService publishService;
     private final ProjectForkService forkService;
@@ -36,7 +40,8 @@ public class ProjectController {
     private final ProjectIdCodec projectIdCodec;
     private final ClientIp clientIp;
 
-    public ProjectController(ProjectService projectService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
+    public ProjectController(ProjectStartService startService, ProjectService projectService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
+        this.startService = startService;
         this.projectService = projectService;
         this.publishService = publishService;
         this.forkService = forkService;
@@ -50,6 +55,19 @@ public class ProjectController {
     public ResponseEntity<ProjectResponseDTO> create(@Valid @RequestBody ProjectRequestDTO request,
                                                        @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.create(request, user));
+    }
+
+    @PostMapping("/start")
+    public ResponseEntity<StartedProjectDTO> start(
+            @Valid @RequestBody StartProjectRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(startService.create(request, user));
+    }
+
+    @PostMapping("/{id}/start")
+    public ResponseEntity<StartedProjectDTO> startExisting(
+            @PathVariable String id, @RequestParam(required = false) Long trailId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(startService.start(projectIdCodec.decode(id), trailId, user));
     }
 
     @GetMapping
