@@ -63,11 +63,11 @@ public class ProjectStartService {
         var project = new Project();
         project.setOwner(user);
         project.setStartRequestId(request.requestId());
-        project.setTitle(request.example() ? "API foundations" : "Untitled project");
+        project.setTitle(request.example() ? "Memex and Vannevar Bush" : "Untitled project");
         project.setVisibility(ProjectVisibility.PRIVATE);
         project.setCreationDate(new Date());
         project.setModifiedDate(new Date());
-        if (request.example()) project.setDescription("A short introduction to HTTP and token authentication. Follow either trail and see how one note can support both explanations.");
+        if (request.example()) project.setDescription("Explore Bush’s vision of a personal knowledge library and the associative trails that connect its ideas. Two trails share the same Memex note.");
         projects.save(project);
         return request.example() ? example(project, user) : start(project.getId(), null, user);
     }
@@ -89,19 +89,19 @@ public class ProjectStartService {
     }
 
     private StartedProjectDTO example(Project project, User user) {
-        Long basics = trail(project.getId(), "API basics", "Start with HTTP, then follow a request and identify the caller.", user);
-        Long tokens = trail(project.getId(), "Token authentication", "Follow authentication from credentials to tokens and JWTs.", user);
-        Long http = note(basics, "HTTP", "HTTP is a protocol for exchanging messages between a client and a server. A web API uses it to expose data or actions through URLs.\nA method describes the action: GET reads a resource; POST commonly submits data. A status code describes the result, such as 200 for success or 404 when a resource was not found.", user);
-        Long messages = note(basics, "Requests and responses", "A request includes a method, a URL, headers and sometimes a body. For example, GET /books asks the server for a collection of books.\nThe server returns a response with a status code, headers and an optional body. Many APIs use JSON for that body. Read the status before deciding how to handle the returned data.", user);
-        Long auth = note(basics, "Authentication", "Authentication establishes who is making a request. Authorization decides what that caller may do. These are separate checks.\nAn API may verify credentials during sign-in and issue a token for later requests. Protected endpoints still need to check that the caller has permission to access each resource.", user);
-        itemService.attachToTrail(tokens, auth, user);
-        Long token = note(tokens, "Tokens", "A token represents a credential that a client presents to an API. A bearer token is normally sent in the Authorization header over HTTPS. Anyone who obtains it may be able to use it.\nTokens can expire and may be opaque strings or structured values. Keep them out of public links and logs. The server must validate them before trusting a request.", user);
-        Long jwt = note(tokens, "JWT", "A JSON Web Token contains a header, a payload of claims and a signature. A signed JWT is not encrypted: its payload can normally be read by anyone who has it.\nAn API must verify the signature and relevant claims, including expiration and the expected issuer and audience. JWT is one possible token format, not a replacement for authorization checks.", user);
-        itemService.tie(messages, AssociationType.REQUIRES, AssociationTargetType.ITEM, http, user);
-        itemService.tie(jwt, AssociationType.REQUIRES, AssociationTargetType.ITEM, token, user);
-        itemService.updateStep(basics, messages, "HTTP defines the exchange. Next, look at what travels in each direction.", null, user);
-        itemService.updateStep(tokens, token, "Once a caller has authenticated, a token can carry their credential into later requests.", null, user);
-        return result(project, basics, http);
+        Long vision = trail(project.getId(), "Bush’s vision", "Meet Vannevar Bush, read the idea behind his essay, and explore the Memex.", user);
+        Long connections = trail(project.getId(), "Thinking in trails", "Explore how the Memex connects records into reusable paths of thought.", user);
+        Long bush = note(vision, "Vannevar Bush", "Vannevar Bush was an American engineer and science administrator. In 1945, he published As We May Think, an essay about how people might use technology to work with a growing body of knowledge.\nRather than only storing more information, his proposal focused on helping a reader find, connect and revisit ideas.", user);
+        Long essay = note(vision, "As We May Think", "Published in The Atlantic in July 1945, As We May Think asks how tools could help people consult and connect the records they collect. Bush contrasts rigid indexing with the way thought moves by association.\nHis proposed answer includes the Memex: a personal library where a reader could build lasting connections between records. Read the original: https://www.w3.org/History/1945/vbush/", user);
+        Long memex = note(vision, "Memex", "The Memex was a proposed device for storing and consulting a person’s books, records and communications. Bush imagined a desk with screens and microfilm, rather than a modern computer or the web.\nIts distinctive idea was associative access: a reader could connect records and follow those connections later. The same record could belong to several trails. The Memex described in the essay was a proposal, not a finished product.", user);
+        itemService.attachToTrail(connections, memex, user);
+        Long trails = note(connections, "Associative trails", "An associative trail is a named path through connected records. In Bush’s proposal, a reader could join records, add comments and return to the path without reconstructing every connection.\nA record could appear in more than one trail. That lets one source support different explanations while each trail keeps its own context and order.", user);
+        Long sharing = note(connections, "Sharing a trail", "Bush imagined readers copying trails for other people to explore and extend in their own Memex. Sharing meant passing along a path through material, not just an isolated document.\nTry that idea here: edit the shared Memex note and open Bush’s vision. Both trails use the same note, while their transition explanations remain separate.", user);
+        itemService.tie(essay, AssociationType.RELATED, AssociationTargetType.ITEM, bush, user);
+        itemService.tie(trails, AssociationType.ELABORATES, AssociationTargetType.ITEM, memex, user);
+        itemService.updateStep(vision, essay, "Bush’s essay gives this vision a concrete form. Next, explore the proposal in his own terms.", null, user);
+        itemService.updateStep(connections, trails, "The Memex stores records; associative trails explain how a reader connects and revisits them.", null, user);
+        return result(project, vision, bush);
     }
 
     private Long trail(Long projectId, String title, String description, User user) {
