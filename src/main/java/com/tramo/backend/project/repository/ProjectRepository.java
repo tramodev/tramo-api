@@ -12,10 +12,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByOwnerId(Long ownerId);
+    Optional<Project> findByOwnerIdAndStartRequestId(Long ownerId, UUID startRequestId);
 
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.lastPublishedDate DESC")
     List<Project> findByVisibilityOrderByLastPublishedDateDesc(@Param("visibility") ProjectVisibility visibility);

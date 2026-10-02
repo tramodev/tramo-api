@@ -27,6 +27,7 @@ public class Project {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
+    private java.util.UUID startRequestId;
     private String title;
     private String description;
     private ProjectVisibility visibility;
