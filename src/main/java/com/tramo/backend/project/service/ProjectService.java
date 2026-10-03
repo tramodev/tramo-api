@@ -261,6 +261,13 @@ public class ProjectService {
         }
         
         for (com.tramo.backend.trail.entity.Item item : itemRepository.findByProjectId(id)) {
+            List<TrailItem> remaining = trailItemRepository.findByItemId(item.getId());
+            if (!remaining.isEmpty()) {
+                item.setProject(remaining.get(0).getTrail().getProject());
+                item.setUnfiled(false);
+                itemRepository.save(item);
+                continue;
+            }
             itemLinkRepository.deleteBySourceItemId(item.getId());
             itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
             trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
