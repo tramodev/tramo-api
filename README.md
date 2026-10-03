@@ -72,8 +72,10 @@ Create a local `.env` (or export them) before running:
 | `RESEND_API_KEY` | Resend SMTP password (email) |
 | `MAIL_ENABLED` | Toggle outbound email (defaults to `true`) |
 | `R2_ACCOUNT_ID` | Cloudflare R2 account ID |
-| `R2_ACCESS_KEY` / `R2_SECRET_KEY` | R2 credentials |
-| `R2_BUCKET` | R2 bucket name |
+| `R2_ACCESS_KEY` / `R2_SECRET` | R2 credentials with access to both configured buckets |
+| `R2_BUCKET` | Public bucket for avatars, banners and thumbnails |
+| `R2_PRIVATE_BUCKET` | Separate private bucket for note images; required in every environment |
+| `PUBLIC_EDITOR_IMAGES_ENABLED` | Legacy public editor uploads; defaults to `false` |
 | `R2_PUBLIC_BASE_URL` | Public base URL for served images |
 
 The default datasource points at `jdbc:postgresql://localhost:5432/mypath` — adjust
@@ -162,10 +164,55 @@ Every domain package is cut the same way: `controller/ dto/ entity/ repository/ 
 
 ## Image lifecycle
 
-Editor images are uploaded to R2 and tracked per item by `ItemImageReference`. Because an item
-can be transcluded into several trails, an image that stops being used is **not deleted right
-away**: it goes to `PendingImageDeletion`, and a scheduled job removes it from R2 only after a
-grace period *and* only if no other item still references that URL.
+Note images use a separate private R2 bucket. The editor persists version-2 image nodes with an
+opaque `imageId`, never a storage URL. Uploads reserve quota, use a ten-minute signed PUT into
+`temporary/`, and require owner confirmation before an immutable copy under `images/` can be
+attached to content. Confirmation checks object size and content type and conditions the copy
+on the inspected ETag. It can be repeated after success without replacing the confirmed object.
+
+Reading resolves up to 100 image IDs per request after checking the project's current permissions
+and the image's membership in the requested content. Published reads use the latest publish
+snapshot; historical reads use the selected publish snapshot. Private authoring reads require
+ownership. GET URLs expire after five minutes and are delivered with `private, no-store`.
+Anyone holding a signed URL can use it until expiration, even after visibility changes; already
+downloaded copies cannot be revoked.
+
+Snapshots retain image references. Forks get their own image IDs and quota accounting while
+sharing immutable physical objects, so deleting the source does not break the fork. Removing
+an image schedules reclamation through a 24-hour grace period. The job locks objects before
+claiming deletion, checks references from every item and snapshot, and retries failed R2 deletes.
+Legacy public URL reference tracking and cleanup remain for public objects already in the bucket.
+
+Avatars, banners and independently uploaded thumbnails remain public. Do not put confidential
+information there. Note images are not used as automatic or selectable public thumbnails.
+`PUBLIC_EDITOR_IMAGES_ENABLED=false` blocks new legacy public editor uploads; it does not revoke
+existing objects or make arbitrary external URLs private. The editor does not accept external
+image hosts. Do not migrate private attachments into the public bucket.
+
+### Private bucket setup
+
+1. Create the bucket named by `R2_PRIVATE_BUCKET`, different from `R2_BUCKET`. Keep both its
+   `r2.dev` endpoint and custom public domains disabled. Give the application's S3 credentials
+   access to the public and private buckets without granting account-wide access unnecessarily.
+2. Configure private bucket CORS for the exact frontend origins (`http://localhost:3000` locally),
+   methods `PUT`, `GET`, `HEAD`, allowed header `Content-Type`, and exposed header `ETag`.
+3. Add an R2 lifecycle rule deleting the `temporary/` prefix after one day. Never apply this rule
+   to `images/`: confirmed images are cleaned by the application after reference checks.
+4. Set frontend `NEXT_PUBLIC_R2_PRIVATE_ORIGIN=https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`
+   and rebuild/restart it. The SDK uses path-style URLs so this exact origin covers private reads.
+5. Restart the backend to apply the new Flyway migration. Deploy both applications together:
+   version-1 URL image nodes are rejected on save. There is no automatic data or object migration.
+   For disposable local data, export anything needed before explicitly resetting the database;
+   deleting the database does not delete objects in R2.
+6. Before enabling uploads, verify a test object's unsigned URL is denied, its signed GET works,
+   its expired GET is denied, and it cannot be reached through any public domain. Changing CORS
+   alone does not restrict direct reads.
+
+The private image endpoints are `POST /api/uploads/editor-images/presign`,
+`POST /api/uploads/editor-images/{imageId}/complete`, and
+`POST /api/{public/}project/{projectId}/editor-images/resolve`. Resolution accepts
+`{imageIds, snapshotId?}` and returns `{images: [{imageId, url, expiresAt}]}`. The public form
+allows anonymous readers only when project visibility permits; URLs are never cached in explore.
 
 ## Testing notes
 
