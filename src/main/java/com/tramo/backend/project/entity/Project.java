@@ -28,6 +28,8 @@ public class Project {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
     private java.util.UUID startRequestId;
+    @Column(nullable = false)
+    private boolean example;
     private String title;
     private String description;
     private ProjectVisibility visibility;

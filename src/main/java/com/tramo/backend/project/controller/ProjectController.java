@@ -64,6 +64,11 @@ public class ProjectController {
         return ResponseEntity.ok(startService.create(request, user));
     }
 
+    @PostMapping("/example")
+    public ResponseEntity<StartedProjectDTO> example(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(startService.createExample(user));
+    }
+
     @PostMapping("/{id}/start")
     public ResponseEntity<StartedProjectDTO> startExisting(
             @PathVariable String id, @RequestParam(required = false) Long trailId, @AuthenticationPrincipal User user) {

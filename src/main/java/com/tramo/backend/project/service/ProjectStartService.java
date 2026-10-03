@@ -63,13 +63,36 @@ public class ProjectStartService {
         var project = new Project();
         project.setOwner(user);
         project.setStartRequestId(request.requestId());
-        project.setTitle(request.example() ? "Memex and Vannevar Bush" : "Untitled project");
+        project.setTitle("Untitled project");
         project.setVisibility(ProjectVisibility.PRIVATE);
         project.setCreationDate(new Date());
         project.setModifiedDate(new Date());
-        if (request.example()) project.setDescription("Explore Bush’s vision of a personal knowledge library and the associative trails that connect its ideas. Two trails share the same Memex note.");
         projects.save(project);
-        return request.example() ? example(project, user) : start(project.getId(), null, user);
+        return start(project.getId(), null, user);
+    }
+
+    @Transactional
+    public StartedProjectDTO createExample(User user) {
+        entityManager.find(User.class, user.getId(), LockModeType.PESSIMISTIC_WRITE);
+        var existing = projects.findExampleByOwnerId(user.getId());
+        if (existing.isPresent()) {
+            var project = entityManager.find(Project.class, existing.get().getId(), LockModeType.PESSIMISTIC_WRITE);
+            var firstTrail = trails.findFirstByProjectIdOrderByIdAsc(project.getId());
+            Long trailId = firstTrail.isPresent() ? firstTrail.get().getId() : trail(project.getId(), "My first trail", "", user);
+            var firstStep = steps.findFirstByTrailIdOrderByOrderIndexAscIdAsc(trailId);
+            Long itemId = firstStep.isPresent() ? firstStep.get().getItem().getId() : note(trailId, "Untitled note", null, user);
+            return result(project, trailId, itemId);
+        }
+        var project = new Project();
+        project.setOwner(user);
+        project.setExample(true);
+        project.setTitle("Memex and Vannevar Bush");
+        project.setDescription("Explore Bush’s vision of a personal knowledge library and the associative trails that connect its ideas. Two trails share the same Memex note.");
+        project.setVisibility(ProjectVisibility.PRIVATE);
+        project.setCreationDate(new Date());
+        project.setModifiedDate(new Date());
+        projects.save(project);
+        return example(project, user);
     }
 
     @Transactional
