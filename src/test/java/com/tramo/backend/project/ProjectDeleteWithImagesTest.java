@@ -27,7 +27,7 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
     private ItemService itemService;
 
     @Test
-    void deletesProjectWhoseItemsReferenceEditorImages() throws Exception {
+    void deletesProjectWhoseItemsReferenceLegacyPublicUrls() throws Exception {
         User owner = createUser("pdwiowner");
         Project project = createProject(owner, "With images", "private");
         long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
@@ -36,7 +36,7 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
                 {"title":"Has an image"}""");
 
         String content = """
-                {"root":{"children":[{"type":"image","src":"%s"}]}}""".formatted(IMAGE_URL);
+                {"root":{"children":[{"type":"text","text":"%s"}]}}""".formatted(IMAGE_URL);
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)

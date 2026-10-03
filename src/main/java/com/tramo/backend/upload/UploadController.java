@@ -42,6 +42,7 @@ public class UploadController {
     private final ProjectRepository projectRepository;
     private final ProjectIdCodec projectIdCodec;
     private final RateLimiterService rateLimiterService;
+    private final boolean publicEditorImagesEnabled;
     private final long maxUploadBytes;
     private final int maxUploadBytesPerHour;
 
@@ -51,8 +52,10 @@ public class UploadController {
                             ProjectRepository projectRepository,
                             ProjectIdCodec projectIdCodec,
                             RateLimiterService rateLimiterService,
+                            @Value("${app.uploads.public-editor-images-enabled}") boolean publicEditorImagesEnabled,
                             @Value("${app.limits.max-upload-bytes}") long maxUploadBytes,
                             @Value("${app.limits.max-upload-bytes-per-hour}") int maxUploadBytesPerHour) {
+        this.publicEditorImagesEnabled = publicEditorImagesEnabled;
         this.r2Client = r2Client;
         this.subscriptionService = subscriptionService;
         this.uploadRecordRepository = uploadRecordRepository;
@@ -66,6 +69,9 @@ public class UploadController {
     @PostMapping("/presign")
     public ResponseEntity<UploadPresignResponseDTO> presign(@Valid @RequestBody UploadPresignRequestDTO request,
                                                               @AuthenticationPrincipal User user) {
+        if ("editor-image".equals(request.getKind()) && !publicEditorImagesEnabled) {
+            throw new AccessDeniedException("Public editor image uploads are disabled. Use private attachments.");
+        }
         String extension = ALLOWED_CONTENT_TYPES.get(request.getContentType());
         if (extension == null) {
             throw new IllegalArgumentException("Unsupported content type: " + request.getContentType());

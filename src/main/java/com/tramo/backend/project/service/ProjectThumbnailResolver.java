@@ -3,10 +3,8 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.project.dto.GraphPreviewDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
-import com.tramo.backend.trail.entity.ItemImageReference;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.repository.AssociationRepository;
-import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import org.springframework.stereotype.Component;
@@ -23,15 +21,12 @@ public class ProjectThumbnailResolver {
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
     private final AssociationRepository itemLinkRepository;
-    private final ItemImageReferenceRepository itemImageReferenceRepository;
 
     public ProjectThumbnailResolver(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
-                                     AssociationRepository itemLinkRepository,
-                                     ItemImageReferenceRepository itemImageReferenceRepository) {
+                                     AssociationRepository itemLinkRepository) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemLinkRepository = itemLinkRepository;
-        this.itemImageReferenceRepository = itemImageReferenceRepository;
     }
 
     ThumbnailResolution resolveThumbnail(Project project) {
@@ -91,16 +86,7 @@ public class ProjectThumbnailResolver {
                 }
             }
 
-            if (!needsImageFallback.isEmpty()) {
-                Map<Long, ItemImageReference> firstImageByProjectId = new LinkedHashMap<>();
-                for (ItemImageReference ref : itemImageReferenceRepository.findByProjectIdInOrderByItemIdAsc(needsImageFallback)) {
-                    firstImageByProjectId.putIfAbsent(ref.getItem().getProject().getId(), ref);
-                }
-                for (Long projectId : needsImageFallback) {
-                    ItemImageReference ref = firstImageByProjectId.get(projectId);
-                    result.put(projectId, ref != null ? new ThumbnailResolution(ref.getUrl(), null) : ThumbnailResolution.EMPTY);
-                }
-            }
+            for (Long projectId : needsImageFallback) result.put(projectId, ThumbnailResolution.EMPTY);
         }
 
         return result;

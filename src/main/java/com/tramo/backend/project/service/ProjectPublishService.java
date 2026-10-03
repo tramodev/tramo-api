@@ -1,6 +1,7 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
@@ -48,6 +49,7 @@ public class ProjectPublishService {
     private final BadgeService badgeService;
     private final ProjectResponseMapper responseMapper;
     private final ObjectMapper objectMapper;
+    private final EditorImageService editorImages;
 
     public ProjectPublishService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                   TrailRepository trailRepository, TrailItemRepository trailItemRepository,
@@ -56,7 +58,7 @@ public class ProjectPublishService {
                                   ProjectSnapshotRepository projectSnapshotRepository,
                                   FollowRepository followRepository, NotificationService notificationService,
                                   BadgeService badgeService, ProjectResponseMapper responseMapper,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper, EditorImageService editorImages) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
@@ -69,6 +71,7 @@ public class ProjectPublishService {
         this.badgeService = badgeService;
         this.responseMapper = responseMapper;
         this.objectMapper = objectMapper;
+        this.editorImages = editorImages;
     }
 
     @Transactional
@@ -194,6 +197,7 @@ public class ProjectPublishService {
         snapshot.setContent(objectMapper.writeValueAsString(data));
         snapshot.setCreatedDate(new Date());
         projectSnapshotRepository.save(snapshot);
+        editorImages.retainSnapshot(snapshot);
     }
 
     @Transactional

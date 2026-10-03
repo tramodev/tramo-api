@@ -14,7 +14,7 @@ public record ProjectSnapshotData(
         List<TrailData> trails,
         List<ItemData> looseItems
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     public List<ItemData> looseItems() {
         return looseItems == null ? List.of() : looseItems;

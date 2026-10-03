@@ -1,6 +1,7 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.entity.Project;
@@ -53,6 +54,7 @@ public class ProjectForkService {
     private final BadgeService badgeService;
     private final ProjectResponseMapper responseMapper;
     private final ObjectMapper objectMapper;
+    private final EditorImageService editorImages;
 
     public ProjectForkService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
@@ -60,7 +62,7 @@ public class ProjectForkService {
                                AssociationRepository itemLinkRepository, BlockedUserRepository blockedUserRepository,
                                PrivacyPolicy privacyPolicy, TagService tagService,
                                NotificationService notificationService, BadgeService badgeService,
-                               ProjectResponseMapper responseMapper, ObjectMapper objectMapper) {
+                               ProjectResponseMapper responseMapper, ObjectMapper objectMapper, EditorImageService editorImages) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
@@ -75,6 +77,7 @@ public class ProjectForkService {
         this.badgeService = badgeService;
         this.responseMapper = responseMapper;
         this.objectMapper = objectMapper;
+        this.editorImages = editorImages;
     }
 
     @Transactional
@@ -111,6 +114,7 @@ public class ProjectForkService {
             forkFromLiveTables(fork, sourceProjectId);
         }
 
+        editorImages.copyForkImages(fork);
         notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
         badgeService.checkAndAwardBadges(source.getOwner());
         return responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));

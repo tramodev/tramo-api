@@ -2,6 +2,7 @@ package com.tramo.backend.project.service;
 
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.upload.ImageDeletionQueue;
+import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
@@ -64,6 +65,7 @@ public class ProjectService {
     private final ProjectThumbnailResolver thumbnailResolver;
     private final ProjectResponseMapper responseMapper;
     private final ProjectPublishService publishService;
+    private final R2Client r2Client;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -77,11 +79,12 @@ public class ProjectService {
                            TagService tagService,
                            ImageDeletionQueue imageDeletionQueue,
                            AccessGuard accessGuard, ProjectThumbnailResolver thumbnailResolver,
-                           ProjectResponseMapper responseMapper, ProjectPublishService publishService) {
+                           ProjectResponseMapper responseMapper, ProjectPublishService publishService, R2Client r2Client) {
         this.accessGuard = accessGuard;
         this.thumbnailResolver = thumbnailResolver;
         this.responseMapper = responseMapper;
         this.publishService = publishService;
+        this.r2Client = r2Client;
         this.imageDeletionQueue = imageDeletionQueue;
         this.tagService = tagService;
         this.uploadRecordRepository = uploadRecordRepository;
@@ -209,9 +212,13 @@ public class ProjectService {
                 }
                 project.setThumbnailTrail(trail);
             }
-            case PROJECT_IMAGE, DEDICATED -> {
+            case PROJECT_IMAGE -> throw new IllegalArgumentException("Note images cannot be used as public thumbnails");
+            case DEDICATED -> {
                 if (request.getImageUrl() == null || request.getImageUrl().isBlank()) {
                     throw new IllegalArgumentException("imageUrl is required for this thumbnail type");
+                }
+                if (!r2Client.isOwnedUrl(request.getImageUrl(), "thumbnail", requester.getId())) {
+                    throw new IllegalArgumentException("Thumbnail must be a separate public upload owned by you");
                 }
                 project.setThumbnailImageUrl(request.getImageUrl());
             }
