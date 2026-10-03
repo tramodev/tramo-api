@@ -13,6 +13,7 @@ import java.util.Optional;
 
 @Repository
 public interface TrailRepository extends JpaRepository<Trail, Long> {
+    Optional<Trail> findFirstByProjectIdOrderByIdAsc(Long projectId);
     
     
     

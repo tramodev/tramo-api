@@ -17,6 +17,9 @@ import java.util.UUID;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByOwnerId(Long ownerId);
+
+    @Query("SELECT p FROM Project p WHERE p.owner.id = :ownerId AND p.example = true")
+    Optional<Project> findExampleByOwnerId(@Param("ownerId") Long ownerId);
     Optional<Project> findByOwnerIdAndStartRequestId(Long ownerId, UUID startRequestId);
 
     @Query("SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.visibility = :visibility ORDER BY p.lastPublishedDate DESC")

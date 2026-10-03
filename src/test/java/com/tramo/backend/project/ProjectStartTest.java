@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 
 class ProjectStartTest extends AbstractIntegrationTest {
     @Autowired private ProjectStartService starter;
+    @Autowired private com.tramo.backend.project.service.ProjectService projectService;
     @Autowired private TrailService trailService;
     @Autowired private TrailRepository trails;
     @MockitoSpyBean private ItemService itemService;
@@ -53,7 +54,7 @@ class ProjectStartTest extends AbstractIntegrationTest {
     @Test
     void concurrentRetriesCreateOnePrivateProjectAndOpenTheSameNote() throws Exception {
         var owner = createUser("starter");
-        var request = new StartProjectRequest(UUID.randomUUID(), false);
+        var request = new StartProjectRequest(UUID.randomUUID());
         var executor = Executors.newFixedThreadPool(2);
         try {
             var first = executor.submit(() -> starter.create(request, owner));
@@ -75,7 +76,7 @@ class ProjectStartTest extends AbstractIntegrationTest {
     @Test
     void failedInitializationRollsBackAndCanBeRetried() {
         var owner = createUser("rollbackstarter");
-        var request = new StartProjectRequest(UUID.randomUUID(), false);
+        var request = new StartProjectRequest(UUID.randomUUID());
         doThrow(new IllegalStateException("injected failure")).when(itemService).create(anyLong(), any(ItemRequestDTO.class), any());
         assertThatThrownBy(() -> starter.create(request, owner)).isInstanceOf(IllegalStateException.class);
         assertThat(projectRepository.count()).isZero();
@@ -101,9 +102,77 @@ class ProjectStartTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void exampleSurvivesRenameAndCanBeRecreatedAfterDeletion() {
+        var owner = createUser("examplelifecycle");
+        var result = starter.createExample(owner);
+        Long id = projectIdCodec.decode(result.projectId());
+        var project = projectRepository.findById(id).orElseThrow();
+        project.setTitle("My edited example");
+        projectRepository.save(project);
+        assertThat(starter.createExample(owner)).isEqualTo(result);
+        projectService.delete(id, owner);
+        assertThat(starter.createExample(owner).projectId()).isNotEqualTo(result.projectId());
+        assertThat(projectRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void reopeningExampleUsesConstantQueriesAsContentGrows() throws Exception {
+        var owner = createUser("examplequeries");
+        var result = starter.createExample(owner);
+        long before = queryCount(() -> starter.createExample(owner));
+        for (int i = 0; i < 20; i++) {
+            var request = new ItemRequestDTO();
+            request.setTitle("Extra note " + i);
+            itemService.create(result.trailId(), request, owner);
+        }
+        long after = queryCount(() -> starter.createExample(owner));
+        assertThat(after).isEqualTo(before);
+        assertThat(after).isLessThanOrEqualTo(8);
+    }
+
+    @Test
+    void concurrentExampleRequestsReuseOneProjectPerOwner() throws Exception {
+        var owner = createUser("concurrentexample");
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> starter.createExample(owner));
+            var second = executor.submit(() -> starter.createExample(owner));
+            var result = first.get();
+            assertThat(second.get()).isEqualTo(result);
+            assertThat(projectRepository.count()).isEqualTo(1);
+            var other = createUser("otherexample");
+            assertThat(starter.createExample(other).projectId()).isNotEqualTo(result.projectId());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void exampleEndpointRequiresAuthenticationAndReusesProject() throws Exception {
+        mockMvc.perform(post("/api/project/example")).andExpect(status().isUnauthorized());
+        var owner = createUser("exampleendpoint");
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/project/example").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        assertThat(projectRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void failedExampleInitializationRollsBackAndCanBeRetried() {
+        var owner = createUser("rollbackexample");
+        doThrow(new IllegalStateException("injected failure")).when(itemService).create(anyLong(), any(ItemRequestDTO.class), any());
+        assertThatThrownBy(() -> starter.createExample(owner)).isInstanceOf(IllegalStateException.class);
+        assertThat(projectRepository.count()).isZero();
+        doCallRealMethod().when(itemService).create(anyLong(), any(ItemRequestDTO.class), any());
+        starter.createExample(owner);
+        assertThat(projectRepository.count()).isEqualTo(1);
+    }
+
+    @Test
     void exampleSharesOneNoteAndEditsAppearInBothTrails() {
         var owner = createUser("examplestarter");
-        var result = starter.create(new StartProjectRequest(UUID.randomUUID(), true), owner);
+        var result = starter.createExample(owner);
         Long projectId = projectIdCodec.decode(result.projectId());
         var projectTrails = trailService.getAllForProject(projectId, owner);
         assertThat(projectTrails).hasSize(2);
@@ -124,7 +193,8 @@ class ProjectStartTest extends AbstractIntegrationTest {
         itemService.detachFromTrail(tokens, shared, owner);
         assertThat(itemService.getContent(shared, owner).getContent()).isEqualTo(edited);
         assertThat(itemService.getAllForTrail(basics, owner)).hasSize(3);
-        var independent = starter.create(new StartProjectRequest(UUID.randomUUID(), true), owner);
-        assertThat(independent.itemId()).isNotEqualTo(result.itemId());
+        var independent = starter.createExample(owner);
+        assertThat(independent).isEqualTo(result);
+        assertThat(projectRepository.count()).isEqualTo(1);
     }
 }
