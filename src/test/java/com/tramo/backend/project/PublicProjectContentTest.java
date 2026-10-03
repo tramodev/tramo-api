@@ -48,16 +48,17 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.thumbnailImageUrl").value(nullValue()));
 
+        String thumbnail = "https://test-bucket.example.com/thumbnail/" + owner.getId() + "/thumb.png";
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"type":"DEDICATED","imageUrl":"https://example.com/thumb.png"}"""))
+                                {"type":"DEDICATED","imageUrl":"%s"}""".formatted(thumbnail)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.thumbnailImageUrl").value("https://example.com/thumb.png"));
+                .andExpect(jsonPath("$.thumbnailImageUrl").value(thumbnail));
     }
 
     @Test

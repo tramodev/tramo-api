@@ -411,9 +411,9 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"type":"DEDICATED","imageUrl":"https://example.com/a.png"}"""))
+                                {"type":"DEDICATED","imageUrl":"https://test-bucket.example.com/thumbnail/%d/a.png"}""".formatted(owner.getId())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.thumbnailImageUrl").value("https://example.com/a.png"));
+                .andExpect(jsonPath("$.thumbnailImageUrl").value("https://test-bucket.example.com/thumbnail/" + owner.getId() + "/a.png"));
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getModifiedDate().getTime())
                 .isEqualTo(staleDate.getTime());
@@ -506,7 +506,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     void setThumbnailToDedicatedImageThenNoneClearsIt() throws Exception {
         User owner = createUser("thumbowner5");
         Project project = createProject(owner, "Imaged", "private", "A description", null);
-        String url = "https://test-bucket.example.com/thumbnail/1/hash.jpg";
+        String url = "https://test-bucket.example.com/thumbnail/" + owner.getId() + "/hash.jpg";
 
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))

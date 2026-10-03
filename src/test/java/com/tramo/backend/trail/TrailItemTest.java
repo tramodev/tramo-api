@@ -736,7 +736,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void updateContentAcceptsImageNodeFromOurDomain() throws Exception {
+    void updateContentRejectsPublicImageNodeEvenFromOurDomain() throws Exception {
         User owner = createUser("contentownedimg");
         Project project = createProject(owner, "OwnedImgProject", "private");
         long trailId = createTrail(owner, project, "Trail");
@@ -751,7 +751,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content":"%s"}""".formatted(content)))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isBadRequest());
     }
 
     @Test

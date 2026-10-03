@@ -26,6 +26,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.upload.R2Client;
+import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.upload.entity.PendingImageDeletion;
 import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import com.tramo.backend.user.entity.User;
@@ -63,13 +64,14 @@ public class ItemService {
     private final ItemImageReferenceRepository itemImageReferenceRepository;
     private final ImageDeletionQueue imageDeletionQueue;
     private final ObjectMapper objectMapper;
+    private final EditorImageService editorImages;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         AssociationRepository itemLinkRepository, TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
-                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper) {
+                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemLinkRepository = itemLinkRepository;
@@ -81,6 +83,7 @@ public class ItemService {
         this.itemImageReferenceRepository = itemImageReferenceRepository;
         this.imageDeletionQueue = imageDeletionQueue;
         this.objectMapper = objectMapper;
+        this.editorImages = editorImages;
     }
 
     @Transactional
@@ -303,7 +306,6 @@ public class ItemService {
 
     @Transactional
     public void updateContent(Long id, String content, User requester) {
-        assertImagesAreFromOurDomain(content);
         Item item = getOwnedItem(id, requester);
         ItemContent itemContent = item.getContent();
         String previousContent = itemContent != null ? itemContent.getContent() : null;
@@ -315,33 +317,8 @@ public class ItemService {
         itemContent.setUpdatedDate(new Date());
         itemRepository.save(item);
         bumpOwningProjectLastEditedDate(item);
-        Set<String> newUrls = deleteOrphanedEditorImages(item, id, requester, previousContent, content);
-        resyncImageReferences(item, newUrls);
-    }
-
-    private void assertImagesAreFromOurDomain(String content) {
-        if (content == null || content.isBlank()) {
-            return;
-        }
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(content);
-        } catch (Exception e) {
-            return;
-        }
-        assertImageNodesAreFromOurDomain(root);
-    }
-
-    private void assertImageNodesAreFromOurDomain(JsonNode node) {
-        if (node.isObject() && "image".equals(node.path("type").asText(null))) {
-            String src = node.path("src").asText(null);
-            if (!r2Client.isFromOurDomain(src)) {
-                throw new IllegalArgumentException("Invalid image URL in content");
-            }
-        }
-        for (JsonNode child : node) {
-            assertImageNodesAreFromOurDomain(child);
-        }
+        editorImages.syncItem(item, content);
+        resyncImageReferences(item, deleteOrphanedEditorImages(item, id, requester, previousContent, content));
     }
 
     private Set<String> deleteOrphanedEditorImages(Item item, Long itemId, User requester, String previousContent, String newContent) {

@@ -7,6 +7,7 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
@@ -21,6 +22,7 @@ public class R2Config {
                                    @Value("${app.r2.secret-key}") String secretKey) {
         return S3Presigner.builder()
                 .endpointOverride(endpoint(accountId))
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials(accessKey, secretKey))
                 .build();
@@ -32,6 +34,7 @@ public class R2Config {
                                @Value("${app.r2.secret-key}") String secretKey) {
         return S3Client.builder()
                 .endpointOverride(endpoint(accountId))
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials(accessKey, secretKey))
                 .overrideConfiguration(o -> o

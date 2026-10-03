@@ -21,7 +21,7 @@ public class RateLimitFilter implements Filter {
 
     private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "DELETE", "PATCH");
     private static final Set<String> TIGHT_TIER_PATHS = Set.of(
-            "/user/password", "/user/me", "/api/uploads/presign"
+            "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign"
     );
 
     private final RateLimiterService rateLimiterService;
@@ -41,6 +41,11 @@ public class RateLimitFilter implements Filter {
 
         String ip = clientIp.from(req);
         String path = req.getRequestURI();
+
+        if (path.startsWith("/api/public/") && path.endsWith("/editor-images/resolve")) {
+            Bucket bucket = rateLimiterService.resolveBucket(ip + ":image-resolve", 120, 120, Duration.ofMinutes(1));
+            if (!tryConsumeOrReject(bucket, res)) return;
+        }
 
         if (path.startsWith("/api/auth/")) {
             Bucket bucket = switch (path) {

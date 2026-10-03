@@ -38,7 +38,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void projectWithoutAGraphFallsBackToItsFirstItemImage() throws Exception {
+    void projectWithoutAGraphDoesNotExposeItsFirstItemImage() throws Exception {
         User owner = createUser("thumbfb1");
         Project project = createProject(owner, "Illustrated", "private", "A description", null);
         long trailId = createTrail(owner, project, "T");
@@ -48,7 +48,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].thumbnailImageUrl").value(url))
+                .andExpect(jsonPath("$[0].thumbnailImageUrl").value(nullValue()))
                 .andExpect(jsonPath("$[0].thumbnailGraph").value(nullValue()));
     }
 

@@ -67,6 +67,8 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.r2.access-key", () -> "test-access-key");
         registry.add("app.r2.secret-key", () -> "test-secret-key");
         registry.add("app.r2.bucket", () -> "test-bucket");
+        registry.add("app.r2.private-bucket", () -> "test-private-bucket");
+        registry.add("app.uploads.public-editor-images-enabled", () -> "true");
         registry.add("app.r2.public-base-url", () -> "https://test-bucket.example.com");
         registry.add("spring.jpa.show-sql", () -> "false");
         registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
