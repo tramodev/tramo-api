@@ -12,17 +12,21 @@ import java.util.UUID;
 
 @Component
 public class PrivateImageStorage {
+    private static final java.util.concurrent.Semaphore VALIDATIONS = new java.util.concurrent.Semaphore(2);
     private final S3Client client;
     private final S3Presigner presigner;
     private final String bucket;
+    private final long maxBytes;
 
     public PrivateImageStorage(S3Client client, S3Presigner presigner,
             @Value("${app.r2.private-bucket}") String bucket,
-            @Value("${app.r2.bucket}") String publicBucket) {
+            @Value("${app.r2.bucket}") String publicBucket,
+            @Value("${app.limits.max-upload-bytes}") long maxBytes) {
         if (bucket.equals(publicBucket)) throw new IllegalArgumentException("Private images require a separate bucket");
         this.client = client;
         this.presigner = presigner;
         this.bucket = bucket;
+        this.maxBytes = maxBytes;
     }
 
     public String presignUpload(EditorImage image) {
@@ -31,15 +35,55 @@ public class PrivateImageStorage {
                         .contentType(image.contentType()).contentLength(image.bytes()).build()).build()).url().toString();
     }
 
-    public void complete(EditorImage image) {
-        HeadObjectResponse head = client.headObject(HeadObjectRequest.builder().bucket(bucket).key(image.temporaryKey()).build());
-        if (head.contentLength() != image.bytes() || !image.contentType().equals(head.contentType())) {
-            throw new IllegalArgumentException("Uploaded image size or type does not match");
+    public record ValidatedImage(String etag, String hash, boolean finalObject) {}
+
+    public ValidatedImage validate(EditorImage image) {
+        if (!VALIDATIONS.tryAcquire()) throw new IllegalArgumentException("Image validation busy; retry later");
+        try {
+            try {
+                return validateObject(image, image.objectKey(), true);
+            } catch (S3Exception missing) {
+                if (missing.statusCode() != 404) throw missing;
+                return validateObject(image, image.temporaryKey(), false);
+            }
+        } finally {
+            VALIDATIONS.release();
         }
-        client.copyObject(CopyObjectRequest.builder().sourceBucket(bucket).sourceKey(image.temporaryKey())
-                .destinationBucket(bucket).destinationKey(image.objectKey()).copySourceIfMatch(head.eTag())
-                .metadataDirective(MetadataDirective.REPLACE).contentType(image.contentType())
-                .cacheControl("private, no-store").build());
+    }
+
+    private ValidatedImage validateObject(EditorImage image, String key, boolean finalObject) {
+        HeadObjectResponse head = client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+        if (image.bytes() > maxBytes || head.contentLength() != image.bytes() || !image.contentType().equals(head.contentType())
+                || head.eTag() == null || head.eTag().isBlank())
+            throw new IllegalArgumentException("Uploaded image size or type does not match");
+        try (var stream = client.getObject(GetObjectRequest.builder().bucket(bucket).key(key).ifMatch(head.eTag()).build())) {
+            byte[] bytes = stream.readNBytes(Math.toIntExact(image.bytes() + 1));
+            if (bytes.length != image.bytes()) throw new IllegalArgumentException("Uploaded image size does not match");
+            String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+            if (image.contentHash() != null && !image.contentHash().equals(hash))
+                throw new IllegalArgumentException("Uploaded image SHA-256 does not match");
+            ImageFileValidator.validate(bytes, image.contentType());
+            return new ValidatedImage(head.eTag(), hash, finalObject);
+        } catch (java.io.IOException failure) {
+            throw new IllegalArgumentException("Cannot read uploaded image", failure);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    public void confirm(EditorImage image, ValidatedImage validated) {
+        if (validated.finalObject()) return;
+        try {
+            client.copyObject(CopyObjectRequest.builder().sourceBucket(bucket).sourceKey(image.temporaryKey())
+                    .destinationBucket(bucket).destinationKey(image.objectKey()).copySourceIfMatch(validated.etag())
+                    .overrideConfiguration(config -> config.putHeader("cf-copy-destination-if-none-match", "*"))
+                    .metadataDirective(MetadataDirective.REPLACE).contentType(image.contentType())
+                    .metadata(java.util.Map.of("sha256", validated.hash())).cacheControl("private, no-store").build());
+        } catch (S3Exception conflict) {
+            if (conflict.statusCode() != 412) throw conflict;
+            ValidatedImage existing = validateObject(image, image.objectKey(), true);
+            if (!validated.hash().equals(existing.hash())) throw new IllegalArgumentException("Confirmed image does not match");
+        }
     }
 
     public String presignRead(EditorImage image) {
