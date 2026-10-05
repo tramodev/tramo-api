@@ -43,6 +43,11 @@
 
 	<dependencies>
 		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>3.13.1</version>
+		</dependency>
+		<dependency>
 			<groupId>com.bucket4j</groupId>
 			<artifactId>bucket4j-core</artifactId>
 			<version>8.10.1</version>
