@@ -78,9 +78,9 @@ public class EditorImageService {
             subscriptions.assertUploadAllowed(user, request.contentBytes(), subscriptions.isSupporter(user));
             UUID imageId = UUID.randomUUID();
             UUID objectId = UUID.randomUUID();
-            images.createObject(objectId, request.contentType(), request.contentBytes());
+            images.createObject(objectId, request.contentType(), request.contentBytes(), request.contentHash());
             createImage(imageId, objectId, project, request.contentBytes());
-            return new EditorImage(imageId, objectId, project.getId(), request.contentType(), request.contentBytes(), "PENDING");
+            return new EditorImage(imageId, objectId, project.getId(), request.contentType(), request.contentBytes(), "PENDING", request.contentHash());
         });
         return new EditorImagePresignResponse(image.id(), storage.presignUpload(image));
     }
@@ -89,24 +89,20 @@ public class EditorImageService {
         EditorImage image = findOne(id);
         if (image.projectId() == null) throw missing();
         access.getOwnedProject(image.projectId(), user);
-        boolean claimed = Boolean.TRUE.equals(transactions.execute(status -> {
-            String state = images.lockObject(image.objectId());
-            if ("READY".equals(state)) return false;
-            if (!"PENDING".equals(state)) throw new IllegalArgumentException("Upload is not pending");
-            images.setState(image.objectId(), "COPYING");
-            return true;
-        }));
-        if (!claimed) return;
+        UUID attempt = images.withObjectLock(image.objectId(), () ->
+                transactions.execute(status -> images.claimCompletion(image.objectId())));
+        if (attempt == null) return;
         try {
-            storage.complete(image);
-            transactions.executeWithoutResult(status -> {
-                if (!"COPYING".equals(images.lockObject(image.objectId()))) throw missing();
-                images.setState(image.objectId(), "READY");
+            EditorImage claimedImage = findOne(id);
+            PrivateImageStorage.ValidatedImage validated = storage.validate(claimedImage);
+            images.withObjectLock(image.objectId(), () -> {
+                transactions.executeWithoutResult(status -> images.recordValidation(image.objectId(), attempt, validated.hash()));
+                storage.confirm(claimedImage, validated);
+                transactions.executeWithoutResult(status -> images.finishAttempt(image.objectId(), attempt, "READY"));
+                return null;
             });
         } catch (RuntimeException failure) {
-            transactions.executeWithoutResult(status -> {
-                if ("COPYING".equals(images.lockObject(image.objectId()))) images.setState(image.objectId(), "PENDING");
-            });
+            transactions.executeWithoutResult(status -> images.releaseAttempt(image.objectId(), attempt));
             throw failure;
         }
     }
@@ -229,11 +225,14 @@ public class EditorImageService {
     public void purge() {
         for (UUID id : images.cleanupCandidates()) {
             try {
-                boolean claimed = Boolean.TRUE.equals(transactions.execute(status -> images.claimDeletion(id)));
-                if (claimed) {
-                    storage.deleteObject(id);
-                    transactions.executeWithoutResult(status -> images.deleteObject(id));
-                }
+                images.withObjectLock(id, () -> {
+                    boolean claimed = Boolean.TRUE.equals(transactions.execute(status -> images.claimDeletion(id)));
+                    if (claimed) {
+                        storage.deleteObject(id);
+                        transactions.executeWithoutResult(status -> images.deleteObject(id));
+                    }
+                    return null;
+                });
             } catch (RuntimeException failure) {
                 log.warn("Failed to purge private image object {}", id, failure);
             }

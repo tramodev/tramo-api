@@ -3,15 +3,16 @@ package com.tramo.backend.upload.repository;
 import com.tramo.backend.upload.entity.EditorImage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Component;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Repository
+@Component
 public class EditorImageRepository {
+    private final java.util.concurrent.Semaphore operations = new java.util.concurrent.Semaphore(2);
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
 
@@ -22,10 +23,10 @@ public class EditorImageRepository {
 
     public List<EditorImage> findAll(Collection<UUID> ids) {
         if (ids.isEmpty()) return List.of();
-        return named.query("SELECT i.id, i.object_id, i.project_id, o.content_type, o.bytes, o.state " +
+        return named.query("SELECT i.id, i.object_id, i.project_id, o.content_type, o.bytes, o.state, COALESCE(o.content_hash, o.validated_hash) " +
                 "FROM editor_image i JOIN editor_image_object o ON o.id = i.object_id WHERE i.id IN (:ids)",
                 Map.of("ids", ids), (rs, row) -> new EditorImage(rs.getObject(1, UUID.class),
-                        rs.getObject(2, UUID.class), (Long) rs.getObject(3), rs.getString(4), rs.getLong(5), rs.getString(6)));
+                        rs.getObject(2, UUID.class), (Long) rs.getObject(3), rs.getString(4), rs.getLong(5), rs.getString(6), rs.getString(7)));
     }
 
     public void lockUser(Long userId) {
@@ -36,8 +37,8 @@ public class EditorImageRepository {
         return jdbc.queryForObject("SELECT state FROM editor_image_object WHERE id = ? FOR UPDATE", String.class, objectId);
     }
 
-    public void createObject(UUID id, String type, long bytes) {
-        jdbc.update("INSERT INTO editor_image_object(id, content_type, bytes, state) VALUES (?, ?, ?, 'PENDING')", id, type, bytes);
+    public void createObject(UUID id, String type, long bytes, String hash) {
+        jdbc.update("INSERT INTO editor_image_object(id, content_type, bytes, content_hash, state) VALUES (?, ?, ?, ?, 'PENDING')", id, type, bytes, hash);
     }
 
     public void createImage(UUID id, UUID objectId, Long projectId, Long uploadId) {
@@ -48,6 +49,66 @@ public class EditorImageRepository {
     public void setState(UUID objectId, String state) {
         jdbc.update("UPDATE editor_image_object SET state = ?, lease_until = CASE WHEN ? = 'COPYING' THEN CURRENT_TIMESTAMP + INTERVAL '60 seconds' ELSE NULL END WHERE id = ?", state, state, objectId);
         if ("READY".equals(state)) jdbc.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP WHERE object_id = ?", objectId);
+    }
+
+    public <T> T withObjectLock(UUID id, java.util.function.Supplier<T> action) {
+        if (!operations.tryAcquire()) throw new IllegalArgumentException("Upload operation in progress");
+        long key = id.getMostSignificantBits() ^ id.getLeastSignificantBits();
+        try (var connection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            connection.setAutoCommit(true);
+            try (var statement = connection.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                statement.setLong(1, key);
+                try (var result = statement.executeQuery()) {
+                    result.next();
+                    if (!result.getBoolean(1)) throw new IllegalArgumentException("Upload operation in progress");
+                }
+            }
+            try {
+                return action.get();
+            } finally {
+                try (var statement = connection.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+                    statement.setLong(1, key);
+                    statement.execute();
+                } catch (java.sql.SQLException failure) {
+                    connection.abort(Runnable::run);
+                    throw failure;
+                }
+            }
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException("Cannot coordinate image operation", failure);
+        } finally {
+            operations.release();
+        }
+    }
+
+    public UUID claimCompletion(UUID id) {
+        String state = lockObject(id);
+        if ("READY".equals(state)) return null;
+        UUID attempt = UUID.randomUUID();
+        int changed = jdbc.update("UPDATE editor_image_object SET state = 'COPYING', attempt_id = ?, " +
+                "lease_until = CURRENT_TIMESTAMP + INTERVAL '60 seconds' WHERE id = ? AND " +
+                "(state = 'PENDING' OR (state = 'COPYING' AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP)))",
+                attempt, id);
+        if (changed != 1) throw new IllegalArgumentException("Upload operation in progress");
+        return attempt;
+    }
+
+    public void recordValidation(UUID id, UUID attempt, String hash) {
+        int changed = jdbc.update("UPDATE editor_image_object SET validated_hash = ? " +
+                "WHERE id = ? AND state = 'COPYING' AND attempt_id = ?", hash, id, attempt);
+        if (changed != 1) throw new IllegalArgumentException("Upload attempt expired");
+    }
+
+    public void releaseAttempt(UUID id, UUID attempt) {
+        jdbc.update("UPDATE editor_image_object SET state = 'PENDING', lease_until = NULL " +
+                "WHERE id = ? AND state = 'COPYING' AND attempt_id = ?", id, attempt);
+    }
+
+    public void finishAttempt(UUID id, UUID attempt, String state) {
+        int changed = jdbc.update("UPDATE editor_image_object SET state = ?, lease_until = NULL " +
+                "WHERE id = ? AND state = 'COPYING' AND attempt_id = ?", state, id, attempt);
+        if (changed != 1) throw new IllegalArgumentException("Upload attempt expired");
+        jdbc.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP WHERE object_id = ?", id);
     }
 
     public void replaceItemReferences(Long itemId, Collection<UUID> ids) {

@@ -19,11 +19,30 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class EditorImageTest extends AbstractIntegrationTest {
+    private static final byte[] JPEG = jpeg();
+    private static final String HASH = hash(JPEG);
+    private final java.util.Map<String, byte[]> stored = new java.util.concurrent.ConcurrentHashMap<>();
+    @MockitoSpyBean PrivateImageStorage privateStorage;
+
+    static byte[] jpeg() {
+        try {
+            var output = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "jpeg", output);
+            return output.toByteArray();
+        } catch (java.io.IOException failure) { throw new IllegalStateException(failure); }
+    }
+
+    static String hash(byte[] bytes) {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)); }
+        catch (java.security.NoSuchAlgorithmException failure) { throw new IllegalStateException(failure); }
+    }
+
     @Autowired EditorImageService images;
     @Autowired ProjectPublishService publish;
     @Autowired UploadController publicUploads;
@@ -31,9 +50,19 @@ class EditorImageTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void stubStorage() {
-        when(s3Client.headObject(any(HeadObjectRequest.class))).thenReturn(HeadObjectResponse.builder()
-                .contentLength(1000L).contentType("image/jpeg").eTag("test-etag").build());
-        when(s3Client.copyObject(any(CopyObjectRequest.class))).thenReturn(CopyObjectResponse.builder().build());
+        stored.clear();
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(call -> {
+            HeadObjectRequest request = call.getArgument(0);
+            if (request.key().startsWith("images/") && !stored.containsKey(request.key())) throw NoSuchKeyException.builder().statusCode(404).build();
+            return HeadObjectResponse.builder().contentLength((long) JPEG.length).contentType("image/jpeg").eTag("test-etag").build();
+        });
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().contentLength((long) JPEG.length).eTag("test-etag").build(), new java.io.ByteArrayInputStream(JPEG)));
+        when(s3Client.copyObject(any(CopyObjectRequest.class))).thenAnswer(call -> {
+            CopyObjectRequest request = call.getArgument(0);
+            stored.put(request.destinationKey(), JPEG);
+            return CopyObjectResponse.builder().build();
+        });
     }
 
     @Test
@@ -256,9 +285,11 @@ class EditorImageTest extends AbstractIntegrationTest {
         var started = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
         when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(call -> {
+            HeadObjectRequest request = call.getArgument(0);
+            if (request.key().startsWith("images/")) throw NoSuchKeyException.builder().statusCode(404).build();
             started.countDown();
             if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("Confirmation timed out");
-            return HeadObjectResponse.builder().contentLength(1000L).contentType("image/jpeg").eTag("test-etag").build();
+            return HeadObjectResponse.builder().contentLength((long) JPEG.length).contentType("image/jpeg").eTag("test-etag").build();
         });
         var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
         try {
@@ -277,10 +308,300 @@ class EditorImageTest extends AbstractIntegrationTest {
         }
     }
 
+    @Test
+    void crashAfterClaimCanRecoverOnlyAfterLeaseExpiry() throws Exception {
+        User owner = createUser("crashclaim");
+        Project project = createProject(owner, "Recovery", "PRIVATE");
+        UUID id = pending(project, owner);
+        doThrow(new AssertionError("process stopped")).when(privateStorage).validate(any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(AssertionError.class);
+        doCallRealMethod().when(privateStorage).validate(any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(IllegalArgumentException.class);
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+        expireLease();
+        images.complete(id, owner);
+        assertState("READY");
+        assertThat(jdbcTemplate.queryForObject("SELECT validated_hash FROM editor_image_object", String.class)).isEqualTo(HASH);
+    }
+
+    @Test
+    void crashAfterCopyReconcilesFinalObjectWithoutCopyingAgain() throws Exception {
+        User owner = createUser("crashcopy");
+        UUID id = pending(createProject(owner, "Recovery", "PRIVATE"), owner);
+        doThrow(new AssertionError("process stopped")).when(imageRepository).finishAttempt(any(), any(), eq("READY"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(AssertionError.class);
+        assertState("COPYING");
+        assertThat(stored).hasSize(1);
+        expireLease();
+        doCallRealMethod().when(imageRepository).finishAttempt(any(), any(), eq("READY"));
+        clearInvocations(s3Client);
+        images.complete(id, owner);
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+        assertState("READY");
+    }
+
+    @Test
+    void expiredAttemptCannotFinishOrResetRecovery() throws Exception {
+        User owner = createUser("staleattempt");
+        UUID id = pending(createProject(owner, "Recovery", "PRIVATE"), owner);
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var recoveryStarted = new java.util.concurrent.CountDownLatch(1);
+        var releaseRecovery = new java.util.concurrent.CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            var result = call.callRealMethod();
+            if (calls.getAndIncrement() == 0) {
+                started.countDown();
+                if (!release.await(20, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+            } else {
+                recoveryStarted.countDown();
+                if (!releaseRecovery.await(20, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+            }
+            return result;
+        }).when(privateStorage).validate(any());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var old = executor.submit(() -> images.complete(id, owner));
+            assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            UUID oldAttempt = jdbcTemplate.queryForObject("SELECT attempt_id FROM editor_image_object", UUID.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(IllegalArgumentException.class);
+            expireLease();
+            var recovery = executor.submit(() -> images.complete(id, owner));
+            assertThat(recoveryStarted.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            UUID newAttempt = jdbcTemplate.queryForObject("SELECT attempt_id FROM editor_image_object", UUID.class);
+            assertThat(newAttempt).isNotEqualTo(oldAttempt);
+            release.countDown();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> old.get(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(IllegalArgumentException.class);
+            assertState("COPYING");
+            assertThat(jdbcTemplate.queryForObject("SELECT attempt_id FROM editor_image_object", UUID.class)).isEqualTo(newAttempt);
+            releaseRecovery.countDown();
+            recovery.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertState("READY");
+            verify(s3Client, times(1)).copyObject(any(CopyObjectRequest.class));
+        } finally { release.countDown(); releaseRecovery.countDown(); executor.shutdownNow(); }
+    }
+
+    @Test
+    void purgeCanWinAgainstExpiredValidationWithoutLeavingFinalObject() throws Exception {
+        User owner = createUser("purgerace");
+        UUID id = pending(createProject(owner, "Race", "PRIVATE"), owner);
+        doAnswer(call -> {
+            var validated = call.callRealMethod();
+            expireLease();
+            jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+            images.purge();
+            return validated;
+        }).when(privateStorage).validate(any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(RuntimeException.class);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM editor_image_object", Integer.class)).isZero();
+        assertThat(stored).isEmpty();
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+    }
+
+    @Test
+    void purgeCannotInterleaveCopyAndReadyEvenAfterLeaseExpires() throws Exception {
+        User owner = createUser("copyrace");
+        UUID id = pending(createProject(owner, "Race", "PRIVATE"), owner);
+        doAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid " +
+                    "WHERE l.locktype = 'advisory' AND l.granted AND a.xact_start IS NOT NULL", Integer.class)).isZero();
+            expireLease();
+            jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+            images.purge();
+            assertState("COPYING");
+            return call.callRealMethod();
+        }).when(privateStorage).confirm(any(), any());
+        images.complete(id, owner);
+        assertState("READY");
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test
+    void falseBytesAndWrongHashCannotBeAttached() throws Exception {
+        User owner = createUser("falsebytes");
+        Project project = createProject(owner, "Invalid", "PRIVATE");
+        UUID id = pending(project, owner);
+        byte[] fake = new byte[JPEG.length];
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(fake)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("SHA-256");
+        assertState("PENDING");
+        jdbcTemplate.update("UPDATE editor_image_object SET content_hash = ?", hash(fake));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("image");
+        assertState("PENDING");
+        long item = postForId(owner, "/api/project/" + pid(project) + "/item", "{\"title\":\"Note\"}");
+        updateContent(item, owner, content(id), 404);
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+    }
+
+    @Test
+    void replacementDuringValidationFailsTheConditionalCopy() throws Exception {
+        User owner = createUser("replacement");
+        UUID id = pending(createProject(owner, "Replace", "PRIVATE"), owner);
+        when(s3Client.copyObject(any(CopyObjectRequest.class))).thenThrow(S3Exception.builder().statusCode(412).message("etag changed").build());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(S3Exception.class);
+        assertState("PENDING");
+        assertThat(stored).isEmpty();
+        var read = org.mockito.ArgumentCaptor.forClass(GetObjectRequest.class);
+        verify(s3Client).getObject(read.capture());
+        assertThat(read.getValue().ifMatch()).isEqualTo("test-etag");
+        var copy = org.mockito.ArgumentCaptor.forClass(CopyObjectRequest.class);
+        verify(s3Client).copyObject(copy.capture());
+        assertThat(copy.getValue().copySourceIfMatch()).isEqualTo("test-etag");
+        assertThat(copy.getValue().overrideConfiguration().orElseThrow().headers())
+                .containsEntry("cf-copy-destination-if-none-match", List.of("*"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"jpeg", "png", "gif", "webp"})
+    void realFormatsCanBecomeReady(String format) throws Exception {
+        byte[] bytes;
+        if (format.equals("webp")) {
+            try (var input = getClass().getResourceAsStream("/images/valid.webp")) { bytes = input.readAllBytes(); }
+        } else {
+            var output = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), format, output);
+            bytes = output.toByteArray();
+        }
+        String type = "image/" + format;
+        User owner = createUser("format" + format);
+        Project project = createProject(owner, "Valid format", "PRIVATE");
+        String request = "{\"projectId\":\"%s\",\"contentType\":\"%s\",\"contentBytes\":%d,\"contentHash\":\"%s\"}"
+                .formatted(pid(project), type, bytes.length, hash(bytes));
+        String response = mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(owner))
+                .contentType("application/json").content(request)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID id = UUID.fromString(JsonPath.read(response, "$.imageId"));
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(call -> {
+            HeadObjectRequest head = call.getArgument(0);
+            if (head.key().startsWith("images/")) throw NoSuchKeyException.builder().statusCode(404).build();
+            return HeadObjectResponse.builder().contentLength((long) bytes.length).contentType(type).eTag("format-etag").build();
+        });
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(bytes)));
+        mockMvc.perform(post("/api/uploads/editor-images/" + id + "/complete").header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        assertState("READY");
+        assertThat(jdbcTemplate.queryForObject("SELECT validated_hash FROM editor_image_object", String.class)).isEqualTo(hash(bytes));
+    }
+
+    @Test
+    void temporaryReplacementBeforeDownloadAndOverlongBodyAreRejected() throws Exception {
+        User owner = createUser("readreplacement");
+        UUID id = pending(createProject(owner, "Replace", "PRIVATE"), owner);
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenThrow(S3Exception.builder().statusCode(412).build());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(S3Exception.class);
+        assertState("PENDING");
+        byte[] oversized = java.util.Arrays.copyOf(JPEG, JPEG.length + 1);
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(oversized)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("size");
+        assertState("PENDING");
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+    }
+
+    @Test
+    void recoveryUsesPersistedHashForUploadsCreatedBeforeMigration() throws Exception {
+        User owner = createUser("legacyrecovery");
+        UUID id = pending(createProject(owner, "Recovery", "PRIVATE"), owner);
+        jdbcTemplate.update("UPDATE editor_image_object SET content_hash = NULL");
+        doThrow(new AssertionError("process stopped")).when(imageRepository).finishAttempt(any(), any(), eq("READY"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).isInstanceOf(AssertionError.class);
+        assertThat(jdbcTemplate.queryForObject("SELECT validated_hash FROM editor_image_object", String.class)).isEqualTo(HASH);
+        expireLease();
+        doCallRealMethod().when(imageRepository).finishAttempt(any(), any(), eq("READY"));
+        byte[] wrong = new byte[JPEG.length];
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(wrong)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("SHA-256");
+        assertState("PENDING");
+        verify(s3Client, times(1)).copyObject(any(CopyObjectRequest.class));
+    }
+
+    @Test
+    void copyWithUnknownOutcomeCanBeReconciledAfterFailure() throws Exception {
+        User owner = createUser("unknowncopy");
+        UUID id = pending(createProject(owner, "Recovery", "PRIVATE"), owner);
+        when(s3Client.copyObject(any(CopyObjectRequest.class))).thenAnswer(call -> {
+            CopyObjectRequest copy = call.getArgument(0);
+            stored.put(copy.destinationKey(), JPEG);
+            throw new IllegalStateException("response lost after copy");
+        });
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("response lost");
+        assertState("PENDING");
+        images.complete(id, owner);
+        assertState("READY");
+        verify(s3Client, times(1)).copyObject(any(CopyObjectRequest.class));
+    }
+
+    @Test
+    void validationConcurrencyIsBoundedBeforeDownloadingBytes() throws Exception {
+        User owner = createUser("boundeddecode");
+        Project project = createProject(owner, "Bounds", "PRIVATE");
+        UUID first = pending(project, owner), second = pending(project, owner), third = pending(project, owner);
+        var started = new java.util.concurrent.CountDownLatch(2);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> {
+            started.countDown();
+            if (!release.await(20, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+            return new software.amazon.awssdk.core.ResponseInputStream<>(GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(JPEG));
+        });
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var one = executor.submit(() -> images.complete(first, owner));
+            var two = executor.submit(() -> images.complete(second, owner));
+            assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(third, owner)).hasMessageContaining("busy");
+            verify(s3Client, times(2)).getObject(any(GetObjectRequest.class));
+            release.countDown();
+            one.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            two.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(imageRepository.findAll(List.of(third)).get(0).state()).isEqualTo("PENDING");
+            images.complete(third, owner);
+            assertThat(imageRepository.findAll(List.of(third)).get(0).state()).isEqualTo("READY");
+        } finally { release.countDown(); executor.shutdownNow(); }
+    }
+
+    @Test
+    void recoveryReloadsHashPersistedAfterInitialLookup() throws Exception {
+        User owner = createUser("hashrace");
+        UUID id = pending(createProject(owner, "Recovery", "PRIVATE"), owner);
+        jdbcTemplate.update("UPDATE editor_image_object SET content_hash = NULL");
+        doAnswer(call -> {
+            jdbcTemplate.update("UPDATE editor_image_object SET validated_hash = ?", HASH);
+            return call.callRealMethod();
+        }).when(imageRepository).claimCompletion(any());
+        byte[] replacement = new byte[JPEG.length];
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new software.amazon.awssdk.core.ResponseInputStream<>(
+                GetObjectResponse.builder().build(), new java.io.ByteArrayInputStream(replacement)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> images.complete(id, owner)).hasMessageContaining("SHA-256");
+        assertState("PENDING");
+        verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
+    }
+
+    private UUID pending(Project project, User owner) throws Exception {
+        String response = mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(owner))
+                .contentType("application/json").content(request(project))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.imageId"));
+    }
+
+    private void expireLease() {
+        jdbcTemplate.update("UPDATE editor_image_object SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'");
+    }
+
+    private void assertState(String state) {
+        assertThat(jdbcTemplate.queryForObject("SELECT state FROM editor_image_object", String.class)).isEqualTo(state);
+    }
+
     private String request(Project project) {
         return """
-            {"projectId":"%s","contentType":"image/jpeg","contentHash":"%s","contentBytes":1000}
-            """.formatted(pid(project), "a".repeat(64));
+            {"projectId":"%s","contentType":"image/jpeg","contentHash":"%s","contentBytes":%d}
+            """.formatted(pid(project), HASH, JPEG.length);
     }
 
     private UUID upload(Project project, User owner) throws Exception {
