@@ -16,6 +16,8 @@ public final class ImageFileValidator {
     private static final long MAX_TOTAL_PIXELS = 40_000_000;
     private static final int MAX_FRAMES = 256;
     private static final int MAX_DIMENSION = 8192;
+    private static final int MAX_METADATA_BYTES = 1_048_576;
+    private static final int MAX_METADATA_BLOCKS = 1024;
 
     private ImageFileValidator() {}
 
@@ -29,7 +31,7 @@ public final class ImageFileValidator {
             try {
                 String format = reader.getFormatName().toLowerCase(Locale.ROOT);
                 if (!type.equals("image/" + format)) throw invalid();
-                reader.setInput(input, false, false);
+                reader.setInput(input, false, true);
                 reader.addIIOReadWarningListener((source, warning) -> { throw invalid(); });
                 reader.addIIOReadProgressListener(new IIOReadProgressListener() {
                     public void sequenceStarted(ImageReader source, int minIndex) { check(); }
@@ -76,10 +78,12 @@ public final class ImageFileValidator {
 
     private static void checkContainer(byte[] bytes, String type, long deadline) {
         if (bytes.length < 12) throw invalid();
+        MetadataBudget metadata = new MetadataBudget(deadline);
         switch (type) {
             case "image/jpeg" -> {
                 if ((bytes[0] & 255) != 255 || (bytes[1] & 255) != 216 ||
                         (bytes[bytes.length - 2] & 255) != 255 || (bytes[bytes.length - 1] & 255) != 217) throw invalid();
+                checkJpegMetadata(bytes, metadata);
             }
             case "image/png" -> {
                 var buffer = ByteBuffer.wrap(bytes);
@@ -94,6 +98,10 @@ public final class ImageFileValidator {
                     crc.update(bytes, start, length + 4);
                     buffer.position(buffer.position() + length);
                     if ((int) crc.getValue() != buffer.getInt()) throw invalid();
+                    if (chunk != 0x49484452 && chunk != 0x49444154 && chunk != 0x49454e44) {
+                        metadata.block(length);
+                        checkPngMetadata(bytes, start + 4, length, chunk, metadata);
+                    }
                     if (chunk == 0x49454e44) {
                         if (length != 0 || buffer.hasRemaining()) throw invalid();
                         end = true;
@@ -106,14 +114,14 @@ public final class ImageFileValidator {
                 var buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
                 if (buffer.getInt() != 0x46464952 || Integer.toUnsignedLong(buffer.getInt()) != bytes.length - 8L ||
                         buffer.getInt() != 0x50424557) throw invalid();
-                checkWebpChunks(buffer, true);
+                checkWebpChunks(buffer, true, metadata);
             }
-            case "image/gif" -> checkGif(bytes, deadline);
+            case "image/gif" -> checkGif(bytes, deadline, metadata);
             default -> throw invalid();
         }
     }
 
-    private static void checkWebpChunks(ByteBuffer buffer, boolean allowFrames) {
+    private static void checkWebpChunks(ByteBuffer buffer, boolean allowFrames, MetadataBudget metadata) {
         int frames = 0;
         long totalPixels = 0;
         while (buffer.hasRemaining()) {
@@ -138,14 +146,19 @@ public final class ImageFileValidator {
                     if (length != 10) throw invalid();
                     dimensions(1 + uint24(payload, 4), 1 + uint24(payload, 7));
                 }
+                case 0x48504c41 -> {}
                 case 0x464d4e41 -> {
                     if (!allowFrames || ++frames > MAX_FRAMES || length < 16) throw invalid();
                     totalPixels += dimensions(1 + uint24(payload, 6), 1 + uint24(payload, 9));
                     if (totalPixels > MAX_TOTAL_PIXELS) throw invalid();
                     payload.position(16);
-                    checkWebpChunks(payload.slice().order(ByteOrder.LITTLE_ENDIAN), false);
+                    checkWebpChunks(payload.slice().order(ByteOrder.LITTLE_ENDIAN), false, metadata);
                 }
-                default -> {}
+                default -> {
+                    metadata.block((int) length);
+                    if (chunk == 0x50434349 && (length < 128 ||
+                            Integer.toUnsignedLong(payload.duplicate().order(ByteOrder.BIG_ENDIAN).getInt(0)) != length)) throw invalid();
+                }
             }
             buffer.position(buffer.position() + (int) padded);
         }
@@ -156,7 +169,7 @@ public final class ImageFileValidator {
                 | Byte.toUnsignedInt(buffer.get(offset + 2)) << 16;
     }
 
-    private static void checkGif(byte[] bytes, long deadline) {
+    private static void checkGif(byte[] bytes, long deadline, MetadataBudget metadata) {
         String signature = new String(bytes, 0, 6, java.nio.charset.StandardCharsets.US_ASCII);
         if (!signature.equals("GIF87a") && !signature.equals("GIF89a")) throw invalid();
         dimensions((bytes[6] & 255) | (bytes[7] & 255) << 8, (bytes[8] & 255) | (bytes[9] & 255) << 8);
@@ -187,6 +200,7 @@ public final class ImageFileValidator {
                 if (codeSize < 2 || codeSize > 8) throw invalid();
                 compressed = new java.io.ByteArrayOutputStream();
             } else if (block == 33) {
+                metadata.block(2);
                 p++;
             } else throw invalid();
             int length;
@@ -195,6 +209,7 @@ public final class ImageFileValidator {
                 length = bytes[p++] & 255;
                 if (length > bytes.length - p) throw invalid();
                 if (compressed != null) compressed.write(bytes, p, length);
+                else metadata.add(length + 1);
                 p += length;
             } while (length != 0);
             if (compressed != null) checkGifCodes(compressed.toByteArray(), codeSize, pixels, deadline);
@@ -243,6 +258,83 @@ public final class ImageFileValidator {
             previous = code;
         }
         throw invalid();
+    }
+
+    private static void checkJpegMetadata(byte[] bytes, MetadataBudget metadata) {
+        int p = 2;
+        while (p < bytes.length) {
+            if ((bytes[p++] & 255) != 255) continue;
+            while (p < bytes.length && (bytes[p] & 255) == 255) p++;
+            if (p >= bytes.length) throw invalid();
+            int marker = bytes[p++] & 255;
+            if (marker == 0 || marker == 1 || (marker >= 0xd0 && marker <= 0xd9)) continue;
+            if (p + 2 > bytes.length) throw invalid();
+            int length = ((bytes[p] & 255) << 8) | (bytes[p + 1] & 255);
+            if (length < 2 || length > bytes.length - p) throw invalid();
+            if ((marker >= 0xe0 && marker <= 0xef) || marker == 0xfe) metadata.block(length - 2);
+            p += length;
+        }
+    }
+
+    private static void checkPngMetadata(byte[] bytes, int start, int length, int chunk, MetadataBudget metadata) {
+        if (chunk != 0x7a545874 && chunk != 0x69545874 && chunk != 0x69434350) return;
+        int end = start + length;
+        int keywordEnd = terminated(bytes, start, end);
+        if (keywordEnd - start < 1 || keywordEnd - start > 79) throw invalid();
+        int p = keywordEnd + 1;
+        boolean compressed = true;
+        if (chunk == 0x69545874) {
+            if (p >= end || (bytes[p] != 0 && bytes[p] != 1)) throw invalid();
+            compressed = bytes[p++] == 1;
+        }
+        if (p >= end || bytes[p++] != 0) throw invalid();
+        if (chunk == 0x69545874) {
+            p = terminated(bytes, p, end) + 1;
+            p = terminated(bytes, p, end) + 1;
+        }
+        if (compressed) metadata.inflate(bytes, p, end - p);
+    }
+
+    private static int terminated(byte[] bytes, int start, int end) {
+        for (int p = start; p < end; p++) if (bytes[p] == 0) return p;
+        throw invalid();
+    }
+
+    private static final class MetadataBudget {
+        private final long deadline;
+        private int remaining = MAX_METADATA_BYTES;
+        private int blocks;
+
+        private MetadataBudget(long deadline) { this.deadline = deadline; }
+
+        private void block(int bytes) {
+            if (++blocks > MAX_METADATA_BLOCKS) throw new IllegalArgumentException("Image metadata block limit exceeded");
+            add(bytes);
+        }
+
+        private void add(int bytes) {
+            if (bytes < 0 || bytes > remaining) throw new IllegalArgumentException("Image metadata byte limit exceeded");
+            remaining -= bytes;
+            if (System.nanoTime() > deadline) throw new IllegalArgumentException("Image decoding time limit exceeded");
+        }
+
+        private void inflate(byte[] bytes, int offset, int length) {
+            java.util.zip.Inflater inflater = new java.util.zip.Inflater();
+            byte[] scratch = new byte[8192];
+            try {
+                inflater.setInput(bytes, offset, length);
+                while (!inflater.finished()) {
+                    int read = inflater.inflate(scratch);
+                    add(read);
+                    if (read == 0 && !inflater.finished()) throw invalid();
+                }
+                if (inflater.getRemaining() != 0) throw invalid();
+            } catch (java.util.zip.DataFormatException corrupt) {
+                throw new IllegalArgumentException("Invalid compressed image metadata", corrupt);
+            } finally {
+                inflater.end();
+            }
+        }
     }
 
     private static IllegalArgumentException invalid() {
