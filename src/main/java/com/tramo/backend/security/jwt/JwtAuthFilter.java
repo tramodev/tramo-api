@@ -1,12 +1,15 @@
 package com.tramo.backend.security.jwt;
 
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.dao.DataAccessException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -20,6 +23,10 @@ import java.io.IOException;
 public class JwtAuthFilter extends OncePerRequestFilter {
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private JwtAuthEntryPoint authEntryPoint;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -33,10 +40,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            User principal = jwtService.buildPrincipalFromClaims(token);
-
-            if (principal != null && jwtService.isTokenValid(token)
-                    && principal.isEnabled() && principal.isAccountNonLocked()) {
+            Long userId = jwtService.getUserIdFromToken(token);
+            if (userId != null) {
+                User principal;
+                try {
+                    principal = userRepository.findById(userId).orElse(null);
+                } catch (DataAccessException failure) {
+                    SecurityContextHolder.clearContext();
+                    response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Authentication unavailable");
+                    return;
+                }
+                if (principal == null || !principal.isEnabled() || !principal.isAccountNonLocked()) {
+                    SecurityContextHolder.clearContext();
+                    authEntryPoint.commence(request, response, new BadCredentialsException("Invalid access token"));
+                    return;
+                }
+                principal.setRequiresBirthDate(principal.getBirthDate() == null);
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         principal,
                         null,

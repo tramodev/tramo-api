@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class EditorHotPathLoadCountTest extends AbstractIntegrationTest {
 
-    private static final long AUTOSAVE_MAX_ENTITY_LOADS = 4;
+    private static final long AUTOSAVE_MAX_ENTITY_LOADS = 5;
 
     private long entityLoadCount(HttpCall call) throws Exception {
         org.hibernate.stat.Statistics statistics =

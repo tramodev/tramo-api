@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -57,18 +56,13 @@ public class JwtService {
         return getClaim(token, Claims::getSubject);
     }
 
-    public User buildPrincipalFromClaims(String token) {
+    public Long getUserIdFromToken(String token) {
         try {
             Claims claims = getAllClaims(token);
-            User user = new User();
-            user.setId(((Number) claims.get("id")).longValue());
-            user.setUsername(claims.getSubject());
-            user.setRole(Role.valueOf((String) claims.get("role")));
-            user.setEmailVerified(Boolean.TRUE.equals(claims.get("emailVerified", Boolean.class)));
-            user.setBanned(Boolean.TRUE.equals(claims.get("banned", Boolean.class)));
-            user.setRequiresBirthDate(Boolean.TRUE.equals(claims.get("requiresBirthDate", Boolean.class)));
-            return user;
-        } catch (JwtException | IllegalArgumentException | NullPointerException | ClassCastException e) {
+            if (claims.getExpiration() == null) return null;
+            Number id = claims.get("id", Number.class);
+            return id == null ? null : id.longValue();
+        } catch (JwtException | IllegalArgumentException | ClassCastException e) {
             return null;
         }
     }
