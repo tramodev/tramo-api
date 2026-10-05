@@ -174,7 +174,16 @@ The existing request and response shapes are unchanged; the frontend already has
 
 Validation respects `app.limits.max-upload-bytes` and also caps each dimension at 8192,
 each frame at 4 million pixels, animations at 256 frames and 40 million total pixels,
-and decoding at five seconds (checked between frames and at decoder progress callbacks).
+and decoding at five seconds (checked between frames, during metadata validation and at decoder progress callbacks).
+Metadata is limited to 1 MiB total per file, counting encoded metadata payloads plus the full expanded
+size of PNG `zTXt`, compressed `iTXt`, and `iCCP`, with at most 1024 metadata blocks. Inflation uses
+an 8 KiB scratch buffer and discards the output; incomplete, corrupt, dictionary-dependent, or trailing
+zlib streams are rejected before ImageIO. PNG metadata is checked even when it appears after image data.
+JPEG APP/COM segments, GIF extensions, and WebP ancillary chunks share the same per-file budget;
+WebP ICC profile headers must also match the bounded payload size before the reader loads them.
+ImageIO is asked to ignore metadata, but this is only an optimization: reader behavior varies by
+format and JDK, palette PNG still reads some ancillary data, and the WebP reader loads ICC profiles
+regardless of that flag. Original object bytes and hashes are preserved; metadata is not stripped.
 At most two validations download/decode concurrently per backend process. Busy validations can be retried.
 The original bytes, including animation, are preserved; no image transcoding occurs.
 
