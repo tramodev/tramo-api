@@ -141,6 +141,30 @@ everything else expects a bearer token.
 open and receives unread-count updates live. It sends periodic heartbeat comments so proxies
 don't drop the connection, and emitters are evicted as soon as a write to a gone client fails.
 
+## Access tokens and permission changes
+
+Access JWTs expire after 15 minutes by default (`app.jwt.access-token-ttl-ms=900000`).
+After verifying signature and expiration, authentication loads the user once by the signed
+user ID from PostgreSQL. Authorities come from the current database role; deleted, banned,
+or disabled users receive 401, including on public routes when their token is presented.
+A database lookup failure returns 503 without authenticating from claims. Permission state
+is not cached: bans and role changes apply to the next request after the change commits,
+without waiting for the 15-minute expiry. Requests already authorized may finish.
+Refresh continues to load the current user and reject bans before rotation or retry handling.
+Malformed or expired JWTs retain the existing anonymous behavior on public routes and are
+rejected on protected routes.
+
+This checks current account state, rather than permanently revoking access tokens or sessions.
+After an unban, an earlier unexpired access token works again with the current role.
+The existing admin ban action deletes refresh tokens; an unban does not restore those tokens.
+Logout still deletes the supplied refresh token and does not invalidate access JWTs.
+
+Open SSE notification streams are authorized at connection time and are not revalidated by
+this per-request check. Ban and role changes do not explicitly close existing emitters;
+immediate termination of an open stream would require explicit emitter closure. Streams may
+continue until disconnect, a failed write, or their configured timeout
+(`app.notifications.sse-timeout-ms`, 30 minutes by default). Reconnecting checks current state.
+
 ## Project layout
 
 ```
