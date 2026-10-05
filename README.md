@@ -167,8 +167,34 @@ Every domain package is cut the same way: `controller/ dto/ entity/ repository/ 
 Note images use a separate private R2 bucket. The editor persists version-2 image nodes with an
 opaque `imageId`, never a storage URL. Uploads reserve quota, use a ten-minute signed PUT into
 `temporary/`, and require owner confirmation before an immutable copy under `images/` can be
-attached to content. Confirmation checks object size and content type and conditions the copy
-on the inspected ETag. It can be repeated after success without replacing the confirmed object.
+attached to content. Confirmation downloads the inspected ETag, verifies the actual SHA-256
+against `contentHash`, and decodes JPEG, PNG, WebP (TwelveMonkeys ImageIO), or every GIF frame.
+Declared MIME metadata alone is insufficient. Invalid, truncated, or mismatched files are rejected.
+The existing request and response shapes are unchanged; the frontend already hashes the uploaded bytes.
+
+Validation respects `app.limits.max-upload-bytes` and also caps each dimension at 8192,
+each frame at 4 million pixels, animations at 256 frames and 40 million total pixels,
+and decoding at five seconds (checked between frames and at decoder progress callbacks).
+At most two validations download/decode concurrently per backend process. Busy validations can be retried.
+The original bytes, including animation, are preserved; no image transcoding occurs.
+
+Confirmation stores a 60-second lease and a unique attempt ID. A retry during the lease is rejected;
+a retry after expiration revalidates an existing final object and finishes without overwriting it,
+or validates the temporary object and retries the ETag-conditioned copy if no final object exists.
+The copy also uses R2's `cf-copy-destination-if-none-match: *` to keep the destination immutable
+([R2 conditional copy documentation](https://developers.cloudflare.com/r2/api/s3/extensions/)).
+The verified hash is persisted before copying so recovery can compare it, including for uploads
+created before hash persistence was introduced. Existing `READY` objects are left untouched.
+
+PostgreSQL session advisory locks coordinate claiming, final copying/confirmation, and purging
+across backend processes. They hold a connection, but no database transaction remains open during R2
+calls. At most two coordinated mutations run concurrently per process, leaving pool connections
+available for the short database transactions (the default connection pool has ten connections).
+A short final copy still holding its lock blocks takeover even if its lease expires;
+retry after the operation finishes or the connection closes. An older validator cannot copy,
+finish, or reset the state after another attempt takes over. Failed uploads remain unusable,
+and abandoned temporary/final objects are reclaimed together by the existing purge and grace period.
+Confirmation can be repeated after success without replacing the confirmed object.
 
 Reading resolves up to 100 image IDs per request after checking the project's current permissions
 and the image's membership in the requested content. Published reads use the latest publish
