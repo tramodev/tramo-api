@@ -172,6 +172,40 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void refreshRejectsUserBannedAfterTokenIssuance() throws Exception {
+        User user = createUser("bannedrefresh");
+        RefreshToken token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        user.setBanned(true);
+        userRepository.save(user);
+        refresh(token.getToken()).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void duplicateRefreshChecksCurrentBanBeforeRetryWindow() throws Exception {
+        User user = createUser("bannedretry");
+        RefreshToken token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        refresh(token.getToken()).andExpect(status().isOk());
+        user.setBanned(true);
+        userRepository.save(user);
+        refresh(token.getToken()).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void refreshUsesCurrentRole() throws Exception {
+        User user = createAdmin("demotedrefresh");
+        RefreshToken token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        user.setRole(com.tramo.backend.user.Role.USER);
+        userRepository.save(user);
+        String response = refresh(token.getToken()).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(response, "$.accessToken");
+        String role = jwtService.getClaim(accessToken, claims -> claims.get("role", String.class));
+        assertThat(role).isEqualTo("USER");
+        mockMvc.perform(get("/api/admin/reports").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void refreshRejectsUnknownToken() throws Exception {
         refresh("no-such-token")
                 .andExpect(status().isUnauthorized())

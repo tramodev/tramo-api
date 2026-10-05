@@ -14,7 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class BannedUserVisibilityTest extends AbstractIntegrationTest {
 
     @Test
-    void banningOwnerHidesProjectFromExploreAndDirectLinkButNotFromOwner() throws Exception {
+    void banningOwnerHidesProjectAndRejectsOwnerAccess() throws Exception {
         User owner = createUser("bannedauthor");
         User stranger = createUser("bannedviewer");
         Project project = createProject(owner, "Spam post", "published", "desc", null);
@@ -39,7 +39,7 @@ class BannedUserVisibilityTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/public/project/" + pid(project)).header("Authorization", ownerTokenFromBeforeTheBan))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnauthorized());
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getVisibility())
                 .isEqualTo(ProjectVisibility.PUBLISHED);
