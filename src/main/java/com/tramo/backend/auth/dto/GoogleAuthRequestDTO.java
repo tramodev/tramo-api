@@ -8,6 +8,6 @@ import lombok.Setter;
 @Setter
 public class GoogleAuthRequestDTO {
 
-    @NotBlank(message = "ID token is required")
+    @NotBlank(message = "ID_TOKEN_REQUIRED")
     private String idToken;
 }

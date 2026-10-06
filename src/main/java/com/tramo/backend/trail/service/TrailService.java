@@ -1,5 +1,7 @@
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.trail.dto.TrailRequestDTO;
@@ -50,7 +52,7 @@ public class TrailService {
     @Transactional
     public TrailResponseDTO create(Long projectId, TrailRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Title is required");
+            throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Project project = accessGuard.getOwnedProject(projectId, requester);
         Trail trail = new Trail();

@@ -1,5 +1,7 @@
 package com.tramo.backend.auth.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.auth.entity.PasswordResetToken;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
@@ -77,7 +79,7 @@ public class PasswordService {
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (user.getPassword() == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new RequestValidationException(RequestErrorCode.CURRENT_PASSWORD_INCORRECT);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);

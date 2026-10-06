@@ -14,11 +14,11 @@ public class UploadPresignRequestDTO {
     private String contentType;
 
     @NotBlank
-    @Pattern(regexp = "avatar|thumbnail|editor-image|banner", message = "kind must be avatar, thumbnail, editor-image, or banner")
+    @Pattern(regexp = "avatar|thumbnail|editor-image|banner", message = "UPLOAD_KIND_INVALID")
     private String kind;
 
     @NotBlank
-    @Pattern(regexp = "[a-f0-9]{64}", message = "contentHash must be a 64-char lowercase hex SHA-256 digest")
+    @Pattern(regexp = "[a-f0-9]{64}", message = "CONTENT_HASH_INVALID")
     private String contentHash;
 
     

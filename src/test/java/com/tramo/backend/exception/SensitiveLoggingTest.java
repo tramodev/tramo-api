@@ -4,6 +4,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.tramo.backend.auth.service.EmailService;
+import com.tramo.backend.auth.dto.ResetPasswordRequestDTO;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.subscription.patreon.PatreonController;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -45,6 +49,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SensitiveLoggingTest {
@@ -203,6 +209,36 @@ class SensitiveLoggingTest {
         assertSafe(response.getContentAsString());
     }
 
+    @Test
+    void codedBusinessFailurePreservesGuidanceWithoutExposingItsCause() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var response = mvc.perform(get("/publish"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PROJECT_DESCRIPTION_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("Add a description before publishing"))
+                .andReturn().getResponse();
+        assertThat(logText()).contains("code=PROJECT_DESCRIPTION_REQUIRED", response.getHeader("X-Tracking-Id"));
+        assertSafe(response.getContentAsString());
+        assertSafe(logText());
+    }
+
+    @Test
+    void realBeanValidationResolvesCodesInsteadOfEchoingPasswordsAndTokens() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var response = mvc.perform(post("/validate").contentType("application/json")
+                        .content("{\"token\":\"RECOVERY_SECRET\",\"newPassword\":\"PASSWORD_SECRET\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errorCodes.newPassword").value("PASSWORD_FORMAT_INVALID"))
+                .andExpect(jsonPath("$.errors.newPassword").value(
+                        "Password must contain at least one uppercase letter, one number, and one symbol"))
+                .andReturn().getResponse();
+        assertSafe(response.getContentAsString());
+        assertSafe(logText());
+    }
+
     private String logText() {
         return logs.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (a, b) -> a + "\n" + b);
     }
@@ -219,6 +255,15 @@ class SensitiveLoggingTest {
         @GetMapping("/failure")
         public void failure() {
             throw new IllegalStateException(SECRET, new RuntimeException(SECRET, new java.sql.SQLException("select password from users " + SECRET)));
+        }
+
+        @GetMapping("/publish")
+        public void publish() {
+            throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED, new RuntimeException(SECRET));
+        }
+
+        @PostMapping("/validate")
+        public void validate(@Valid @RequestBody ResetPasswordRequestDTO request) {
         }
 
         @GetMapping("/invalid")

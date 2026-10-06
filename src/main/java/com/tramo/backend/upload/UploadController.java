@@ -1,5 +1,7 @@
 package com.tramo.backend.upload;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.project.repository.ProjectRepository;
@@ -74,18 +76,17 @@ public class UploadController {
         }
         String extension = ALLOWED_CONTENT_TYPES.get(request.getContentType());
         if (extension == null) {
-            throw new IllegalArgumentException("Unsupported content type: " + request.getContentType());
+            throw new RequestValidationException(RequestErrorCode.CONTENT_TYPE_UNSUPPORTED);
         }
         if (request.getContentBytes() > maxUploadBytes) {
-            throw new IllegalArgumentException(
-                    "File too large (max %dMB per upload)".formatted(maxUploadBytes / (1024 * 1024)));
+            throw new RequestValidationException(RequestErrorCode.UPLOAD_SIZE_LIMIT_EXCEEDED);
         }
         boolean supporter = subscriptionService.isSupporter(user);
         if ("avatar".equals(request.getKind()) && "image/gif".equals(request.getContentType()) && !supporter) {
             throw new LimitExceededException("Animated GIF avatars are a supporter perk. Upgrade to use one.");
         }
         if ("banner".equals(request.getKind()) && "image/gif".equals(request.getContentType())) {
-            throw new IllegalArgumentException("Animated GIF banners are not supported.");
+            throw new RequestValidationException(RequestErrorCode.ANIMATED_BANNER_UNSUPPORTED);
         }
         if ("banner".equals(request.getKind()) && !supporter) {
             throw new LimitExceededException("Profile banners are a supporter perk. Upgrade to use one.");

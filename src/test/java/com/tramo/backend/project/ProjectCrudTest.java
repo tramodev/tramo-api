@@ -381,7 +381,14 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"visibility":"published"}"""))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PROJECT_DESCRIPTION_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("Add a description before publishing"));
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PROJECT_DESCRIPTION_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("Add a description before publishing"));
 
         mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(owner))

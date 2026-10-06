@@ -1,5 +1,7 @@
 package com.tramo.backend.upload;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.event.IIOReadProgressListener;
@@ -44,7 +46,7 @@ public final class ImageFileValidator {
                     public void thumbnailComplete(ImageReader source) { check(); }
                     public void readAborted(ImageReader source) { throw invalid(); }
                     private void check() {
-                        if (System.nanoTime() > deadline) throw new IllegalArgumentException("Image decoding time limit exceeded");
+                        if (System.nanoTime() > deadline) throw new RequestValidationException(RequestErrorCode.IMAGE_DECODING_TIMEOUT);
                     }
                 });
                 if ("image/gif".equals(type)) {
@@ -65,14 +67,14 @@ public final class ImageFileValidator {
                 reader.dispose();
             }
         } catch (IOException | IndexOutOfBoundsException failure) {
-            throw new IllegalArgumentException("Invalid or truncated image", failure);
+            throw new RequestValidationException(RequestErrorCode.IMAGE_TRUNCATED, failure);
         }
     }
 
     private static long dimensions(int width, int height) {
         long pixels = (long) width * height;
         if (width <= 0 || height <= 0 || width > MAX_DIMENSION || height > MAX_DIMENSION || pixels > MAX_PIXELS)
-            throw new IllegalArgumentException("Image dimensions exceed limit");
+            throw new RequestValidationException(RequestErrorCode.IMAGE_DIMENSIONS_EXCEEDED);
         return pixels;
     }
 
@@ -308,14 +310,14 @@ public final class ImageFileValidator {
         private MetadataBudget(long deadline) { this.deadline = deadline; }
 
         private void block(int bytes) {
-            if (++blocks > MAX_METADATA_BLOCKS) throw new IllegalArgumentException("Image metadata block limit exceeded");
+            if (++blocks > MAX_METADATA_BLOCKS) throw new RequestValidationException(RequestErrorCode.IMAGE_METADATA_BLOCK_LIMIT);
             add(bytes);
         }
 
         private void add(int bytes) {
-            if (bytes < 0 || bytes > remaining) throw new IllegalArgumentException("Image metadata byte limit exceeded");
+            if (bytes < 0 || bytes > remaining) throw new RequestValidationException(RequestErrorCode.IMAGE_METADATA_BYTE_LIMIT);
             remaining -= bytes;
-            if (System.nanoTime() > deadline) throw new IllegalArgumentException("Image decoding time limit exceeded");
+            if (System.nanoTime() > deadline) throw new RequestValidationException(RequestErrorCode.IMAGE_DECODING_TIMEOUT);
         }
 
         private void inflate(byte[] bytes, int offset, int length) {
@@ -330,7 +332,7 @@ public final class ImageFileValidator {
                 }
                 if (inflater.getRemaining() != 0) throw invalid();
             } catch (java.util.zip.DataFormatException corrupt) {
-                throw new IllegalArgumentException("Invalid compressed image metadata", corrupt);
+                throw new RequestValidationException(RequestErrorCode.IMAGE_METADATA_INVALID, corrupt);
             } finally {
                 inflater.end();
             }
@@ -338,6 +340,6 @@ public final class ImageFileValidator {
     }
 
     private static IllegalArgumentException invalid() {
-        return new IllegalArgumentException("Invalid, unsupported or truncated image");
+        return new RequestValidationException(RequestErrorCode.IMAGE_INVALID);
     }
 }

@@ -1,5 +1,7 @@
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.trail.dto.ItemTextStatsDTO;
 import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -89,7 +91,7 @@ public class ItemService {
     @Transactional
     public ItemResponseDTO create(Long trailId, ItemRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Title is required");
+            throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Trail trail = trailService.getOwnedTrail(trailId, requester);
 
@@ -120,7 +122,7 @@ public class ItemService {
     @Transactional
     public ItemResponseDTO createLoose(Long projectId, ItemRequestDTO request, User requester) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Title is required");
+            throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Project project = getOwnedProject(projectId, requester);
 
@@ -214,7 +216,7 @@ public class ItemService {
         Map<Long, TrailItem> byItemId = steps.stream()
                 .collect(Collectors.toMap(step -> step.getItem().getId(), step -> step));
         if (itemIds.size() != byItemId.size() || !byItemId.keySet().containsAll(itemIds)) {
-            throw new IllegalArgumentException("The new order must list every item in the trail exactly once");
+            throw new RequestValidationException(RequestErrorCode.TRAIL_ORDER_INVALID);
         }
         for (int index = 0; index < itemIds.size(); index++) {
             byItemId.get(itemIds.get(index)).setOrderIndex(index);
@@ -425,7 +427,7 @@ public class ItemService {
         
         String targetTitle = resolveOwnedTargetTitle(targetType, targetId, requester);
         if (targetType == AssociationTargetType.ITEM && sourceId.equals(targetId)) {
-            throw new IllegalArgumentException("An item cannot be tied to itself");
+            throw new RequestValidationException(RequestErrorCode.ITEM_SELF_LINK_FORBIDDEN);
         }
         if (targetTitle == null) {
             throw new ResourceNotFoundException("Association target not found");

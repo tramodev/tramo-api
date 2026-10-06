@@ -47,7 +47,8 @@ public class GlobalExceptionHandler {
     }
 
     private <T extends ErrorResponse> ResponseEntity<T> handled(Exception ex, T error, HttpStatus status) {
-        String trackingId = SafeLog.failure(log, "request_rejected", status.name(), ex);
+        if (error.getCode() == null) error.setCode(status.name());
+        String trackingId = SafeLog.failure(log, "request_rejected", error.getCode(), ex);
         return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
     }
 
@@ -187,11 +188,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        ErrorResponse error = new ErrorResponse(
-                HttpStatus.BAD_REQUEST.value(),
-                "Invalid request",
-                LocalDateTime.now()
-        );
+        RequestErrorCode code = ex instanceof RequestValidationException validation
+                ? validation.getCode() : RequestErrorCode.INVALID_REQUEST;
+        ErrorResponse error = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), code.getMessage(), LocalDateTime.now());
+        error.setCode(code.name());
         return handled(ex, error, HttpStatus.BAD_REQUEST);
     }
 
@@ -199,10 +199,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
+        Map<String, String> errorCodes = new HashMap<>();
         ex.getBindingResult().getFieldErrors().forEach((error) -> {
             String fieldName = error.getField();
-            String errorMessage = "Invalid value";
-            errors.put(fieldName, errorMessage);
+            RequestErrorCode code = RequestErrorCode.validation(error.getDefaultMessage(), error.getCode());
+            errors.put(fieldName, code.getMessage());
+            errorCodes.put(fieldName, code.name());
         });
 
         ValidationErrorResponse errorResponse = new ValidationErrorResponse(
@@ -211,6 +213,8 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 errors
         );
+        errorResponse.setCode("VALIDATION_FAILED");
+        errorResponse.setErrorCodes(errorCodes);
         return handled(ex, errorResponse, HttpStatus.BAD_REQUEST);
     }
 
@@ -256,6 +260,7 @@ public class GlobalExceptionHandler {
                 "An unexpected error occurred",
                 LocalDateTime.now()
         );
+        error.setCode("INTERNAL_ERROR");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).header("X-Tracking-Id", trackingId).body(error);
     }
 

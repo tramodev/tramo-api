@@ -10,10 +10,10 @@ import java.util.List;
 @Setter
 public class UpdatePreferencesRequestDTO {
 
-    @Pattern(regexp = "public|private", message = "profileVisibility must be 'public' or 'private'")
+    @Pattern(regexp = "public|private", message = "PROFILE_VISIBILITY_INVALID")
     private String profileVisibility;
 
-    @Pattern(regexp = "off|daily|weekly", message = "emailDigestFrequency must be 'off', 'daily', or 'weekly'")
+    @Pattern(regexp = "off|daily|weekly", message = "EMAIL_DIGEST_FREQUENCY_INVALID")
     private String emailDigestFrequency;
 
     private Boolean showUpvotes;
@@ -22,7 +22,7 @@ public class UpdatePreferencesRequestDTO {
 
     private Boolean allowForks;
 
-    @Pattern(regexp = "everyone|following|noone", message = "commentsPolicy must be 'everyone', 'following', or 'noone'")
+    @Pattern(regexp = "everyone|following|noone", message = "COMMENTS_POLICY_INVALID")
     private String commentsPolicy;
 
     private Boolean editorTourSeen;

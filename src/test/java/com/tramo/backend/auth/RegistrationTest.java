@@ -151,7 +151,8 @@ class RegistrationTest extends AbstractIntegrationTest {
     void registerRejectsInvalidEmail() throws Exception {
         register(registerJson("validname", "notanemail", "Passw0rd123!"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.email").exists());
+                .andExpect(jsonPath("$.errors.email").value("Email must be valid"))
+                .andExpect(jsonPath("$.errorCodes.email").value("EMAIL_INVALID"));
     }
 
     @Test
