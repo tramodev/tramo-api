@@ -7,7 +7,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class SetThumbnailRequestDTO {
-    @Pattern(regexp = "NONE|GRAPH|PROJECT_IMAGE|DEDICATED", message = "Invalid thumbnail type")
+    @Pattern(regexp = "NONE|GRAPH|PROJECT_IMAGE|DEDICATED", message = "THUMBNAIL_TYPE_INVALID")
     private String type;
 
     private String trailId;

@@ -1,5 +1,7 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
@@ -78,7 +80,7 @@ public class ProjectPublishService {
     public ProjectResponseDTO publish(Long id, User requester) {
         Project project = accessGuard.getOwnedProject(id, requester);
         if (project.getDescription() == null || project.getDescription().isBlank()) {
-            throw new IllegalArgumentException("Add a description before publishing");
+            throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
         }
         ProjectVisibility previousVisibility = project.getVisibility();
         boolean firstPublish = project.getFirstPublishedDate() == null;

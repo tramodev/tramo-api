@@ -7,7 +7,7 @@ import lombok.Setter;
 @Getter
 @Setter
 public class CommentRequestDTO {
-    @NotBlank(message = "Comment cannot be empty")
+    @NotBlank(message = "COMMENT_REQUIRED")
     private String content;
 
     private Long parentId;

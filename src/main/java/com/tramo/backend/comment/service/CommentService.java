@@ -1,5 +1,7 @@
 package com.tramo.backend.comment.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.comment.dto.CommentDTO;
 import com.tramo.backend.comment.dto.CommentRequestDTO;
 import com.tramo.backend.comment.entity.Comment;
@@ -60,7 +62,7 @@ public class CommentService {
             parent = commentRepository.findById(request.getParentId())
                     .orElseThrow(() -> new ResourceNotFoundException("Parent comment not found"));
             if (!parent.getProject().getId().equals(projectId)) {
-                throw new IllegalArgumentException("Parent comment belongs to a different project");
+                throw new RequestValidationException(RequestErrorCode.COMMENT_PARENT_INVALID);
             }
         }
 

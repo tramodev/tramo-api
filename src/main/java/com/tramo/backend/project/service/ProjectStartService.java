@@ -1,5 +1,7 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.project.dto.StartProjectRequest;
 import com.tramo.backend.project.dto.StartedProjectDTO;
@@ -100,7 +102,7 @@ public class ProjectStartService {
         access.getOwnedProject(projectId, user);
         var project = entityManager.find(Project.class, projectId, LockModeType.PESSIMISTIC_WRITE);
         var existingTrails = trails.findByProjectId(projectId).stream().filter(t -> preferredTrailId == null || t.getId().equals(preferredTrailId)).sorted(Comparator.comparing(t -> t.getId())).toList();
-        if (preferredTrailId != null && existingTrails.isEmpty()) throw new IllegalArgumentException("Trail does not belong to this project");
+        if (preferredTrailId != null && existingTrails.isEmpty()) throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_INVALID);
         for (var trail : existingTrails) {
             var trailSteps = steps.findByTrailIdOrderByOrderIndexAsc(trail.getId());
             if (!trailSteps.isEmpty()) return result(project, trail.getId(), trailSteps.get(0).getItem().getId());

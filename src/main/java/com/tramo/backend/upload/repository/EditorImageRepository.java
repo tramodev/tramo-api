@@ -1,5 +1,7 @@
 package com.tramo.backend.upload.repository;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.upload.entity.EditorImage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -52,7 +54,7 @@ public class EditorImageRepository {
     }
 
     public <T> T withObjectLock(UUID id, java.util.function.Supplier<T> action) {
-        if (!operations.tryAcquire()) throw new IllegalArgumentException("Upload operation in progress");
+        if (!operations.tryAcquire()) throw new RequestValidationException(RequestErrorCode.UPLOAD_IN_PROGRESS);
         long key = id.getMostSignificantBits() ^ id.getLeastSignificantBits();
         try (var connection = java.util.Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
             connection.setAutoCommit(true);
@@ -60,7 +62,7 @@ public class EditorImageRepository {
                 statement.setLong(1, key);
                 try (var result = statement.executeQuery()) {
                     result.next();
-                    if (!result.getBoolean(1)) throw new IllegalArgumentException("Upload operation in progress");
+                    if (!result.getBoolean(1)) throw new RequestValidationException(RequestErrorCode.UPLOAD_IN_PROGRESS);
                 }
             }
             try {
@@ -89,14 +91,14 @@ public class EditorImageRepository {
                 "lease_until = CURRENT_TIMESTAMP + INTERVAL '60 seconds' WHERE id = ? AND " +
                 "(state = 'PENDING' OR (state = 'COPYING' AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP)))",
                 attempt, id);
-        if (changed != 1) throw new IllegalArgumentException("Upload operation in progress");
+        if (changed != 1) throw new RequestValidationException(RequestErrorCode.UPLOAD_IN_PROGRESS);
         return attempt;
     }
 
     public void recordValidation(UUID id, UUID attempt, String hash) {
         int changed = jdbc.update("UPDATE editor_image_object SET validated_hash = ? " +
                 "WHERE id = ? AND state = 'COPYING' AND attempt_id = ?", hash, id, attempt);
-        if (changed != 1) throw new IllegalArgumentException("Upload attempt expired");
+        if (changed != 1) throw new RequestValidationException(RequestErrorCode.UPLOAD_ATTEMPT_EXPIRED);
     }
 
     public void releaseAttempt(UUID id, UUID attempt) {
@@ -107,7 +109,7 @@ public class EditorImageRepository {
     public void finishAttempt(UUID id, UUID attempt, String state) {
         int changed = jdbc.update("UPDATE editor_image_object SET state = ?, lease_until = NULL " +
                 "WHERE id = ? AND state = 'COPYING' AND attempt_id = ?", state, id, attempt);
-        if (changed != 1) throw new IllegalArgumentException("Upload attempt expired");
+        if (changed != 1) throw new RequestValidationException(RequestErrorCode.UPLOAD_ATTEMPT_EXPIRED);
         jdbc.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP WHERE object_id = ?", id);
     }
 

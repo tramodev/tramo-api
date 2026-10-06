@@ -1,5 +1,7 @@
 package com.tramo.backend.user.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.NotificationTypes;
 import com.tramo.backend.user.dto.UpdatePreferencesRequestDTO;
@@ -67,7 +69,7 @@ public class UserPreferencesService {
                 .toList();
         for (String type : normalized) {
             if (!NotificationTypes.isKnown(type)) {
-                throw new IllegalArgumentException("Unknown notification type: " + type);
+                throw new RequestValidationException(RequestErrorCode.NOTIFICATION_TYPE_INVALID);
             }
         }
         return normalized.isEmpty() ? null : String.join(",", normalized);

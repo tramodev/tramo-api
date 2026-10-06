@@ -1,5 +1,7 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.auth.service.MinAgeValidator;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -84,7 +86,7 @@ public class ProfileService {
         if (request.getImageUrl() != null) {
             String newImageUrl = request.getImageUrl().isBlank() ? null : request.getImageUrl();
             if (newImageUrl != null && !r2Client.isOwnedUrl(newImageUrl, "avatar", user.getId())) {
-                throw new IllegalArgumentException("Invalid image URL");
+                throw new RequestValidationException(RequestErrorCode.IMAGE_URL_INVALID);
             }
             user.setImageUrl(newImageUrl);
         }
@@ -92,7 +94,7 @@ public class ProfileService {
             String newBannerUrl = request.getBannerUrl().isBlank() ? null : request.getBannerUrl();
             if (newBannerUrl != null) {
                 if (!r2Client.isOwnedUrl(newBannerUrl, "banner", user.getId())) {
-                    throw new IllegalArgumentException("Invalid banner URL");
+                    throw new RequestValidationException(RequestErrorCode.BANNER_URL_INVALID);
                 }
                 if (!subscriptionService.isSupporter(user)) {
                     throw new LimitExceededException("Profile banners are a supporter perk. Upgrade to use one.");
@@ -106,7 +108,7 @@ public class ProfileService {
                 boolean earned = userBadgeRepository.findByUserId(user.getId()).stream()
                         .anyMatch(ub -> ub.getBadgeCode().equals(badgeCode));
                 if (!earned) {
-                    throw new IllegalArgumentException("Badge not earned: " + badgeCode);
+                    throw new RequestValidationException(RequestErrorCode.BADGE_NOT_EARNED);
                 }
             }
             user.setSelectedBadge(badgeCode);

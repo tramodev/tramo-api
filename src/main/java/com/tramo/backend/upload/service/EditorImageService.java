@@ -1,5 +1,7 @@
 package com.tramo.backend.upload.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
@@ -71,7 +73,7 @@ public class EditorImageService {
 
     public EditorImagePresignResponse presign(EditorImagePresignRequest request, User user) {
         Project project = access.getOwnedProject(codec.decode(request.projectId()), user);
-        if (request.contentBytes() > maxBytes) throw new IllegalArgumentException("Image exceeds upload size limit");
+        if (request.contentBytes() > maxBytes) throw new RequestValidationException(RequestErrorCode.IMAGE_SIZE_LIMIT_EXCEEDED);
         if (!limiter.resolveBucket("upload-bytes:" + user.getId(), bytesPerHour, bytesPerHour, Duration.ofHours(1))
                 .tryConsume(request.contentBytes())) throw new LimitExceededException("Upload throughput limit reached. Try again later.");
         EditorImage image = transactions.execute(status -> {
@@ -185,14 +187,14 @@ public class EditorImageService {
         try { root = mapper.readTree(content); }
         catch (RuntimeException malformed) {
             if (!content.stripLeading().startsWith("{")) return Set.of();
-            throw new IllegalArgumentException("Invalid editor content");
+            throw new RequestValidationException(RequestErrorCode.EDITOR_CONTENT_INVALID);
         }
         Set<UUID> ids = new LinkedHashSet<>();
         visit(root, node -> {
             if (node.has("src") || node.path("version").asInt() != 2 || !node.path("imageId").isString())
-                throw new IllegalArgumentException("Images must reference a confirmed private attachment");
+                throw new RequestValidationException(RequestErrorCode.IMAGE_ATTACHMENT_REQUIRED);
             try { ids.add(UUID.fromString(node.path("imageId").asText())); }
-            catch (IllegalArgumentException invalid) { throw new IllegalArgumentException("Invalid image identifier"); }
+            catch (IllegalArgumentException invalid) { throw new RequestValidationException(RequestErrorCode.IMAGE_ID_INVALID); }
         });
         return ids;
     }

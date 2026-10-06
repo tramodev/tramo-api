@@ -11,7 +11,7 @@ import java.time.LocalDate;
 @Setter
 public class BirthDateRequestDTO {
 
-    @NotNull(message = "Date of birth is required")
-    @Past(message = "Date of birth must be in the past")
+    @NotNull(message = "BIRTH_DATE_REQUIRED")
+    @Past(message = "BIRTH_DATE_INVALID")
     private LocalDate birthDate;
 }

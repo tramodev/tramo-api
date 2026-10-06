@@ -1,6 +1,7 @@
 package com.tramo.backend.exception;
 
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,6 +12,8 @@ import java.util.Map;
 @Setter
 public class ValidationErrorResponse extends ErrorResponse {
     private Map<String, String> errors;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Map<String, String> errorCodes;
 
     public ValidationErrorResponse(int status, String message, LocalDateTime timestamp, Map<String, String> errors) {
         super(status, message, timestamp);

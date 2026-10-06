@@ -10,14 +10,14 @@ import lombok.Setter;
 @Setter
 public class ResetPasswordRequestDTO {
 
-    @NotBlank(message = "Token is required")
+    @NotBlank(message = "TOKEN_REQUIRED")
     private String token;
 
-    @NotBlank(message = "Password is required")
-    @Size(min = 12, max = 40, message = "Password must be between 12 and 40 characters")
+    @NotBlank(message = "PASSWORD_REQUIRED")
+    @Size(min = 12, max = 40, message = "PASSWORD_SIZE_INVALID")
     @Pattern(
             regexp = "^(?=.*[A-Z])(?=.*\\d)(?=.*[^a-zA-Z0-9]).+$",
-            message = "Password must contain at least one uppercase letter, one number, and one symbol"
+            message = "PASSWORD_FORMAT_INVALID"
     )
     private String newPassword;
 }

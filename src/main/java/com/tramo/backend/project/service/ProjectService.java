@@ -1,5 +1,7 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.upload.R2Client;
@@ -107,10 +109,10 @@ public class ProjectService {
     @Transactional
     public ProjectResponseDTO create(ProjectRequestDTO request, User owner) {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Title is required");
+            throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         if (request.getVisibility() == ProjectVisibility.PUBLISHED) {
-            throw new IllegalArgumentException("Publish the project after creating it");
+            throw new RequestValidationException(RequestErrorCode.PROJECT_PUBLISH_AFTER_CREATE);
         }
         Project project = new Project();
         project.setTitle(request.getTitle());
@@ -163,7 +165,7 @@ public class ProjectService {
         if (request.getVisibility() != null) {
             if (request.getVisibility() == ProjectVisibility.PUBLISHED
                     && (project.getDescription() == null || project.getDescription().isBlank())) {
-                throw new IllegalArgumentException("Add a description before publishing");
+                throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
             }
             project.setVisibility(request.getVisibility());
             if (request.getVisibility() == ProjectVisibility.PUBLISHED && project.getFirstPublishedDate() == null) {
@@ -203,7 +205,7 @@ public class ProjectService {
         switch (type) {
             case GRAPH -> {
                 if (request.getTrailId() == null) {
-                    throw new IllegalArgumentException("trailId is required for GRAPH thumbnail");
+                    throw new RequestValidationException(RequestErrorCode.THUMBNAIL_TRAIL_REQUIRED);
                 }
                 Trail trail = trailRepository.findById(Long.valueOf(request.getTrailId()))
                         .orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
@@ -212,13 +214,13 @@ public class ProjectService {
                 }
                 project.setThumbnailTrail(trail);
             }
-            case PROJECT_IMAGE -> throw new IllegalArgumentException("Note images cannot be used as public thumbnails");
+            case PROJECT_IMAGE -> throw new RequestValidationException(RequestErrorCode.PRIVATE_THUMBNAIL_FORBIDDEN);
             case DEDICATED -> {
                 if (request.getImageUrl() == null || request.getImageUrl().isBlank()) {
-                    throw new IllegalArgumentException("imageUrl is required for this thumbnail type");
+                    throw new RequestValidationException(RequestErrorCode.THUMBNAIL_URL_REQUIRED);
                 }
                 if (!r2Client.isOwnedUrl(request.getImageUrl(), "thumbnail", requester.getId())) {
-                    throw new IllegalArgumentException("Thumbnail must be a separate public upload owned by you");
+                    throw new RequestValidationException(RequestErrorCode.THUMBNAIL_UPLOAD_REQUIRED);
                 }
                 project.setThumbnailImageUrl(request.getImageUrl());
             }

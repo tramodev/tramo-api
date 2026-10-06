@@ -1,5 +1,7 @@
 package com.tramo.backend.upload;
 
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.upload.entity.EditorImage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -38,7 +40,7 @@ public class PrivateImageStorage {
     public record ValidatedImage(String etag, String hash, boolean finalObject) {}
 
     public ValidatedImage validate(EditorImage image) {
-        if (!VALIDATIONS.tryAcquire()) throw new IllegalArgumentException("Image validation busy; retry later");
+        if (!VALIDATIONS.tryAcquire()) throw new RequestValidationException(RequestErrorCode.IMAGE_VALIDATION_BUSY);
         try {
             try {
                 return validateObject(image, image.objectKey(), true);
@@ -55,17 +57,17 @@ public class PrivateImageStorage {
         HeadObjectResponse head = client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
         if (image.bytes() > maxBytes || head.contentLength() != image.bytes() || !image.contentType().equals(head.contentType())
                 || head.eTag() == null || head.eTag().isBlank())
-            throw new IllegalArgumentException("Uploaded image size or type does not match");
+            throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_METADATA_MISMATCH);
         try (var stream = client.getObject(GetObjectRequest.builder().bucket(bucket).key(key).ifMatch(head.eTag()).build())) {
             byte[] bytes = stream.readNBytes(Math.toIntExact(image.bytes() + 1));
-            if (bytes.length != image.bytes()) throw new IllegalArgumentException("Uploaded image size does not match");
+            if (bytes.length != image.bytes()) throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_SIZE_MISMATCH);
             String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
             if (image.contentHash() != null && !image.contentHash().equals(hash))
-                throw new IllegalArgumentException("Uploaded image SHA-256 does not match");
+                throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_HASH_MISMATCH);
             ImageFileValidator.validate(bytes, image.contentType());
             return new ValidatedImage(head.eTag(), hash, finalObject);
         } catch (java.io.IOException failure) {
-            throw new IllegalArgumentException("Cannot read uploaded image", failure);
+            throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_UNREADABLE, failure);
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -82,7 +84,7 @@ public class PrivateImageStorage {
         } catch (S3Exception conflict) {
             if (conflict.statusCode() != 412) throw conflict;
             ValidatedImage existing = validateObject(image, image.objectKey(), true);
-            if (!validated.hash().equals(existing.hash())) throw new IllegalArgumentException("Confirmed image does not match");
+            if (!validated.hash().equals(existing.hash())) throw new RequestValidationException(RequestErrorCode.IMAGE_CONFIRMED_MISMATCH);
         }
     }
 
