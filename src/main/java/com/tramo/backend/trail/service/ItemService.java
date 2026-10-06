@@ -330,7 +330,7 @@ public class ItemService {
             }
             if (!itemImageReferenceRepository.existsOtherItemReferencingUrl(requester.getId(), url, itemId)
                     && !pendingImageDeletionRepository.existsByUrl(url)) {
-                log.info("deleteOrphanedEditorImages queued url={} item={}", url, itemId);
+                log.info("event=orphan_image_deletion_queued");
                 PendingImageDeletion pending = new PendingImageDeletion();
                 pending.setUrl(url);
                 pending.setOwnerId(requester.getId());
@@ -365,7 +365,7 @@ public class ItemService {
         Date cutoff = new Date(System.currentTimeMillis() - IMAGE_DELETION_GRACE_MS);
         for (PendingImageDeletion pending : pendingImageDeletionRepository.findByRequestedAtBefore(cutoff)) {
             if (!itemImageReferenceRepository.existsOtherItemReferencingUrl(pending.getOwnerId(), pending.getUrl(), -1L)) {
-                log.info("purgePendingImageDeletions deleting url={}", pending.getUrl());
+                log.info("event=pending_image_deletion_started");
                 r2Client.deleteByPublicUrl(pending.getUrl());
             }
             pendingImageDeletionRepository.delete(pending);

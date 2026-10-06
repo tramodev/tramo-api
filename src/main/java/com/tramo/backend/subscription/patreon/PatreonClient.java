@@ -124,8 +124,8 @@ public class PatreonClient {
     
     private static String describe(RestClientException ex) {
         if (ex instanceof RestClientResponseException responseEx) {
-            return responseEx.getStatusCode() + " " + responseEx.getResponseBodyAsString();
+            return "HTTP " + responseEx.getStatusCode().value();
         }
-        return ex.getMessage();
+        return ex.getClass().getSimpleName();
     }
 }

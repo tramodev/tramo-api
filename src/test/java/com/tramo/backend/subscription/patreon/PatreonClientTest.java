@@ -66,7 +66,7 @@ class PatreonClientTest {
     }
 
     @Test
-    void exchangeCodeWrapsHttpErrorWithStatusAndBody() {
+    void exchangeCodeWrapsHttpErrorWithoutBody() {
         server.expect(requestTo("https://www.patreon.com/api/oauth2/token"))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -75,7 +75,7 @@ class PatreonClientTest {
         assertThatThrownBy(() -> patreonClient.exchangeCode("stale-code"))
                 .isInstanceOf(InvalidTokenException.class)
                 .hasMessageContaining("400")
-                .hasMessageContaining("invalid_grant");
+                .hasMessageNotContaining("invalid_grant");
     }
 
     @Test
