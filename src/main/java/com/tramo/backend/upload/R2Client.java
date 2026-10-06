@@ -1,5 +1,6 @@
 package com.tramo.backend.upload;
 
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,7 +101,7 @@ public class R2Client {
             
             uploadRecordRepository.deleteByObjectKey(key);
         } catch (Exception e) {
-            log.warn("Failed to delete orphaned R2 object {}", key, e);
+            SafeLog.failure(log, "r2_orphan_delete_failed", "STORAGE_DELETE_FAILED", e);
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.tramo.backend.exception;
 
 
+import com.tramo.backend.common.SafeLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -11,7 +12,6 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -21,24 +21,46 @@ import org.springframework.web.context.request.async.AsyncRequestNotUsableExcept
 import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    private static final Set<String> PUBLIC_MESSAGES = Set.of(
+            "Invalid refresh token", "Refresh token expired", "Invalid or expired reset link",
+            "Invalid or expired verification link", "Invalid Google token", "Google account email is not verified",
+            "Animated GIF avatars are a supporter perk. Upgrade to use one.",
+            "Profile banners are a supporter perk. Upgrade to use one.",
+            "Upload throughput limit reached. Try again later.", "Too many attempts. Try again later.",
+            "You're creating tags too fast. Try again later."
+    );
+
+    private static String publicMessage(Exception ex, String fallback) {
+        String message = ex.getMessage();
+        return message != null && PUBLIC_MESSAGES.contains(message) ? message : fallback;
+    }
+
+    private <T extends ErrorResponse> ResponseEntity<T> handled(Exception ex, T error, HttpStatus status) {
+        String trackingId = SafeLog.failure(log, "request_rejected", status.name(), ex);
+        return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
+    }
+
     @ExceptionHandler(UserAlreadyExistsException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ResponseEntity<ValidationErrorResponse> handleUserAlreadyExists(UserAlreadyExistsException ex) {
         ValidationErrorResponse error = new ValidationErrorResponse(
                 HttpStatus.CONFLICT.value(),
-                ex.getMessage(),
+                "Account already exists",
                 LocalDateTime.now(),
-                Map.of(ex.getField(), ex.getMessage())
+                Map.of("email".equals(ex.getField()) ? "email" : "username", "Account already exists")
         );
-        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+        return handled(ex, error, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(UsernameNotFoundException.class)
@@ -46,10 +68,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUsernameNotFound(UsernameNotFoundException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
-                ex.getMessage(),
+                "User not found",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+        return handled(ex, error, HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(BadCredentialsException.class)
@@ -60,7 +82,7 @@ public class GlobalExceptionHandler {
                 "Invalid username or password",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
+        return handled(ex, error, HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(DisabledException.class)
@@ -71,7 +93,7 @@ public class GlobalExceptionHandler {
                 "Please verify your email before logging in.",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(LockedException.class)
@@ -82,7 +104,7 @@ public class GlobalExceptionHandler {
                 "This account has been banned.",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(InvalidTokenException.class)
@@ -90,10 +112,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidToken(InvalidTokenException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.UNAUTHORIZED.value(),
-                ex.getMessage(),
+                publicMessage(ex, "Invalid or expired token"),
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
+        return handled(ex, error, HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(CaptchaVerificationException.class)
@@ -101,10 +123,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCaptchaVerification(CaptchaVerificationException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.FORBIDDEN.value(),
-                ex.getMessage(),
+                "Captcha verification failed",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(UnderageRegistrationException.class)
@@ -112,10 +134,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUnderageRegistration(UnderageRegistrationException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.FORBIDDEN.value(),
-                ex.getMessage(),
+                "Minimum age requirement not met",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(BirthDateAlreadySetException.class)
@@ -123,10 +145,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBirthDateAlreadySet(BirthDateAlreadySetException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.CONFLICT.value(),
-                ex.getMessage(),
+                "Birth date already set",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+        return handled(ex, error, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -134,10 +156,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
-                ex.getMessage(),
+                "Resource not found",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+        return handled(ex, error, HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
@@ -145,10 +167,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.FORBIDDEN.value(),
-                ex.getMessage(),
+                "Access denied",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+        return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(LimitExceededException.class)
@@ -156,10 +178,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleLimitExceeded(LimitExceededException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.TOO_MANY_REQUESTS.value(),
-                ex.getMessage(),
+                publicMessage(ex, "Limit exceeded"),
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.TOO_MANY_REQUESTS);
+        return handled(ex, error, HttpStatus.TOO_MANY_REQUESTS);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -167,19 +189,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
-                ex.getMessage(),
+                "Invalid request",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        return handled(ex, error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
+        ex.getBindingResult().getFieldErrors().forEach((error) -> {
+            String fieldName = error.getField();
+            String errorMessage = "Invalid value";
             errors.put(fieldName, errorMessage);
         });
 
@@ -189,12 +211,12 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 errors
         );
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return handled(ex, errorResponse, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleInvalidParameter(MethodArgumentTypeMismatchException ex) {
-        return ResponseEntity.badRequest().body(new ErrorResponse(400, "Invalid request parameter", LocalDateTime.now()));
+        return handled(ex, new ErrorResponse(400, "Invalid request parameter", LocalDateTime.now()), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -205,7 +227,7 @@ public class GlobalExceptionHandler {
                 "Malformed request body",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        return handled(ex, error, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler({AsyncRequestTimeoutException.class, AsyncRequestNotUsableException.class})
@@ -213,7 +235,8 @@ public class GlobalExceptionHandler {
     }
 
     private static boolean clientIsGone(Throwable ex) {
-        for (Throwable cause = ex; cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable cause = ex; cause != null && seen.add(cause); cause = cause.getCause()) {
             if (cause instanceof AsyncRequestNotUsableException || cause instanceof AsyncRequestTimeoutException) {
                 return true;
             }
@@ -227,13 +250,13 @@ public class GlobalExceptionHandler {
         if (clientIsGone(ex)) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-        log.error("Unhandled exception", ex);
+        String trackingId = SafeLog.failure(log, "request_failed", "INTERNAL_ERROR", ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "An unexpected error occurred",
                 LocalDateTime.now()
         );
-        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).header("X-Tracking-Id", trackingId).body(error);
     }
 
 }

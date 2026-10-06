@@ -1,5 +1,6 @@
 package com.tramo.backend.auth.service;
 
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.user.entity.User;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,8 +31,7 @@ public class EmailService {
         String verificationLink = frontendUrl + "/verify-email?token=" + token;
 
         if (!mailEnabled) {
-            log.info("app.mail.enabled=false, skipping send. Verification link for {}: {}",
-                    user.getEmail(), verificationLink);
+            log.info("event=verification_email_skipped code=MAIL_DISABLED");
             return;
         }
 
@@ -48,8 +48,7 @@ public class EmailService {
         try {
             mailSender.send(message);
         } catch (MailException ex) {
-            log.warn("Failed to send verification email to {}: {}. Verification link: {}",
-                    user.getEmail(), ex.getMessage(), verificationLink);
+            SafeLog.failure(log, "verification_email_failed", "MAIL_SEND_FAILED", ex);
         }
     }
 
@@ -57,8 +56,7 @@ public class EmailService {
         String resetLink = frontendUrl + "/reset-password?token=" + token;
 
         if (!mailEnabled) {
-            log.info("app.mail.enabled=false, skipping send. Reset link for {}: {}",
-                    user.getEmail(), resetLink);
+            log.info("event=password_reset_email_skipped code=MAIL_DISABLED");
             return;
         }
 
@@ -75,8 +73,7 @@ public class EmailService {
         try {
             mailSender.send(message);
         } catch (MailException ex) {
-            log.warn("Failed to send password reset email to {}: {}. Reset link: {}",
-                    user.getEmail(), ex.getMessage(), resetLink);
+            SafeLog.failure(log, "password_reset_email_failed", "MAIL_SEND_FAILED", ex);
         }
     }
 }

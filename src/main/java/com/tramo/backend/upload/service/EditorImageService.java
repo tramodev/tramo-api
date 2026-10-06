@@ -1,5 +1,6 @@
 package com.tramo.backend.upload.service;
 
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -234,7 +235,7 @@ public class EditorImageService {
                     return null;
                 });
             } catch (RuntimeException failure) {
-                log.warn("Failed to purge private image object {}", id, failure);
+                SafeLog.failure(log, "private_image_purge_failed", "STORAGE_DELETE_FAILED", failure);
             }
         }
     }

@@ -76,7 +76,7 @@ public class PatreonWebhookController {
 
         Optional<User> user = userRepository.findByPatreonUserId(patreonUserId);
         if (user.isEmpty()) {
-            log.info("Patreon webhook for unlinked patreonUserId={}", patreonUserId);
+            log.info("event=patreon_webhook_ignored code=UNLINKED_ACCOUNT");
             return ResponseEntity.ok().build();
         }
 
@@ -85,7 +85,7 @@ public class PatreonWebhookController {
         } else if (ACTIVATION_EVENTS.contains(eventType)) {
             subscriptionService.activateSupporterSubscription(user.get(), subscriptionService.findOrCreateSupporterPlan());
         } else {
-            log.warn("Patreon webhook unrecognized eventType={}, ignoring", eventType);
+            log.warn("event=patreon_webhook_ignored code=UNKNOWN_EVENT");
         }
         return ResponseEntity.ok().build();
     }

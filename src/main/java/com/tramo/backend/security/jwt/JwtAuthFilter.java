@@ -1,5 +1,7 @@
 package com.tramo.backend.security.jwt;
 
+import com.tramo.backend.common.SafeLog;
+import org.slf4j.LoggerFactory;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
@@ -47,6 +49,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     principal = userRepository.findById(userId).orElse(null);
                 } catch (DataAccessException failure) {
                     SecurityContextHolder.clearContext();
+                    String trackingId = SafeLog.failure(LoggerFactory.getLogger(JwtAuthFilter.class),
+                            "authentication_unavailable", "AUTH_UNAVAILABLE", failure);
+                    response.setHeader("X-Tracking-Id", trackingId);
                     response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Authentication unavailable");
                     return;
                 }

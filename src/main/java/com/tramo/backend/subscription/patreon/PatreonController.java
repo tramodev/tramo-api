@@ -1,5 +1,6 @@
 package com.tramo.backend.subscription.patreon;
 
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.user.entity.User;
@@ -88,23 +89,19 @@ public class PatreonController {
                                           @RequestParam(required = false) String error,
                                           @RequestParam(name = "error_description", required = false) String errorDescription) {
         if (error != null) {
-            log.warn("Patreon callback returned error={} description={}", error, errorDescription);
-            return redirectTo("error");
+            return rejected("OAUTH_DENIED", null);
         }
         if (code == null || state == null) {
-            log.warn("Patreon callback missing code/state (code={}, state={})", code != null, state != null);
-            return redirectTo("error");
+            return rejected("OAUTH_PARAMETERS_MISSING", null);
         }
 
         PatreonConnectToken connectToken = connectTokenRepository.findByToken(state).orElse(null);
         if (connectToken == null) {
-            log.warn("Patreon callback state not found (already consumed or invalid): {}", state);
-            return redirectTo("error");
+            return rejected("OAUTH_STATE_INVALID", null);
         }
         connectTokenRepository.delete(connectToken);
         if (connectToken.getExpiresAt().isBefore(Instant.now())) {
-            log.warn("Patreon connect token expired at {} for user {}", connectToken.getExpiresAt(), connectToken.getUser().getId());
-            return redirectTo("error");
+            return rejected("OAUTH_STATE_EXPIRED", null);
         }
 
         User user;
@@ -124,11 +121,16 @@ public class PatreonController {
                 }
             });
         } catch (InvalidTokenException ex) {
-            log.warn("Patreon code exchange/identity fetch failed: {}", ex.getMessage(), ex.getCause());
-            return redirectTo("error");
+            return rejected("OAUTH_FAILED", ex);
         }
 
         return redirectTo("connected");
+    }
+
+    private ResponseEntity<Void> rejected(String code, Throwable failure) {
+        String trackingId = SafeLog.failure(log, "patreon_callback_rejected", code, failure);
+        return ResponseEntity.status(HttpStatus.FOUND).header("X-Tracking-Id", trackingId)
+                .location(URI.create(frontendUrl + "/settings?tab=plan&patreon=error")).build();
     }
 
     private ResponseEntity<Void> redirectTo(String patreonStatus) {
