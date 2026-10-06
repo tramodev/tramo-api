@@ -15,7 +15,11 @@
 	<description>Backend API for Tramo, a platform for learning paths and study tracking.</description>
 	<url/>
 	<licenses>
-		<license/>
+		<license>
+			<name>GNU Affero General Public License v3.0 only</name>
+			<url>https://spdx.org/licenses/AGPL-3.0-only.html</url>
+			<distribution>repo</distribution>
+		</license>
 	</licenses>
 	<developers>
 		<developer/>
@@ -216,5 +220,4 @@
 			</plugin>
 		</plugins>
 	</build>
-
 </project>
