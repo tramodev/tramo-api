@@ -105,7 +105,7 @@ public class ItemController {
     @PutMapping("/item/{id}/content")
     public ResponseEntity<Void> updateContent(@PathVariable Long id, @RequestBody ItemContentRequestDTO request,
                                                @AuthenticationPrincipal User user) {
-        itemService.updateContent(id, request.getContent(), user);
+        itemService.updateContent(id, request.getContent(), request.getExtractionEpoch(), request.getExpectedContent(), user);
         return ResponseEntity.noContent().build();
     }
 

@@ -11,4 +11,5 @@ import lombok.Setter;
 @AllArgsConstructor
 public class ItemContentResponseDTO {
     private String content;
+    private int extractionEpoch;
 }

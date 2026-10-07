@@ -26,6 +26,8 @@ public class ItemContent {
     private Long id;
     @Column(columnDefinition = "TEXT")
     private String content;
+    @Column(nullable = false)
+    private int extractionEpoch = 0;
     private Date updatedDate;
     private Long wordCount = 0L;
     private Long characterCount = 0L;

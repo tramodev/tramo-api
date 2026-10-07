@@ -9,4 +9,6 @@ import lombok.Setter;
 @Setter
 public class ItemContentRequestDTO {
     private String content;
+    private Integer extractionEpoch;
+    private String expectedContent;
 }
