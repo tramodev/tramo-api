@@ -16,6 +16,7 @@ public enum RequestErrorCode {
     BANNER_URL_INVALID("Invalid banner URL"),
     COMMENT_PARENT_INVALID("Parent comment belongs to a different project"),
     TRAIL_ORDER_INVALID("The new order must list every item in the trail exactly once"),
+    ITEM_NOT_SHARED("This note is not shared between trails"),
     ITEM_SELF_LINK_FORBIDDEN("An item cannot be tied to itself"),
     IMAGE_SIZE_LIMIT_EXCEEDED("Image exceeds upload size limit"),
     EDITOR_CONTENT_INVALID("Invalid editor content"),
