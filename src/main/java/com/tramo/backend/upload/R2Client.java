@@ -93,6 +93,17 @@ public class R2Client {
         return urls;
     }
 
+    public boolean isExportableUrl(String url) {
+        return isFromOurDomain(url) && url.substring(publicBaseUrl.length() + 1)
+                .matches("(?:editor-image|thumbnail)/[0-9]+/[\\w-]+\\.(?:jpg|jpeg|png|webp|gif)");
+    }
+
+    public java.io.InputStream openForExport(String url) {
+        if (!isExportableUrl(url)) throw new IllegalArgumentException("Unsupported storage reference");
+        return client.getObject(software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                .bucket(bucket).key(url.substring(publicBaseUrl.length() + 1)).build());
+    }
+
     public void deleteByPublicUrl(String url) {
         if (url == null || !url.startsWith(publicBaseUrl + "/")) {
             return;

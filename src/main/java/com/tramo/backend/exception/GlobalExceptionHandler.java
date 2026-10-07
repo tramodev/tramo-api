@@ -54,6 +54,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
     }
 
+    @ExceptionHandler(ProjectExportException.class)
+    public ResponseEntity<ErrorResponse> handleProjectExport(ProjectExportException ex) {
+        ErrorResponse error = new ErrorResponse(ex.status(), ex.getMessage(), LocalDateTime.now());
+        error.setCode(ex.code());
+        return handled(ex, error, HttpStatus.valueOf(ex.status()));
+    }
+
     @ExceptionHandler(UserAlreadyExistsException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ResponseEntity<ValidationErrorResponse> handleUserAlreadyExists(UserAlreadyExistsException ex) {

@@ -42,6 +42,16 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             "(SELECT ti.id FROM TrailItem ti WHERE ti.item = i AND ti.trail.project.id = :projectId)")
     List<ItemTextStatsDTO> findTextStatsByProjectId(@Param("projectId") Long projectId);
 
+    @Query("SELECT i FROM Item i LEFT JOIN FETCH i.content WHERE i.project.id = :projectId OR EXISTS " +
+            "(SELECT ti.id FROM TrailItem ti WHERE ti.item = i AND ti.trail.project.id = :projectId) ORDER BY i.id")
+    List<Item> findForExport(@Param("projectId") Long projectId);
+
+    @Query(value = "SELECT count(*) AS items, COALESCE(sum(octet_length(c.content)),0) AS bytes FROM item i LEFT JOIN item_content c ON c.id = i.content_id " +
+            "WHERE i.project_id = :projectId OR EXISTS (SELECT 1 FROM trail_item ti JOIN trail t ON t.id = ti.trail_id WHERE ti.item_id = i.id AND t.project_id = :projectId)", nativeQuery = true)
+    ExportSize exportSize(@Param("projectId") Long projectId);
+
+    interface ExportSize { long getItems(); long getBytes(); }
+
     interface ProjectContentBytesSum {
         Long getProjectId();
         Long getBytes();

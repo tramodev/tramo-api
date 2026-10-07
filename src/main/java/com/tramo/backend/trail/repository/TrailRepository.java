@@ -15,6 +15,8 @@ import java.util.Optional;
 
 @Repository
 public interface TrailRepository extends JpaRepository<Trail, Long> {
+    long countByProjectId(Long projectId);
+
     Optional<Trail> findFirstByProjectIdOrderByIdAsc(Long projectId);
     
     

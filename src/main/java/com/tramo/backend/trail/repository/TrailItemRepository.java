@@ -29,6 +29,8 @@ public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
 
     Optional<TrailItem> findFirstByTrailIdOrderByOrderIndexAscIdAsc(Long trailId);
 
+    long countByTrailProjectId(Long projectId);
+
     int countByTrailId(Long trailId);
 
     @Query("SELECT pi FROM TrailItem pi LEFT JOIN FETCH pi.association WHERE pi.trail.id = :trailId AND pi.item.id = :itemId")
