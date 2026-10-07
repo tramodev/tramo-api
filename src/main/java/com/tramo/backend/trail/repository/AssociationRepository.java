@@ -16,6 +16,10 @@ import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface AssociationRepository extends JpaRepository<Association, Long> {
+    @Query("SELECT a FROM Association a WHERE a.sourceItem.id IN :ids OR " +
+            "(a.targetType = com.tramo.backend.trail.entity.AssociationTargetType.ITEM AND a.targetId IN :ids AND a.sourceItem.project.owner.id = :ownerId) ORDER BY a.id")
+    List<Association> findForExport(@Param("ids") Collection<Long> ids, @Param("ownerId") Long ownerId);
+
     List<Association> findBySourceItemId(Long sourceItemId);
 
     

@@ -90,6 +90,10 @@ public class PrivateImageStorage {
         }
     }
 
+    public java.io.InputStream openForExport(EditorImage image) {
+        return client.getObject(GetObjectRequest.builder().bucket(bucket).key(image.objectKey()).build());
+    }
+
     public String presignRead(EditorImage image) {
         return presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(Duration.ofMinutes(5))
                 .getObjectRequest(GetObjectRequest.builder().bucket(bucket).key(image.objectKey())
