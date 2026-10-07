@@ -5,6 +5,8 @@ package com.tramo.backend.trail.controller;
 import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.trail.dto.AssociationDTO;
+import com.tramo.backend.trail.dto.ItemCopyResponseDTO;
+import com.tramo.backend.trail.dto.ItemTrailMembershipDTO;
 import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
@@ -51,6 +53,11 @@ public class ItemController {
     @GetMapping("/project/{projectId}/item")
     public ResponseEntity<List<ItemResponseDTO>> getItemsForProject(@PathVariable String projectId, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.getItemsForProject(projectIdCodec.decode(projectId), user));
+    }
+
+    @GetMapping("/project/{projectId}/item-trails")
+    public ResponseEntity<List<ItemTrailMembershipDTO>> getTrailMemberships(@PathVariable String projectId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getTrailMemberships(projectIdCodec.decode(projectId), user));
     }
 
     @GetMapping("/project/{projectId}/text-stats")
@@ -107,6 +114,12 @@ public class ItemController {
                                                @AuthenticationPrincipal User user) {
         itemService.updateContent(id, request.getContent(), user);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/trail/{trailId}/item/{itemId}/independent-copy")
+    public ResponseEntity<ItemCopyResponseDTO> copyForTrail(@PathVariable Long trailId, @PathVariable Long itemId,
+                                                            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.copyForTrail(trailId, itemId, user));
     }
 
     @PostMapping("/trail/{trailId}/item/{itemId}")

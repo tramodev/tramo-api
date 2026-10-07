@@ -8,6 +8,9 @@ import com.tramo.backend.trail.dto.ItemTextStatsDTO;
 import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.trail.dto.AssociationDTO;
+import com.tramo.backend.trail.dto.ItemCopyResponseDTO;
+import com.tramo.backend.trail.dto.ItemTrailMembershipDTO;
+import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
@@ -44,6 +47,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,13 +73,14 @@ public class ItemService {
     private final ImageDeletionQueue imageDeletionQueue;
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
+    private final ProjectIdCodec projectIdCodec;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         AssociationRepository itemLinkRepository, TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
-                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages) {
+                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages, ProjectIdCodec projectIdCodec) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemLinkRepository = itemLinkRepository;
@@ -88,6 +93,7 @@ public class ItemService {
         this.imageDeletionQueue = imageDeletionQueue;
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
+        this.projectIdCodec = projectIdCodec;
     }
 
     @Transactional
@@ -148,6 +154,14 @@ public class ItemService {
         getOwnedProject(projectId, requester);
         return itemRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
+                .toList();
+    }
+
+    public List<ItemTrailMembershipDTO> getTrailMemberships(Long projectId, User requester) {
+        getOwnedProject(projectId, requester);
+        return trailItemRepository.findMembershipsForProject(projectId, requester.getId()).stream()
+                .map(step -> new ItemTrailMembershipDTO(step.getItem().getId(), step.getTrail().getId(),
+                        step.getTrail().getTitle(), projectIdCodec.encode(step.getTrail().getProject().getId())))
                 .toList();
     }
 
@@ -384,6 +398,57 @@ public class ItemService {
         if (projectId == null) return;
         Date now = new Date();
         projectRepository.touchLastEditedDate(projectId, now, new Date(now.getTime() - LAST_EDITED_THROTTLE_MS));
+    }
+
+    @Transactional
+    public ItemCopyResponseDTO copyForTrail(Long trailId, Long itemId, User requester) {
+        Trail trail = trailService.getOwnedTrail(trailId, requester);
+        TrailItem step = trailItemRepository.findForReplacement(trailId, itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Step not found"));
+        Item source = getOwnedItem(itemId, requester);
+        if (trailItemRepository.findByItemId(itemId).stream().map(s -> s.getTrail().getId()).distinct().count() < 2) {
+            throw new RequestValidationException(RequestErrorCode.ITEM_NOT_SHARED);
+        }
+        String json = source.getContent() != null ? source.getContent().getContent() : "";
+        ItemContent content = new ItemContent();
+        content.setContent(json);
+        content.setUpdatedDate(new Date());
+        Item copy = new Item();
+        copy.setTitle(source.getTitle());
+        copy.setTitleAlign(source.getTitleAlign());
+        copy.setType(source.getType());
+        copy.setProject(trail.getProject());
+        copy.setContent(content);
+        copy.setCreatedDate(new Date());
+        copy.setModifiedDate(new Date());
+        copy = itemRepository.save(copy);
+        Map<Long, Association> outgoing = new HashMap<>();
+        for (Association original : itemLinkRepository.findBySourceItemId(itemId)) {
+            Association association = new Association();
+            association.setSourceItem(copy);
+            association.setType(original.getType());
+            association.setTargetType(original.getTargetType());
+            association.setTargetId(original.getTargetId());
+            association.setCreatedDate(new Date());
+            outgoing.put(original.getId(), itemLinkRepository.save(association));
+        }
+        step.setItem(copy);
+        List<TrailItem> steps = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId);
+        for (TrailItem candidate : steps) {
+            Association association = candidate.getAssociation();
+            if (association == null) continue;
+            if (association.getSourceItem().getId().equals(itemId)) {
+                candidate.setAssociation(outgoing.get(association.getId()));
+            } else if (association.getTargetType() == AssociationTargetType.ITEM && association.getTargetId().equals(itemId)) {
+                candidate.setAssociation(null);
+            }
+        }
+        trailItemRepository.saveAll(steps);
+        editorImages.copyItemReferences(source, copy, json);
+        resyncImageReferences(copy, r2Client.extractReferencedUrls(json));
+        bumpOwningProjectLastEditedDate(copy);
+        return new ItemCopyResponseDTO(toResponse(copy), json, getAssociations(copy.getId(), requester),
+                steps.stream().map(this::toStepResponse).toList());
     }
 
     @Transactional

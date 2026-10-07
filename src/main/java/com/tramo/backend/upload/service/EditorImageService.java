@@ -141,6 +141,15 @@ public class EditorImageService {
         images.replaceItemReferences(item.getId(), ids);
     }
 
+    public void copyItemReferences(Item source, Item copy, String content) {
+        entityManager.flush();
+        Set<UUID> ids = extract(content);
+        Long projectId = source.getProject() != null ? source.getProject().getId() : copy.getProject().getId();
+        if (!new HashSet<>(images.editableImageIds(ids, projectId, source.getId())).containsAll(ids)) throw missing();
+        lockReady(ids);
+        images.replaceItemReferences(copy.getId(), ids);
+    }
+
     public void retainSnapshot(ProjectSnapshot snapshot) {
         entityManager.flush();
         ProjectSnapshotData data = mapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
