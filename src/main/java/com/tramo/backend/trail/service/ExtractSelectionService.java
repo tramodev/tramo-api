@@ -89,14 +89,12 @@ public class ExtractSelectionService {
         itemService.updateContent(sourceId, sourceContent, request.extractionEpoch(), user);
         source.getContent().setExtractionEpoch(request.extractionEpoch() + 1);
         if (trail != null) {
-            int index = 0;
-            for (TrailItem step : steps) {
-                step.setOrderIndex(index++);
-                if (step.getItem().getId().equals(sourceId)) {
-                    TrailItem next = new TrailItem(); next.setTrail(trail); next.setItem(created); next.setOrderIndex(index++);
-                    memberships.save(next);
-                }
-            }
+            List<TrailItem> ordered = new ArrayList<>(steps);
+            TrailItem next = new TrailItem(); next.setTrail(trail); next.setItem(created);
+            int position = request.appendToTrail() ? ordered.size() : steps.stream().map(step -> step.getItem().getId()).toList().indexOf(sourceId) + 1;
+            ordered.add(position, next);
+            for (int index = 0; index < ordered.size(); index++) ordered.get(index).setOrderIndex(index);
+            memberships.saveAll(ordered);
             created.setUnfiled(false);
         }
         items.flush();
