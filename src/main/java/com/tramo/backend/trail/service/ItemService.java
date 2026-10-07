@@ -46,6 +46,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -95,7 +96,7 @@ public class ItemService {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
-        Trail trail = trailService.getOwnedTrail(trailId, requester);
+        Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
 
         ItemContent content = new ItemContent();
         content.setContent("");
@@ -213,7 +214,7 @@ public class ItemService {
 
     @Transactional
     public void reorderTrailItems(Long trailId, List<Long> itemIds, User requester) {
-        trailService.getOwnedTrail(trailId, requester);
+        trailService.getOwnedTrailForUpdate(trailId, requester);
         List<TrailItem> steps = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId);
         Map<Long, TrailItem> byItemId = steps.stream()
                 .collect(Collectors.toMap(step -> step.getItem().getId(), step -> step));
@@ -232,7 +233,7 @@ public class ItemService {
                 .map(step -> {
                     Item item = step.getItem();
                     ItemContent content = item.getContent();
-                    return new TrailItemContentDTO(item.getId(), content != null ? content.getContent() : "");
+                    return new TrailItemContentDTO(item.getId(), content != null ? content.getContent() : "", content != null ? content.getExtractionEpoch() : 0);
                 })
                 .toList();
     }
@@ -254,7 +255,7 @@ public class ItemService {
     
     @Transactional
     public void updateStep(Long trailId, Long itemId, String annotation, Long associationId, User requester) {
-        trailService.getOwnedTrail(trailId, requester);
+        trailService.getOwnedTrailForUpdate(trailId, requester);
         TrailItem step = trailItemRepository.findByTrailIdAndItemId(trailId, itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Step not found"));
 
@@ -305,14 +306,30 @@ public class ItemService {
     public ItemContentResponseDTO getContent(Long id, User requester) {
         Item item = getOwnedItem(id, requester);
         String content = item.getContent() != null ? item.getContent().getContent() : "";
-        return new ItemContentResponseDTO(content);
+        return new ItemContentResponseDTO(content, item.getContent() == null ? 0 : item.getContent().getExtractionEpoch());
     }
 
     @Transactional
     public void updateContent(Long id, String content, User requester) {
+        updateContent(id, content, null, null, requester);
+    }
+
+    @Transactional
+    public void updateContent(Long id, String content, Integer extractionEpoch, User requester) {
+        updateContent(id, content, extractionEpoch, null, requester);
+    }
+
+    @Transactional
+    public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
+        itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);
         ItemContent itemContent = item.getContent();
+        int epoch = itemContent == null ? 0 : itemContent.getExtractionEpoch();
+        if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
+            throw new com.tramo.backend.exception.ExtractionConflictException("This note was extracted in another session. Your changes were kept locally; reload the note before saving.");
         String previousContent = itemContent != null ? itemContent.getContent() : null;
+        if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))
+            throw new com.tramo.backend.exception.ExtractionConflictException("This note changed in another session. Your changes were kept locally; reload before saving.");
         if (itemContent == null) {
             itemContent = new ItemContent();
             item.setContent(itemContent);
@@ -388,7 +405,7 @@ public class ItemService {
 
     @Transactional
     public void attachToTrail(Long trailId, Long itemId, User requester) {
-        Trail trail = trailService.getOwnedTrail(trailId, requester);
+        Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
         if (trailItemRepository.existsByTrailIdAndItemId(trail.getId(), item.getId())) {
             return;
@@ -402,7 +419,7 @@ public class ItemService {
 
     @Transactional
     public void detachFromTrail(Long trailId, Long itemId, User requester) {
-        trailService.getOwnedTrail(trailId, requester);
+        trailService.getOwnedTrailForUpdate(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
 
         trailItemRepository.findByTrailIdAndItemId(trailId, item.getId())

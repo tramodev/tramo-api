@@ -18,6 +18,9 @@ public interface TrailRepository extends JpaRepository<Trail, Long> {
     long countByProjectId(Long projectId);
 
     Optional<Trail> findFirstByProjectIdOrderByIdAsc(Long projectId);
+    @Query(value = "SELECT id FROM trail WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<Long> lockById(@Param("id") Long id);
+
     
     
     

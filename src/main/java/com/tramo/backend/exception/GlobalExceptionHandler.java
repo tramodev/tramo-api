@@ -54,6 +54,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
     }
 
+    @ExceptionHandler(ExtractionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleExtractionConflict(ExtractionConflictException ex) {
+        ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());
+        error.setCode("EXTRACTION_CONFLICT");
+        return handled(ex, error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(ProjectExportException.class)
     public ResponseEntity<ErrorResponse> handleProjectExport(ProjectExportException ex) {
         ErrorResponse error = new ErrorResponse(ex.status(), ex.getMessage(), LocalDateTime.now());

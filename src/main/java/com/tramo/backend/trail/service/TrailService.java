@@ -96,7 +96,7 @@ public class TrailService {
 
     @Transactional
     public void delete(Long id, User requester) {
-        Trail trail = getOwnedTrail(id, requester);
+        Trail trail = getOwnedTrailForUpdate(id, requester);
         clearThumbnailReference(trail);
         List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(id);
         for (TrailItem membership : memberships) {
@@ -127,6 +127,11 @@ public class TrailService {
             project.setThumbnailTrail(null);
             project.setThumbnailType(ProjectThumbnailType.NONE);
         }
+    }
+
+    public Trail getOwnedTrailForUpdate(Long id, User requester) {
+        trailRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
+        return getOwnedTrail(id, requester);
     }
 
     public Trail getOwnedTrail(Long id, User requester) {
