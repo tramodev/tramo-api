@@ -6,7 +6,7 @@
 
 Backend for **Tramo**, a tool for capturing ideas as an associative graph and then
 carving ordered, shareable paths through them. The model is a modern take on
-Vannevar Bush's Memex: atomic **items** connected by typed **associations** (the
+Vannevar Bush's Memex: atomic **items** connected by directed **associations** (the
 graph), and **trails** that linearize a subset of that graph into something you can
 read and study one step at a time.
 
@@ -19,20 +19,19 @@ The core domain lives in the `trail` package and is built on two layers.
 - **Item** — an atomic unit of content (title + rich-text body in `ItemContent`).
   An item can appear in many trails at once (transclusion): it is referenced, not
   copied.
-- **Association** — a typed, directed link. Its type carries the *reason* two things
-  relate: `REQUIRES`, `ELABORATES`, `CONTRADICTS`, `EXAMPLE_OF`, `RELATED`. Its
-  target is polymorphic (`AssociationTargetType`: `ITEM` or `TRAIL`), so an item can
-  point at another item or at a whole trail.
+- **Association** — a directed connection from one note to another note in the same
+  project, with optional shared text (up to 2,000 characters). Direction means
+  “from this note to that note”; it implies neither dependency nor reading order.
+  Each directed pair is unique; the reverse connection is independent. A note
+  cannot connect to itself. Deleting a note deletes its incoming and outgoing
+  connections, leaving other notes intact.
 
-**The trail** — a human ordering of the graph, made for reading and study:
+**The trail** — an independent reading order:
 
-- **Trail** — a named, ordered walk over items. Can be forked from another trail
-  (`forkedFrom`) and is versioned.
-- **TrailItem** — one step in a trail. Holds the `orderIndex` (the sequence), an
-  optional `annotation` (human text connecting this step to the previous one), and a
-  reference to the `Association` traversed to reach it (`null` = a deliberate jump).
-  This is what fuses the two layers: a trail is a walk *through* the graph, not a
-  separate ordering that ignores it.
+- **Trail** — a named, ordered sequence of notes, versioned and forkable.
+- **TrailItem** — membership of a note in a trail, with its `orderIndex`.
+  Adding, removing or reordering memberships never creates or changes connections.
+  Notes reused in several trails retain the same content and connection text.
 
 A **Project** groups trails and loose items and is the unit of sharing and forking:
 publishing snapshots the project to the public explore feed; forking copies its
