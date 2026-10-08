@@ -11,7 +11,6 @@ import com.tramo.backend.trail.dto.TrailResponseDTO;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -107,7 +106,7 @@ public class TrailService {
 
                     imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
                     itemLinkRepository.deleteBySourceItemId(item.getId());
-                    itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
+                    itemLinkRepository.deleteByTargetItemId(item.getId());
                     itemRepository.delete(item);
                 } else {
                     
@@ -117,7 +116,6 @@ public class TrailService {
             }
         }
         
-        itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, id);
         trailRepository.delete(trail);
     }
 

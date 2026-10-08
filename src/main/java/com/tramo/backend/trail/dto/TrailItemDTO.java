@@ -13,8 +13,6 @@ public record TrailItemDTO(
         String type,
         String titleAlign,
         Date createdDate,
-        Date modifiedDate,
-        String annotation,
-        String associationId
+        Date modifiedDate
 ) {
 }

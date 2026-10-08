@@ -22,7 +22,6 @@ import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.entity.Association;
-import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
@@ -184,7 +183,7 @@ public class PublicProjectService {
                     .toList();
             looseItems = projectItems.stream()
                     .filter(item -> !trailItemIds.contains(item.getId()))
-                    .map(item -> toPublicItem(item, null, null, projectItemById, outgoingByItemId))
+                    .map(item -> toPublicItem(item, projectItemById, outgoingByItemId))
                     .toList();
         }
 
@@ -217,37 +216,32 @@ public class PublicProjectService {
 
     private PublicItemDTO toPublicItem(ProjectSnapshotData.ItemData item) {
         List<AssociationDTO> associations = item.associations().stream()
-                .map(a -> new AssociationDTO(String.valueOf(a.id()), a.type(), a.targetType(),
-                        String.valueOf(a.targetId()), a.targetTitle()))
+                .map(a -> new AssociationDTO(String.valueOf(a.id()), String.valueOf(a.targetId()), a.targetTitle(), a.text()))
                 .toList();
         return new PublicItemDTO(item.id(), item.title(), item.type(), item.content(), item.titleAlign(),
-                item.annotation(), item.associationId() != null ? String.valueOf(item.associationId()) : null,
                 associations);
     }
 
     private PublicItemDTO toPublicItem(TrailItem trailItem, Map<Long, Item> projectItemById,
                                         Map<Long, List<Association>> outgoingByItemId) {
-        return toPublicItem(trailItem.getItem(), trailItem.getAnnotation(),
-                trailItem.getAssociation() != null ? String.valueOf(trailItem.getAssociation().getId()) : null,
+        return toPublicItem(trailItem.getItem(),
                 projectItemById, outgoingByItemId);
     }
 
-    private PublicItemDTO toPublicItem(Item item, String annotation, String associationId,
+    private PublicItemDTO toPublicItem(Item item,
                                         Map<Long, Item> projectItemById,
                                         Map<Long, List<Association>> outgoingByItemId) {
         String content = item.getContent() != null ? item.getContent().getContent() : "";
         List<AssociationDTO> associations = outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
-                .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && projectItemById.containsKey(a.getTargetId()))
+                .filter(a -> projectItemById.containsKey(a.getTargetId()))
                 .map(a -> new AssociationDTO(
                         String.valueOf(a.getId()),
-                        a.getType().name(),
-                        a.getTargetType().name(),
                         String.valueOf(a.getTargetId()),
-                        projectItemById.get(a.getTargetId()).getTitle()
+                        projectItemById.get(a.getTargetId()).getTitle(), a.getText()
                 ))
                 .toList();
         return new PublicItemDTO(item.getId(), item.getTitle(), item.getType(), content, item.getTitleAlign(),
-                annotation, associationId, associations);
+                associations);
     }
 
     public List<SitemapProjectDTO> getSitemapProjects() {

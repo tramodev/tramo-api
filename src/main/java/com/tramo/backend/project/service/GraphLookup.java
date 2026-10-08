@@ -5,7 +5,6 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.project.dto.GraphPreviewDTO;
 import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.entity.Association;
-import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
@@ -23,7 +22,7 @@ record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, Li
                                     AssociationRepository itemLinkRepository) {
         if (trailIds.isEmpty()) return new GraphLookup(Map.of(), Map.of());
         Map<Long, List<TrailItem>> membershipsByTrailId = trailItemRepository
-                .findByTrailIdInWithItemContentAndAssociation(trailIds).stream()
+                .findByTrailIdInWithItemContent(trailIds).stream()
                 .collect(Collectors.groupingBy(ti -> ti.getTrail().getId(), LinkedHashMap::new, Collectors.toList()));
         Set<Long> itemIds = membershipsByTrailId.values().stream().flatMap(List::stream)
                 .map(ti -> ti.getItem().getId()).collect(Collectors.toSet());
@@ -44,10 +43,9 @@ record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, Li
                         String.valueOf(item.getId()),
                         item.getTitle(),
                         outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
-                                .filter(a -> a.getTargetType() == AssociationTargetType.ITEM && itemById.containsKey(a.getTargetId()))
-                                .map(a -> new AssociationDTO(String.valueOf(a.getId()), a.getType().name(),
-                                        a.getTargetType().name(), String.valueOf(a.getTargetId()),
-                                        itemById.get(a.getTargetId()).getTitle()))
+                                .filter(a -> itemById.containsKey(a.getTargetId()))
+                                .map(a -> new AssociationDTO(String.valueOf(a.getId()), String.valueOf(a.getTargetId()),
+                                        itemById.get(a.getTargetId()).getTitle(), a.getText()))
                                 .toList()
                 ))
                 .toList();

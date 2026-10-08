@@ -14,7 +14,6 @@ import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.tag.service.TagService;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.trail.entity.Item;
-import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.repository.AssociationRepository;
@@ -263,11 +262,10 @@ public class ProjectService {
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
                     itemLinkRepository.deleteBySourceItemId(itemId);
-                    itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, itemId);
+                    itemLinkRepository.deleteByTargetItemId(itemId);
                     itemRepository.deleteById(itemId);
                 }
             }
-            itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.TRAIL, trail.getId());
             trailRepository.delete(trail);
         }
         
@@ -280,7 +278,7 @@ public class ProjectService {
                 continue;
             }
             itemLinkRepository.deleteBySourceItemId(item.getId());
-            itemLinkRepository.deleteByTargetTypeAndTargetId(AssociationTargetType.ITEM, item.getId());
+            itemLinkRepository.deleteByTargetItemId(item.getId());
             trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
             itemRepository.delete(item);
         }

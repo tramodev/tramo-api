@@ -15,7 +15,6 @@ import lombok.Setter;
 @Table(indexes = {
         @Index(name = "idx_trail_item_trail", columnList = "trail_id"),
         @Index(name = "idx_trail_item_item", columnList = "item_id"),
-        @Index(name = "idx_trail_item_association", columnList = "association_id"),
 })
 public class TrailItem {
     @Id
@@ -28,12 +27,4 @@ public class TrailItem {
     private Item item;
 
     int orderIndex;
-
-    
-    @Column(columnDefinition = "TEXT")
-    private String annotation;
-
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    private Association association;
 }
