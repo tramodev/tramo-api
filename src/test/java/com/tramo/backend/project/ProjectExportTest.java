@@ -54,8 +54,6 @@ class ProjectExportTest extends AbstractIntegrationTest {
         long shared = postForId(owner, "/api/trail/" + first + "/item", "{\"title\":\"Repeated\"}");
         long loose = postForId(owner, "/api/project/" + pid(project) + "/item", "{\"title\":\"Repeated\"}");
         itemService.attachToTrail(second, shared, owner);
-        itemService.updateStep(first, shared, "First annotation", null, owner);
-        itemService.updateStep(second, shared, "Second annotation", null, owner);
         itemService.updateContent(shared, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"Shared body\",\"format\":3}]}]}}", owner);
         mockMvc.perform(put("/api/item/" + shared).header("Authorization", bearer(owner)).contentType("application/json").content("{\"titleAlign\":\"right\"}")).andExpect(status().isOk());
         return new Fixture(owner, project, first, second, shared, loose);
@@ -80,27 +78,24 @@ class ProjectExportTest extends AbstractIntegrationTest {
     void sharedNotesOrderAnnotationsAndRelationsArePreservedWithoutChangingTheOriginal() throws Exception {
         Fixture f = fixture();
         mockMvc.perform(post("/api/item/" + f.shared + "/tie").header("Authorization", bearer(f.owner)).contentType("application/json")
-                .content("{\"type\":\"ELABORATES\",\"targetType\":\"ITEM\",\"targetId\":" + f.loose + "}")).andExpect(status().isNoContent());
+                .content("{\"text\":\"Context\",\"targetId\":" + f.loose + "}")).andExpect(status().isOk());
         long relation = jdbcTemplate.queryForObject("SELECT id FROM association WHERE source_item_id = ?", Long.class, f.shared);
-        itemService.updateStep(f.second, f.shared, "Second annotation", relation, f.owner);
         Date edited = projects.findById(f.project.getId()).orElseThrow().getLastEditedDate();
         String original = itemService.getContent(f.shared, f.owner).getContent();
         long itemCount = items.count();
         long snapshots = jdbcTemplate.queryForObject("SELECT count(*) FROM project_snapshot", Long.class);
         Map<String, byte[]> entries = unzip(download(f));
         JsonNode data = json(entries);
-        assertThat(data.path("formatVersion").asInt()).isEqualTo(1);
+        assertThat(data.path("formatVersion").asInt()).isEqualTo(2);
         assertThat(data.path("exportedAt").asText()).isNotBlank();
         assertThat(data.path("items").size()).isEqualTo(2);
         assertThat(data.path("trails").size()).isEqualTo(2);
         assertThat(data.path("trails").get(0).path("steps").get(0).path("itemId").asLong()).isEqualTo(f.shared);
-        assertThat(data.path("trails").get(1).path("steps").get(0).path("annotation").asText()).isEqualTo("Second annotation");
-        assertThat(data.path("trails").get(1).path("steps").get(0).path("associationId").asLong()).isEqualTo(relation);
         assertThat(data.path("items").get(0).path("content").asText()).isEqualTo(original);
         assertThat(data.path("items").get(0).path("titleAlign").asText()).isEqualTo("right");
         assertThat(data.path("looseItemIds").get(0).asLong()).isEqualTo(f.loose);
-        assertThat(data.path("associations").get(0).path("type").asText()).isEqualTo("ELABORATES");
-        assertThat(html(entries)).contains("elaborates on", "First annotation", "Second annotation", "Notes outside trails", "<em><strong>Shared body</strong></em>");
+        assertThat(data.path("associations").get(0).path("text").asText()).isEqualTo("Context");
+        assertThat(html(entries)).contains("→", "Context", "Notes outside trails", "<em><strong>Shared body</strong></em>");
         assertThat(html(entries).split("Shared body", -1)).hasSize(3);
         var anchors = java.util.regex.Pattern.compile("id=\"([^\"]+)\"").matcher(html(entries));
         Set<String> unique = new HashSet<>();
@@ -211,14 +206,11 @@ class ProjectExportTest extends AbstractIntegrationTest {
     void preservesReorderedStepsAndTheirAnnotations() throws Exception {
         Fixture f = fixture();
         long last = postForId(f.owner, "/api/trail/" + f.first + "/item", "{\"title\":\"Repeated\"}");
-        itemService.updateStep(f.first, last, "Last note annotation", null, f.owner);
         itemService.reorderTrailItems(f.first, List.of(last, f.shared), f.owner);
         var entries = unzip(download(f));
         var ordered = json(entries).path("trails").get(0).path("steps");
         assertThat(ordered.get(0).path("itemId").asLong()).isEqualTo(last);
         assertThat(ordered.get(0).path("orderIndex").asInt()).isLessThan(ordered.get(1).path("orderIndex").asInt());
-        assertThat(ordered.get(0).path("annotation").asText()).isEqualTo("Last note annotation");
-        assertThat(ordered.get(1).path("annotation").asText()).isEqualTo("First annotation");
         assertThat(json(entries).path("items").size()).isEqualTo(3);
     }
 

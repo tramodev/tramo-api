@@ -33,9 +33,8 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         long source = postForId(user, "/api/trail/" + trail + "/item", "{\"title\":\"Source\"}");
         long last = postForId(user, "/api/trail/" + trail + "/item", "{\"title\":\"Last\"}");
         items.attachToTrail(other, source, user); items.updateContent(source, ORIGINAL, user);
-        mockMvc.perform(post("/api/item/" + source + "/tie").header("Authorization", bearer(user)).contentType("application/json").content("{\"type\":\"RELATED\",\"targetType\":\"ITEM\",\"targetId\":" + last + "}")).andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/item/" + source + "/tie").header("Authorization", bearer(user)).contentType("application/json").content("{\"text\":\"Context\",\"targetId\":" + last + "}")).andExpect(status().isOk());
         Long association = jdbcTemplate.queryForObject("SELECT id FROM association WHERE source_item_id = ?", Long.class, source);
-        items.updateStep(trail, last, "Keep this annotation", association, user);
         return new Fixture(user, project, trail, other, source, last);
     }
     ExtractSelectionRequest request(Fixture f, boolean step, UUID id) {
@@ -68,8 +67,6 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         JsonNode result = send(f, request(f, true, UUID.randomUUID())); long id = result.path("item").path("id").asLong();
         var steps = items.getAllForTrail(f.trail, f.user);
         assertThat(steps).extracting(TrailItemDTO::id).containsExactly(f.source, id, f.last);
-        assertThat(steps.get(1).annotation()).isNull(); assertThat(steps.get(1).associationId()).isNull();
-        assertThat(steps.get(2).annotation()).isEqualTo(previous.annotation()); assertThat(steps.get(2).associationId()).isEqualTo(previous.associationId());
         assertThat(items.getAllForTrail(f.other, f.user)).hasSize(1);
         assertThat(result.path("item").path("unfiled").asBoolean()).isFalse();
     }
@@ -84,9 +81,6 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         assertThat(send(f, request).path("item").path("id").asLong()).isEqualTo(id);
         var steps = items.getAllForTrail(f.trail, f.user);
         assertThat(steps).extracting(TrailItemDTO::id).containsExactly(f.source, f.last, id);
-        assertThat(steps.get(1).annotation()).isEqualTo(previous.annotation());
-        assertThat(steps.get(1).associationId()).isEqualTo(previous.associationId());
-        assertThat(steps.get(2).annotation()).isNull(); assertThat(steps.get(2).associationId()).isNull();
         assertThat(items.getAllForTrail(f.other, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source);
         assertThat(repository.count()).isEqualTo(count + 1);
     }

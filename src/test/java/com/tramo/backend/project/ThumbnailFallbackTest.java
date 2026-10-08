@@ -66,8 +66,8 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/item/" + itemA + "/tie")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"REQUIRES\",\"targetType\":\"ITEM\",\"targetId\":" + itemB + "}"))
-                .andExpect(status().isNoContent());
+                        .content("{\"text\":\"Context\",\"targetId\":" + itemB + "}"))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
