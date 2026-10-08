@@ -33,11 +33,20 @@ record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, Li
     }
 
     GraphPreviewDTO buildGraphPreview(Trail trail) {
-        List<TrailItem> memberships = membershipsByTrailId.getOrDefault(trail.getId(), List.of());
-        if (memberships.isEmpty()) return null;
-        Map<Long, Item> itemById = memberships.stream()
+        if (membershipsByTrailId.getOrDefault(trail.getId(), List.of()).isEmpty()) return null;
+        return buildGraphPreview(List.of(trail));
+    }
+
+    GraphPreviewDTO buildGraphPreview(List<Trail> trails) {
+        if (trails.isEmpty()) return null;
+        Map<Long, Item> itemById = trails.stream()
+                .flatMap(trail -> membershipsByTrailId.getOrDefault(trail.getId(), List.of()).stream())
                 .collect(Collectors.toMap(m -> m.getItem().getId(), TrailItem::getItem, (a, b) -> a, LinkedHashMap::new));
-        List<String> itemIds = memberships.stream().map(m -> String.valueOf(m.getItem().getId())).toList();
+        List<GraphPreviewDTO.GraphTrailDTO> previewTrails = trails.stream()
+                .map(trail -> new GraphPreviewDTO.GraphTrailDTO(String.valueOf(trail.getId()), trail.getTitle(),
+                        membershipsByTrailId.getOrDefault(trail.getId(), List.of()).stream()
+                                .map(m -> String.valueOf(m.getItem().getId())).toList()))
+                .toList();
         List<GraphPreviewDTO.GraphItemDTO> items = itemById.values().stream()
                 .map(item -> new GraphPreviewDTO.GraphItemDTO(
                         String.valueOf(item.getId()),
@@ -49,6 +58,6 @@ record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, Li
                                 .toList()
                 ))
                 .toList();
-        return new GraphPreviewDTO(String.valueOf(trail.getId()), trail.getTitle(), itemIds, items);
+        return new GraphPreviewDTO(previewTrails, items);
     }
 }
