@@ -38,7 +38,7 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
         return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
                 .header("Authorization", bearer(owner))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"type\":\"RELATED\",\"targetType\":\"ITEM\",\"targetId\":" + targetId + "}"));
+                .content("{\"text\":\"Context\",\"targetId\":" + targetId + "}"));
     }
 
     @Test
@@ -78,32 +78,26 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                                 {"description":"A trail about A and B"}"""))
                 .andExpect(status().isOk());
 
-        tie(owner, itemA, itemB).andExpect(status().isNoContent());
+        tie(owner, itemA, itemB).andExpect(status().isOk());
 
         String assocResponse = mockMvc.perform(get("/api/item/" + itemA + "/association")
                         .header("Authorization", bearer(owner)))
                 .andReturn().getResponse().getContentAsString();
         String assocId = JsonPath.read(assocResponse, "$[0].id");
 
-        mockMvc.perform(put("/api/trail/" + trailId + "/item/" + itemB)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"annotation\":\"because A leads here\",\"associationId\":" + assocId + "}"))
-                .andExpect(status().isNoContent());
+
 
         
         Project otherProject = createProject(owner, "Unrelated", "private");
         long otherTrailId = createTrail(owner, otherProject, "Other trail");
         long itemC = createItem(owner, otherTrailId, "Secret item C");
-        tie(owner, itemA, itemC).andExpect(status().isNoContent());
+        tie(owner, itemA, itemC).andExpect(status().isBadRequest());
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trails[0].description").value("A trail about A and B"))
                 .andExpect(jsonPath("$.trails[0].version").value(1))
                 .andExpect(jsonPath("$.trails[0].forkedFromId").value(nullValue()))
-                .andExpect(jsonPath("$.trails[0].items[1].annotation").value("because A leads here"))
-                .andExpect(jsonPath("$.trails[0].items[1].associationId").value(assocId))
                 .andExpect(jsonPath("$.trails[0].items[0].associations.length()").value(1))
                 .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetTitle").value("B"))
                 .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetId").value(String.valueOf(itemB)));

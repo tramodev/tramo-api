@@ -359,31 +359,29 @@ class TrailItemTest extends AbstractIntegrationTest {
         assertThat(itemRepository.findById(itemId).orElseThrow().getUnfiled()).isTrue();
     }
 
-    private ResultActions tie(User owner, long sourceItem, String type, String targetType, long targetId) throws Exception {
+    private ResultActions tie(User owner, long sourceItem, long targetId) throws Exception {
         return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
                 .header("Authorization", bearer(owner))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"type\":\"" + type + "\",\"targetType\":\"" + targetType + "\",\"targetId\":" + targetId + "}"));
+                .content("{\"text\":\"Context\",\"targetId\":" + targetId + "}"));
     }
 
     @Test
-    void tyingItemsIsDirectionalAndIdempotent() throws Exception {
+    void tyingItemsIsDirectionalAndRejectsDuplicates() throws Exception {
         User owner = createUser("linker");
         Project project = createProject(owner, "Linking", "private");
         long trailId = createTrail(owner, project, "Linking trail");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
 
-        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent());
-        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent()); 
+        tie(owner, itemA, itemB).andExpect(status().isOk());
+        tie(owner, itemA, itemB).andExpect(status().isBadRequest());
 
         assertThat(itemLinkRepository.count()).isEqualTo(1);
 
         mockMvc.perform(get("/api/item/" + itemA + "/association").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].targetType").value("ITEM"))
-                .andExpect(jsonPath("$[0].type").value("RELATED"))
                 .andExpect(jsonPath("$[0].targetTitle").value("B"));
 
         
@@ -393,31 +391,13 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void canTieItemToTrail() throws Exception {
-        User owner = createUser("trailtier");
-        Project project = createProject(owner, "TrailTie", "private");
-        long trailId = createTrail(owner, project, "Target trail");
-        long otherTrail = createTrail(owner, project, "Source trail");
-        long itemId = createItem(owner, otherTrail, "Pointer");
-
-        tie(owner, itemId, "ELABORATES", "TRAIL", trailId).andExpect(status().isNoContent());
-
-        mockMvc.perform(get("/api/item/" + itemId + "/association").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].targetType").value("TRAIL"))
-                .andExpect(jsonPath("$[0].type").value("ELABORATES"))
-                .andExpect(jsonPath("$[0].targetTitle").value("Target trail"));
-    }
-
-    @Test
     void selfTieIsRejected() throws Exception {
         User owner = createUser("selflinker");
         Project project = createProject(owner, "Selfish", "private");
         long trailId = createTrail(owner, project, "Selfish trail");
         long itemId = createItem(owner, trailId, "Alone");
 
-        tie(owner, itemId, "RELATED", "ITEM", itemId).andExpect(status().isBadRequest());
+        tie(owner, itemId, itemId).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -428,8 +408,8 @@ class TrailItemTest extends AbstractIntegrationTest {
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
 
-        tie(owner, itemA, "RELATED", "ITEM", itemB).andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/item/" + itemA + "/tie?targetType=ITEM&targetId=" + itemB)
+        tie(owner, itemA, itemB).andExpect(status().isOk());
+        mockMvc.perform(delete("/api/item/" + itemA + "/association/" + itemLinkRepository.findBySourceItemId(itemA).get(0).getId())
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
@@ -447,7 +427,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         long myItem = createItem(owner, myTrail, "My item");
         long theirItem = createItem(other, theirTrail, "Their item");
 
-        tie(owner, myItem, "RELATED", "ITEM", theirItem).andExpect(status().isForbidden());
+        tie(owner, myItem, theirItem).andExpect(status().isForbidden());
     }
 
     @Test
@@ -458,57 +438,12 @@ class TrailItemTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, source, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
+        tie(owner, itemA, itemB).andExpect(status().isOk());
 
         assertThat(itemLinkRepository.count()).isEqualTo(1);
         postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
         
         assertThat(itemLinkRepository.count()).isEqualTo(2);
-    }
-
-    private ResultActions blaze(User owner, long trailId, long itemId, String jsonBody) throws Exception {
-        return mockMvc.perform(put("/api/trail/" + trailId + "/item/" + itemId)
-                .header("Authorization", bearer(owner))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(jsonBody));
-    }
-
-    @Test
-    void blazeSetsStepAnnotation() throws Exception {
-        User owner = createUser("blazer");
-        Project project = createProject(owner, "Blaze", "private");
-        long trailId = createTrail(owner, project, "T");
-        long itemId = createItem(owner, trailId, "Step");
-
-        blaze(owner, trailId, itemId, "{\"annotation\":\"because it follows\"}")
-                .andExpect(status().isNoContent());
-
-        mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].annotation").value("because it follows"));
-    }
-
-    @Test
-    void blazeSetsStepAssociation() throws Exception {
-        User owner = createUser("blazer2");
-        Project project = createProject(owner, "Blaze2", "private");
-        long trailId = createTrail(owner, project, "T");
-        long itemA = createItem(owner, trailId, "A");
-        long itemB = createItem(owner, trailId, "B");
-        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
-
-        String assocResponse = mockMvc.perform(get("/api/item/" + itemA + "/association")
-                        .header("Authorization", bearer(owner)))
-                .andReturn().getResponse().getContentAsString();
-        String assocId = JsonPath.read(assocResponse, "$[0].id");
-
-        
-        blaze(owner, trailId, itemB, "{\"associationId\":" + assocId + "}")
-                .andExpect(status().isNoContent());
-
-        mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[1].associationId").value(assocId));
     }
 
     @Test
@@ -531,22 +466,19 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void forkCopiesAnnotationsAndForkedFrom() throws Exception {
+    void forkCopiesForkedFrom() throws Exception {
         User owner = createUser("forkann");
         User forker = createUser("forkann2");
         Project source = createProject(owner, "Forkable", "published");
         long trailId = createTrail(owner, source, "T");
         long itemId = createItem(owner, trailId, "Step");
-        blaze(owner, trailId, itemId, "{\"annotation\":\"copied note\"}")
-                .andExpect(status().isNoContent());
 
         String forkId = postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
         Project fork = projectRepository.findById(projectIdCodec.decode(forkId)).orElseThrow();
         Trail forkedTrail = trailRepository.findByProjectId(fork.getId()).get(0);
 
         assertThat(forkedTrail.getForkedFrom()).isNotNull();
-        assertThat(trailItemRepository.findByTrailIdOrderByOrderIndexAsc(forkedTrail.getId()).get(0).getAnnotation())
-                .isEqualTo("copied note");
+
     }
 
     @Test

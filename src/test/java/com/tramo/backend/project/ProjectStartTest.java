@@ -185,8 +185,6 @@ class ProjectStartTest extends AbstractIntegrationTest {
         assertThat(itemService.getItemsForProject(projectId, owner)).hasSize(5);
         Long shared = basicNotes.get(2).id();
         assertThat(tokenNotes.get(0).id()).isEqualTo(shared);
-        assertThat(basicNotes.get(1).annotation()).isNotBlank();
-        assertThat(tokenNotes.get(1).annotation()).isNotBlank();
         String edited = "{\"root\":{\"children\":[{\"text\":\"Edited Memex\"}]}}";
         itemService.updateContent(shared, edited, owner);
         for (Long trailId : new Long[]{basics, tokens}) {

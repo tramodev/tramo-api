@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DeleteItemWithReferencedAssociationTest extends AbstractIntegrationTest {
 
     @Test
-    void deletesItemWhoseAssociationIsUsedAsAnotherStepArrival() throws Exception {
+    void deletesConnectedItemWithoutDeletingTarget() throws Exception {
         User owner = createUser("dirassoc");
         Project project = createProject(owner, "Assoc", "private");
         long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
@@ -33,8 +33,8 @@ class DeleteItemWithReferencedAssociationTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"targetType":"ITEM","targetId":%d,"type":"RELATED"}""".formatted(target)))
-                .andExpect(status().isNoContent());
+                                {"targetId":%d,"text":"Context"}""".formatted(target)))
+                .andExpect(status().isOk());
 
         String associations = mockMvc.perform(get("/api/item/" + source + "/association")
                         .header("Authorization", bearer(owner)))
@@ -42,12 +42,6 @@ class DeleteItemWithReferencedAssociationTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         String associationId = JsonPath.read(associations, "$[0].id");
 
-        mockMvc.perform(put("/api/trail/" + trailId + "/item/" + target)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"annotation":"arrived here","associationId":%s}""".formatted(associationId)))
-                .andExpect(status().isNoContent());
 
         mockMvc.perform(delete("/api/item/" + source).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());

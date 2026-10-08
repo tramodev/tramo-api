@@ -31,8 +31,8 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
                         .post("/api/item/" + sourceItem + "/tie")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"RELATED\",\"targetType\":\"ITEM\",\"targetId\":" + targetItem + "}"))
-                .andExpect(status().isNoContent());
+                        .content("{\"text\":\"Context\",\"targetId\":" + targetItem + "}"))
+                .andExpect(status().isOk());
     }
 
     @Test

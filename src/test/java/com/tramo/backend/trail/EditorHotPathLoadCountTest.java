@@ -67,33 +67,4 @@ class EditorHotPathLoadCountTest extends AbstractIntegrationTest {
         assertThat(small).isLessThanOrEqualTo(AUTOSAVE_MAX_ENTITY_LOADS);
     }
 
-    @Test
-    void updateStepQueryCountDoesNotScaleWithTrailSize() throws Exception {
-        User owner = createUser("ehpqcstep");
-        Project project = createProject(owner, "Steps", "private");
-        long smallTrail = createTrail(owner, project, "Small");
-        long smallItem = createItem(owner, smallTrail, "Only item");
-
-        long largeTrail = createTrail(owner, project, "Large");
-        long largeItem = createItem(owner, largeTrail, "First item");
-        for (int i = 1; i < 8; i++) {
-            createItem(owner, largeTrail, "Filler " + i);
-        }
-
-        long small = entityLoadCount(() -> mockMvc.perform(put("/api/trail/" + smallTrail + "/item/" + smallItem)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"annotation":"note"}"""))
-                .andExpect(status().isNoContent()));
-
-        long large = entityLoadCount(() -> mockMvc.perform(put("/api/trail/" + largeTrail + "/item/" + largeItem)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"annotation":"note"}"""))
-                .andExpect(status().isNoContent()));
-
-        assertThat(large).isEqualTo(small);
-    }
 }

@@ -49,14 +49,8 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/item/" + itemA + "/tie")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"REQUIRES\",\"targetType\":\"ITEM\",\"targetId\":" + itemB + "}"))
-                .andExpect(status().isNoContent());
-        mockMvc.perform(put("/api/trail/" + trailId + "/item/" + itemB)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"annotation":"read this second"}"""))
-                .andExpect(status().isNoContent());
+                        .content("{\"text\":\"Context\",\"targetId\":" + itemB + "}"))
+                .andExpect(status().isOk());
         publish(owner, project);
         return project;
     }
@@ -85,18 +79,8 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trails[0].items[0].associations.length()").value(1))
-                .andExpect(jsonPath("$.trails[0].items[0].associations[0].type").value("REQUIRES"))
+                .andExpect(jsonPath("$.trails[0].items[0].associations[0].text").value("Context"))
                 .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetTitle").value("B"));
-    }
-
-    @Test
-    void snapshotViewCarriesStepAnnotations() throws Exception {
-        User owner = createUser("psvowner3");
-        Project project = publishedProjectWithContent(owner, "Annotated");
-
-        mockMvc.perform(get("/api/public/project/" + pid(project)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.trails[0].items[1].annotation").value("read this second"));
     }
 
     @Test

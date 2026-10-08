@@ -5,8 +5,6 @@ package com.tramo.backend.project;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.trail.entity.Association;
-import com.tramo.backend.trail.entity.AssociationTargetType;
-import com.tramo.backend.trail.entity.AssociationType;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
@@ -48,11 +46,11 @@ class ForkContentTest extends AbstractIntegrationTest {
                 {"title":"%s"}""".formatted(title));
     }
 
-    private ResultActions tie(User owner, long sourceItem, String type, String targetType, long targetId) throws Exception {
+    private ResultActions tie(User owner, long sourceItem, long targetId) throws Exception {
         return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
                 .header("Authorization", bearer(owner))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"type\":\"" + type + "\",\"targetType\":\"" + targetType + "\",\"targetId\":" + targetId + "}"));
+                .content("{\"text\":\"Context\",\"targetId\":" + targetId + "}"));
     }
 
     private void setContent(User owner, long itemId, String content) throws Exception {
@@ -89,7 +87,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, source, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
+        tie(owner, itemA, itemB).andExpect(status().isOk());
 
         Project fork = forkOf(forker, source);
 
@@ -103,30 +101,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         List<Association> copied = associationRepository.findBySourceItemId(copyA.getId());
         assertThat(copied).hasSize(1);
         assertThat(copied.get(0).getTargetId()).isEqualTo(copyB.getId());
-        assertThat(copied.get(0).getTargetType()).isEqualTo(AssociationTargetType.ITEM);
-        assertThat(copied.get(0).getType()).isEqualTo(AssociationType.REQUIRES);
-    }
-
-    @Test
-    void forkFromLiveTablesRetargetsTrailAssociationsToTheCopiedTrail() throws Exception {
-        User owner = createUser("flowner2");
-        User forker = createUser("flforker2");
-        Project source = createProject(owner, "Trail linked", "unlisted", "A description", null);
-        long trailId = createTrail(owner, source, "T");
-        long otherTrailId = createTrail(owner, source, "Other");
-        long itemA = createItem(owner, trailId, "A");
-        tie(owner, itemA, "RELATED", "TRAIL", otherTrailId).andExpect(status().isNoContent());
-
-        Project fork = forkOf(forker, source);
-
-        Item copyA = itemsOf(fork).stream().filter(i -> i.getTitle().equals("A")).findFirst().orElseThrow();
-        List<Association> copied = associationRepository.findBySourceItemId(copyA.getId());
-        assertThat(copied).hasSize(1);
-        assertThat(copied.get(0).getTargetType()).isEqualTo(AssociationTargetType.TRAIL);
-        assertThat(copied.get(0).getTargetId()).isNotEqualTo(otherTrailId);
-
-        List<Long> forkTrailIds = trailRepository.findByProjectId(fork.getId()).stream().map(Trail::getId).toList();
-        assertThat(forkTrailIds).contains(copied.get(0).getTargetId());
+        assertThat(copied.get(0).getText()).isEqualTo("Context");
     }
 
     @Test
@@ -159,7 +134,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, source, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        tie(owner, itemA, "REQUIRES", "ITEM", itemB).andExpect(status().isNoContent());
+        tie(owner, itemA, itemB).andExpect(status().isOk());
         publish(owner, source);
 
         Project fork = forkOf(forker, source);
@@ -172,22 +147,17 @@ class ForkContentTest extends AbstractIntegrationTest {
         List<Association> copied = associationRepository.findBySourceItemId(copyA.getId());
         assertThat(copied).hasSize(1);
         assertThat(copied.get(0).getTargetId()).isEqualTo(copyB.getId());
-        assertThat(copied.get(0).getType()).isEqualTo(AssociationType.REQUIRES);
+        assertThat(copied.get(0).getText()).isEqualTo("Context");
     }
 
     @Test
-    void forkFromSnapshotKeepsTrailOrderAndAnnotations() throws Exception {
+    void forkFromSnapshotKeepsTrailOrder() throws Exception {
         User owner = createUser("fsowner2");
         User forker = createUser("fsforker2");
         Project source = createProject(owner, "Annotated", "private", "A description", null);
         long trailId = createTrail(owner, source, "T");
         long first = createItem(owner, trailId, "First");
         long second = createItem(owner, trailId, "Second");
-        mockMvc.perform(put("/api/trail/" + trailId + "/item/" + second)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"annotation\":\"why this step\"}"))
-                .andExpect(status().isNoContent());
         publish(owner, source);
 
         Project fork = forkOf(forker, source);
@@ -197,7 +167,6 @@ class ForkContentTest extends AbstractIntegrationTest {
         assertThat(steps).hasSize(2);
         assertThat(steps.get(0).getItem().getTitle()).isEqualTo("First");
         assertThat(steps.get(1).getItem().getTitle()).isEqualTo("Second");
-        assertThat(steps.get(1).getAnnotation()).isEqualTo("why this step");
         assertThat(steps.get(0).getItem().getId()).isNotIn(first, second);
     }
 
@@ -219,18 +188,19 @@ class ForkContentTest extends AbstractIntegrationTest {
         assertThat(copies.get(0).getContent().getContent()).isEqualTo("published body");
     }
 
-    @Test
-    void forkFromSnapshotCopiesItemsThatBelongToNoTrail() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void forkCopiesConnectionsToLooseNotes(boolean published) throws Exception {
         User owner = createUser("fsowner6");
         User forker = createUser("fsforker6");
-        Project source = createProject(owner, "Loose", "private", "A description", null);
+        Project source = createProject(owner, "Loose", "unlisted", "A description", null);
         long trailId = createTrail(owner, source, "T");
         long filedId = createItem(owner, trailId, "Filed");
         long looseId = postForId(owner, "/api/project/" + pid(source) + "/item", """
                 {"title":"Loose one"}""");
         setContent(owner, looseId, "loose body");
-        tie(owner, filedId, "RELATED", "ITEM", looseId).andExpect(status().isNoContent());
-        publish(owner, source);
+        tie(owner, filedId, looseId).andExpect(status().isOk());
+        if (published) publish(owner, source);
 
         Project fork = forkOf(forker, source);
 
