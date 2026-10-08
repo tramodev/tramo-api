@@ -17,6 +17,7 @@ public class ProjectResponseDTO {
     private String id;
     private String title;
     private String description;
+    private String graphColors;
     private ProjectVisibility visibility;
     private String thumbnailImageUrl;
     private GraphPreviewDTO thumbnailGraph;

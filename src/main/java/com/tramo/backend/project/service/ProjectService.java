@@ -118,6 +118,7 @@ public class ProjectService {
         Project project = new Project();
         project.setTitle(request.getTitle());
         project.setDescription(request.getDescription());
+        project.setGraphColors(request.getGraphColors());
         project.setVisibility(request.getVisibility());
         project.setOwner(owner);
         project.setCreationDate(new Date());
@@ -159,6 +160,10 @@ public class ProjectService {
         }
         if (request.getDescription() != null) {
             project.setDescription(request.getDescription());
+            touchesModifiedDate = true;
+        }
+        if (request.getGraphColors() != null) {
+            project.setGraphColors(request.getGraphColors());
             touchesModifiedDate = true;
         }
         boolean firstPublish = false;

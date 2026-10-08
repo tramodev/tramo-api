@@ -3,6 +3,7 @@
 package com.tramo.backend.project.dto;
 
 import com.tramo.backend.project.entity.ProjectVisibility;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -15,4 +16,6 @@ public class ProjectRequestDTO {
     private String description;
     private ProjectVisibility visibility;
     private List<String> tags;
+    @Size(max = 65536)
+    private String graphColors;
 }
