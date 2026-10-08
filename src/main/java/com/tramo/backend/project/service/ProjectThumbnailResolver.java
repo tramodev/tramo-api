@@ -45,31 +45,25 @@ public class ProjectThumbnailResolver {
             if (type == null || type == ProjectThumbnailType.NONE) {
                 fallbackCandidates.add(project);
             } else if (type == ProjectThumbnailType.GRAPH) {
-                if (project.getThumbnailTrail() != null) {
-                    chosenGraphProjects.add(project);
-                } else {
-                    result.put(project.getId(), ThumbnailResolution.EMPTY);
-                }
+                chosenGraphProjects.add(project);
             } else {
                 result.put(project.getId(), new ThumbnailResolution(project.getThumbnailImageUrl(), null));
             }
         }
 
-        if (!chosenGraphProjects.isEmpty()) {
-            List<Long> trailIds = chosenGraphProjects.stream().map(p -> p.getThumbnailTrail().getId()).toList();
-            GraphLookup lookup = GraphLookup.forTrailIds(trailIds, trailItemRepository, itemLinkRepository);
-            for (Project project : chosenGraphProjects) {
-                Trail trail = project.getThumbnailTrail();
-                result.put(project.getId(), new ThumbnailResolution(null, lookup.buildGraphPreview(trail)));
-            }
-        }
-
-        if (!fallbackCandidates.isEmpty()) {
-            List<Long> fallbackProjectIds = fallbackCandidates.stream().map(Project::getId).toList();
-            Map<Long, List<Trail>> trailsByProjectId = trailRepository.findByProjectIdIn(fallbackProjectIds).stream()
+        if (!chosenGraphProjects.isEmpty() || !fallbackCandidates.isEmpty()) {
+            List<Project> graphProjects = new ArrayList<>(chosenGraphProjects);
+            graphProjects.addAll(fallbackCandidates);
+            List<Long> graphProjectIds = graphProjects.stream().map(Project::getId).toList();
+            Map<Long, List<Trail>> trailsByProjectId = trailRepository.findByProjectIdIn(graphProjectIds).stream()
                     .collect(Collectors.groupingBy(t -> t.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
             List<Long> allTrailIds = trailsByProjectId.values().stream().flatMap(List::stream).map(Trail::getId).toList();
             GraphLookup lookup = GraphLookup.forTrailIds(allTrailIds, trailItemRepository, itemLinkRepository);
+
+            for (Project project : chosenGraphProjects) {
+                result.put(project.getId(), new ThumbnailResolution(null,
+                        lookup.buildGraphPreview(trailsByProjectId.getOrDefault(project.getId(), List.of()))));
+            }
 
             List<Long> needsImageFallback = new ArrayList<>();
             for (Project project : fallbackCandidates) {

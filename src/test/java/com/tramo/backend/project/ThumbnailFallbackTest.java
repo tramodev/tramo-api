@@ -72,7 +72,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].thumbnailImageUrl").value(nullValue()))
-                .andExpect(jsonPath("$[0].thumbnailGraph.trailId").value(String.valueOf(trailId)));
+                .andExpect(jsonPath("$[0].thumbnailGraph.trails[0].id").value(String.valueOf(trailId)));
     }
 
     @Test

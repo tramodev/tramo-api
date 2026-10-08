@@ -7,11 +7,12 @@ import com.tramo.backend.trail.dto.AssociationDTO;
 import java.util.List;
 
 public record GraphPreviewDTO(
-        String trailId,
-        String trailTitle,
-        List<String> itemIds,
+        List<GraphTrailDTO> trails,
         List<GraphItemDTO> items
 ) {
+    public record GraphTrailDTO(String id, String title, List<String> itemIds) {
+    }
+
     public record GraphItemDTO(String id, String title, List<AssociationDTO> associations) {
     }
 }

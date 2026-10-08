@@ -15,6 +15,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class QueryCountTest extends AbstractIntegrationTest {
@@ -34,6 +35,38 @@ class QueryCountTest extends AbstractIntegrationTest {
                     .andExpect(status().isOk());
         }
         return project;
+    }
+
+    @Test
+    void projectListGraphThumbnailQueryCountDoesNotScaleWithProjects() throws Exception {
+        User owner = createUser("qcgraphowner");
+        for (int i = 0; i < 2; i++) {
+            Project project = seedPublishedProject(owner, "Graph " + i, 2, 1, null);
+            mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                            .header("Authorization", bearer(owner))
+                            .contentType("application/json")
+                            .content("{\"type\":\"GRAPH\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/project")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        for (int i = 2; i < 8; i++) {
+            Project project = seedPublishedProject(owner, "Graph " + i, 2, 1, null);
+            mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
+                            .header("Authorization", bearer(owner))
+                            .contentType("application/json")
+                            .content("{\"type\":\"GRAPH\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/project")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+
+        assertThat(large).isEqualTo(small);
     }
 
     @Test

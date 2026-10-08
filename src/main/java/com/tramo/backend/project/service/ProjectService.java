@@ -210,15 +210,9 @@ public class ProjectService {
 
         switch (type) {
             case GRAPH -> {
-                if (request.getTrailId() == null) {
+                if (trailRepository.countByProjectId(project.getId()) == 0) {
                     throw new RequestValidationException(RequestErrorCode.THUMBNAIL_TRAIL_REQUIRED);
                 }
-                Trail trail = trailRepository.findById(Long.valueOf(request.getTrailId()))
-                        .orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
-                if (!trail.getProject().getId().equals(project.getId())) {
-                    throw new AccessDeniedException("Trail does not belong to this project");
-                }
-                project.setThumbnailTrail(trail);
             }
             case PROJECT_IMAGE -> throw new RequestValidationException(RequestErrorCode.PRIVATE_THUMBNAIL_FORBIDDEN);
             case DEDICATED -> {

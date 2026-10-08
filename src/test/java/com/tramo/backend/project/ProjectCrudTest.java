@@ -477,40 +477,34 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void setThumbnailToGraphRequiresATrailOfTheSameProject() throws Exception {
-        User owner = createUser("thumbowner1");
-        User other = createUser("thumbother1");
-        Project mine = createProject(owner, "Mine", "private", "A description", null);
-        Project theirs = createProject(other, "Theirs", "private", "A description", null);
-        long theirTrail = postForId(other, "/api/project/" + pid(theirs) + "/trail", """
-                {"title":"Their trail"}""");
-
-        mockMvc.perform(put("/api/project/" + pid(mine) + "/thumbnail")
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"GRAPH\",\"trailId\":\"" + theirTrail + "\"}"))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void setThumbnailToGraphUsesTheChosenTrail() throws Exception {
+    void setThumbnailToGraphUsesAllTrails() throws Exception {
         User owner = createUser("thumbowner2");
         Project project = createProject(owner, "Graphed", "private", "A description", null);
-        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
-                {"title":"T"}""");
-        postForId(owner, "/api/trail/" + trailId + "/item", """
-                {"title":"I"}""");
+        long firstTrail = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"First"}""");
+        long secondTrail = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"Second"}""");
+        long shared = postForId(owner, "/api/trail/" + firstTrail + "/item", """
+                {"title":"Shared"}""");
+        long second = postForId(owner, "/api/trail/" + secondTrail + "/item", """
+                {"title":"Second note"}""");
+        mockMvc.perform(post("/api/trail/" + secondTrail + "/item/" + shared)
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
 
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"GRAPH\",\"trailId\":\"" + trailId + "\"}"))
+                        .content("{\"type\":\"GRAPH\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.thumbnailGraph.trailId").value(String.valueOf(trailId)));
+                .andExpect(jsonPath("$.thumbnailGraph.trails[0].id").value(String.valueOf(firstTrail)))
+                .andExpect(jsonPath("$.thumbnailGraph.trails[1].id").value(String.valueOf(secondTrail)))
+                .andExpect(jsonPath("$.thumbnailGraph.trails[1].itemIds", containsInAnyOrder(String.valueOf(shared), String.valueOf(second))))
+                .andExpect(jsonPath("$.thumbnailGraph.items.length()").value(2));
     }
 
     @Test
-    void setThumbnailToGraphRequiresATrailId() throws Exception {
+    void setThumbnailToGraphRequiresATrail() throws Exception {
         User owner = createUser("thumbowner3");
         Project project = createProject(owner, "NoTrail", "private", "A description", null);
 
