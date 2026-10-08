@@ -141,6 +141,30 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void graphColorsSurviveReloadAndOtherUpdates() throws Exception {
+        User owner = createUser("graphcolorsowner");
+        Project project = createProject(owner, "Graph colors", "private");
+        String colors = "{\"items\":{\"1\":\"blue\"},\"trails\":{\"2\":\"red\"}}";
+
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("graphColors", colors))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.graphColors").value(colors));
+
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Renamed\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.graphColors").value(colors));
+    }
+
+    @Test
     void updateIgnoresBlankTitle() throws Exception {
         User owner = createUser("editor2");
         Project project = createProject(owner, "Keep me", "private");

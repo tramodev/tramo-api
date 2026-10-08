@@ -34,6 +34,8 @@ public class Project {
     private boolean example;
     private String title;
     private String description;
+    @Column(columnDefinition = "TEXT")
+    private String graphColors;
     private ProjectVisibility visibility;
     @Column(columnDefinition = "TEXT")
     private String thumbnailImageUrl;

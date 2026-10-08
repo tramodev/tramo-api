@@ -56,6 +56,7 @@ public class ProjectResponseMapper {
                 projectIdCodec.encode(project.getId()),
                 project.getTitle(),
                 project.getDescription(),
+                project.getGraphColors(),
                 project.getVisibility(),
                 thumbnail.imageUrl(),
                 thumbnail.graph(),
