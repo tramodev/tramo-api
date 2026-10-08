@@ -12,8 +12,6 @@ import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.TrailRequestDTO;
-import com.tramo.backend.trail.entity.AssociationTargetType;
-import com.tramo.backend.trail.entity.AssociationType;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -123,11 +121,9 @@ public class ProjectStartService {
         Long memex = note(vision, "Memex", "The Memex was a proposed device for storing and consulting a person’s books, records and communications. Bush imagined a desk with screens and microfilm, rather than a modern computer or the web.\nIts distinctive idea was associative access: a reader could connect records and follow those connections later. The same record could belong to several trails. The Memex described in the essay was a proposal, not a finished product.", user);
         itemService.attachToTrail(connections, memex, user);
         Long trails = note(connections, "Associative trails", "An associative trail is a named path through connected records. In Bush’s proposal, a reader could join records, add comments and return to the path without reconstructing every connection.\nA record could appear in more than one trail. That lets one source support different explanations while each trail keeps its own context and order.", user);
-        Long sharing = note(connections, "Sharing a trail", "Bush imagined readers copying trails for other people to explore and extend in their own Memex. Sharing meant passing along a path through material, not just an isolated document.\nTry that idea here: edit the shared Memex note and open Bush’s vision. Both trails use the same note, while their transition explanations remain separate.", user);
-        itemService.tie(essay, AssociationType.RELATED, AssociationTargetType.ITEM, bush, user);
-        itemService.tie(trails, AssociationType.ELABORATES, AssociationTargetType.ITEM, memex, user);
-        itemService.updateStep(vision, essay, "Bush’s essay gives this vision a concrete form. Next, explore the proposal in his own terms.", null, user);
-        itemService.updateStep(connections, trails, "The Memex stores records; associative trails explain how a reader connects and revisits them.", null, user);
+        Long sharing = note(connections, "Sharing a trail", "Bush imagined readers copying trails for other people to explore and extend in their own Memex. Sharing meant passing along a path through material, not just an isolated document.\nTry that idea here: edit the shared Memex note and open Bush’s vision. Both trails use the same note and connections, while keeping independent reading orders.", user);
+        itemService.tie(essay, bush, "Bush’s essay describes his vision for connecting records.", user);
+        itemService.tie(trails, memex, "Associative trails connect records in the Memex.", user);
         return result(project, vision, bush);
     }
 

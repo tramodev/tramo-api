@@ -39,15 +39,10 @@ public class ProjectExportHtml {
             bodies.put(item.id(), node(root.has("root") ? root.get("root") : root, item.id(), 0));
         }
         StringBuilder html = new StringBuilder("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><title>");
-        html.append(escape(data.project().title())).append("</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;padding:2rem;max-width:900px;color:#222;background:white}a{color:#174d92}nav,article,section{margin-bottom:2rem}article{border-top:1px solid #bbb;padding-top:1rem}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:1rem}blockquote{border-left:3px solid #bbb;padding-left:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #aaa;padding:.5rem}p,.annotation{white-space:pre-wrap}figure{margin:1rem 0}figcaption,.warning{font-size:.9rem}article:target{outline:2px solid #aaa}input{pointer-events:none}@media(max-width:600px){body{padding:1rem}}@media print{body{max-width:none;padding:0}nav{break-after:page}article{break-inside:auto}a{color:inherit}pre{background:none}} </style></head><body><header id=\"top\"><h1>")
+        html.append(escape(data.project().title())).append("</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;padding:2rem;max-width:900px;color:#222;background:white}a{color:#174d92}nav,article,section{margin-bottom:2rem}article{border-top:1px solid #bbb;padding-top:1rem}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:1rem}blockquote{border-left:3px solid #bbb;padding-left:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #aaa;padding:.5rem}p{white-space:pre-wrap}figure{margin:1rem 0}figcaption,.warning{font-size:.9rem}article:target{outline:2px solid #aaa}input{pointer-events:none}@media(max-width:600px){body{padding:1rem}}@media print{body{max-width:none;padding:0}nav{break-after:page}article{break-inside:auto}a{color:inherit}pre{background:none}} </style></head><body><header id=\"top\"><h1>")
             .append(escape(data.project().title())).append("</h1><p>").append(escape(data.project().description())).append("</p></header>");
         if (data.project().thumbnailImageUrl() != null && data.assets().containsKey(data.project().thumbnailImageUrl()))
             html.append("<img alt=\"Project thumbnail\" src=\"").append(data.assets().get(data.project().thumbnailImageUrl())).append("\">");
-        for (var association : data.associations()) {
-            if (!items.containsKey(association.sourceItemId()) || ("ITEM".equals(association.targetType()) && !items.containsKey(association.targetId()))
-                    || ("TRAIL".equals(association.targetType()) && data.trails().stream().noneMatch(t -> t.id().equals(association.targetId()))))
-                warnings.add("Association " + association.id() + " has a destination or source outside this project export; original IDs are preserved.");
-        }
         if (!warnings.isEmpty()) { html.append("<aside class=\"warning\"><h2>Export warnings</h2><ul>"); warnings.forEach(w -> html.append("<li>").append(escape(w)).append("</li>")); html.append("</ul></aside>"); }
         html.append("<nav aria-label=\"Project index\"><h2>Contents</h2><ul>");
         data.trails().forEach(trail -> {
@@ -59,7 +54,6 @@ public class ProjectExportHtml {
         for (var trail : data.trails()) {
             html.append("<section id=\"trail-").append(trail.id()).append("\"><h2>").append(escape(trail.title())).append("</h2><p>").append(escape(trail.description())).append("</p>");
             for (var step : trail.steps()) {
-                if (step.annotation() != null && !step.annotation().isBlank()) html.append("<p class=\"annotation\">Step annotation: ").append(escape(step.annotation())).append("</p>");
                 article(html, step.itemId(), "trail-" + trail.id() + "-step-" + step.id());
                 check(html);
             }
@@ -73,16 +67,12 @@ public class ProjectExportHtml {
     private void article(StringBuilder html, Long id, String anchor) {
         var item = items.get(id);
         html.append("<article id=\"").append(anchor).append("\"><h3 style=\"text-align:").append(alignment(item.titleAlign())).append("\">").append(escape(item.title())).append("</h3>").append(bodies.get(id));
-        List<ProjectExportDTO.AssociationData> relations = data.associations().stream().filter(a -> a.sourceItemId().equals(id) || ("ITEM".equals(a.targetType()) && a.targetId().equals(id))).toList();
+        List<ProjectExportDTO.AssociationData> relations = data.associations().stream().filter(a -> a.sourceItemId().equals(id) || a.targetId().equals(id)).toList();
         if (!relations.isEmpty()) {
             html.append("<aside><h4>Connections</h4><ul>");
             for (var association : relations) {
-                html.append("<li>").append(itemLink(association.sourceItemId())).append(" ").append(escape(verb(association.type()))).append(" ");
-                if ("ITEM".equals(association.targetType())) html.append(itemLink(association.targetId()));
-                else {
-                    var target = data.trails().stream().filter(t -> t.id().equals(association.targetId())).findFirst();
-                    html.append(target.map(t -> "<a href=\"#trail-" + t.id() + "\">" + escape(t.title()) + "</a>").orElse("Trail " + association.targetId() + " (outside this export)"));
-                }
+                html.append("<li>").append(itemLink(association.sourceItemId())).append(" → ").append(itemLink(association.targetId()));
+                if (association.text() != null) html.append("<p>").append(escape(association.text())).append("</p>");
                 html.append("</li>");
             }
             html.append("</ul></aside>");
@@ -93,9 +83,6 @@ public class ProjectExportHtml {
     private String itemLink(Long id) {
         var item = items.get(id);
         return item != null && anchors.containsKey(id) ? "<a href=\"#" + anchors.get(id) + "\">" + escape(item.title()) + "</a>" : "Note " + id + " (outside this export)";
-    }
-    private static String verb(String type) {
-        return switch (type) { case "REQUIRES" -> "requires"; case "ELABORATES" -> "elaborates on"; case "CONTRADICTS" -> "contradicts"; case "EXAMPLE_OF" -> "is an example of"; case "RELATED" -> "is related to"; default -> type; };
     }
     private String node(JsonNode n, Long itemId, int depth) {
         if (depth > 100 || ++nodes > 200000) throw ProjectExportException.tooLarge();

@@ -68,7 +68,7 @@ public class ProjectExportService {
             Set<String> warnings = new LinkedHashSet<>();
             String html = new ProjectExportHtml(mapper, snapshot.data(), warnings).render();
             var source = snapshot.data();
-            var data = new ProjectExportDTO(1, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
+            var data = new ProjectExportDTO(2, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
                     source.associations(), source.assets(), List.copyOf(warnings));
             archive = Files.createTempFile("tramo-export-", ".zip");
             long total = 0;
@@ -113,24 +113,22 @@ public class ProjectExportService {
         if (size.getItems() > 5000 || size.getBytes() > 8L * 1024 * 1024 || steps.countByTrailProjectId(projectId) > 20000 || trails.countByProjectId(projectId) > 2000) throw ProjectExportException.tooLarge();
         List<Item> found = items.findForExport(projectId);
         List<Trail> orderedTrails = trails.findByProjectId(projectId);
-        List<TrailItem> memberships = orderedTrails.isEmpty() ? List.of() : steps.findByTrailIdInWithItemContentAndAssociation(orderedTrails.stream().map(Trail::getId).toList());
+        List<TrailItem> memberships = orderedTrails.isEmpty() ? List.of() : steps.findByTrailIdInWithItemContent(orderedTrails.stream().map(Trail::getId).toList());
         Map<Long, List<ProjectExportDTO.StepData>> stepsByTrail = new HashMap<>();
         Set<Long> placed = new HashSet<>();
         for (TrailItem step : memberships) {
             placed.add(step.getItem().getId());
-            stepsByTrail.computeIfAbsent(step.getTrail().getId(), key -> new ArrayList<>()).add(new ProjectExportDTO.StepData(step.getId(), step.getItem().getId(), step.getOrderIndex(), step.getAnnotation(), step.getAssociation() == null ? null : step.getAssociation().getId()));
+            stepsByTrail.computeIfAbsent(step.getTrail().getId(), key -> new ArrayList<>()).add(new ProjectExportDTO.StepData(step.getId(), step.getItem().getId(), step.getOrderIndex()));
         }
         List<ProjectExportDTO.ItemData> notes = found.stream().map(item -> new ProjectExportDTO.ItemData(item.getId(), item.getTitle(), item.getType(), item.getTitleAlign(),
                 item.getContent() == null ? null : item.getContent().getContent(), Boolean.TRUE.equals(item.getUnfiled()), date(item.getCreatedDate()), date(item.getModifiedDate()))).toList();
         List<ProjectExportDTO.TrailData> paths = orderedTrails.stream().map(trail -> new ProjectExportDTO.TrailData(trail.getId(), trail.getTitle(), trail.getDescription(), trail.getVisibility(), trail.getVersion(),
                 trail.getForkedFrom() == null ? null : trail.getForkedFrom().getId(), stepsByTrail.getOrDefault(trail.getId(), List.of()))).toList();
         Map<Long, Association> relationshipMap = new TreeMap<>();
-        if (!found.isEmpty()) associations.findForExport(found.stream().map(Item::getId).toList(), requester.getId())
-                .forEach(association -> relationshipMap.put(association.getId(), association));
-        memberships.stream().map(TrailItem::getAssociation).filter(Objects::nonNull)
+        if (!found.isEmpty()) associations.findBySourceItemIdIn(found.stream().map(Item::getId).toList())
                 .forEach(association -> relationshipMap.put(association.getId(), association));
         List<ProjectExportDTO.AssociationData> ties = relationshipMap.values().stream()
-                .map(a -> new ProjectExportDTO.AssociationData(a.getId(), a.getSourceItem().getId(), a.getType().name(), a.getTargetType().name(), a.getTargetId())).toList();
+                .map(a -> new ProjectExportDTO.AssociationData(a.getId(), a.getSourceItem().getId(), a.getTargetId(), a.getText())).toList();
         Set<String> references = new LinkedHashSet<>();
         for (var item : notes) {
             if (item.content() == null || item.content().isBlank()) continue;
@@ -173,7 +171,7 @@ public class ProjectExportService {
         var metadata = new ProjectExportDTO.ProjectData(codec.encode(projectId), project.getTitle(), project.getDescription(), String.valueOf(project.getVisibility()),
                 project.getProjectTags().stream().map(tag -> tag.getName()).sorted().toList(), String.valueOf(project.getThumbnailType()), thumbnail,
                 project.getThumbnailTrail() == null ? null : project.getThumbnailTrail().getId(), date(project.getCreationDate()), date(project.getModifiedDate()));
-        return new Snapshot(new ProjectExportDTO(1, Instant.now().toString(), metadata, notes, paths, found.stream().map(Item::getId).filter(id -> !placed.contains(id)).toList(), ties, assets, List.of()), resources);
+        return new Snapshot(new ProjectExportDTO(2, Instant.now().toString(), metadata, notes, paths, found.stream().map(Item::getId).filter(id -> !placed.contains(id)).toList(), ties, assets, List.of()), resources);
     }
     private static void collect(JsonNode node, Set<String> references, int depth) {
         if (depth > 100) throw ProjectExportException.tooLarge();

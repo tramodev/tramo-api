@@ -16,7 +16,7 @@ public record ProjectSnapshotData(
         List<TrailData> trails,
         List<ItemData> looseItems
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 3;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
 
     public List<ItemData> looseItems() {
         return looseItems == null ? List.of() : looseItems;
@@ -27,10 +27,10 @@ public record ProjectSnapshotData(
     }
 
     public record ItemData(Long id, String title, String type, String titleAlign, String content,
-                            String annotation, Long associationId, List<AssociationData> associations) {
+                            List<AssociationData> associations) {
     }
 
     
-    public record AssociationData(Long id, String type, String targetType, Long targetId, String targetTitle) {
+    public record AssociationData(Long id, Long targetId, String targetTitle, String text) {
     }
 }

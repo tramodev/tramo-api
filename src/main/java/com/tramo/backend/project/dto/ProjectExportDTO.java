@@ -12,6 +12,6 @@ public record ProjectExportDTO(int formatVersion, String exportedAt, ProjectData
             boolean unfiled, String createdAt, String modifiedAt) {}
     public record TrailData(Long id, String title, String description, String visibility, int version,
             Long forkedFromId, List<StepData> steps) {}
-    public record StepData(Long id, Long itemId, int orderIndex, String annotation, Long associationId) {}
-    public record AssociationData(Long id, Long sourceItemId, String type, String targetType, Long targetId) {}
+    public record StepData(Long id, Long itemId, int orderIndex) {}
+    public record AssociationData(Long id, Long sourceItemId, Long targetId, String text) {}
 }

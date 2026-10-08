@@ -9,12 +9,11 @@ import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
-import com.tramo.backend.trail.dto.StepUpdateRequestDTO;
+import com.tramo.backend.trail.dto.AssociationTextDTO;
 import com.tramo.backend.trail.dto.TieRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.dto.TrailOrderRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemDTO;
-import com.tramo.backend.trail.entity.AssociationTargetType;
 import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.user.entity.User;
 import jakarta.validation.Valid;
@@ -122,27 +121,22 @@ public class ItemController {
     }
 
     
-    @PutMapping("/trail/{trailId}/item/{itemId}")
-    public ResponseEntity<Void> updateStep(@PathVariable Long trailId, @PathVariable Long itemId,
-                                           @RequestBody StepUpdateRequestDTO request,
-                                           @AuthenticationPrincipal User user) {
-        itemService.updateStep(trailId, itemId, request.annotation(), request.associationId(), user);
-        return ResponseEntity.noContent().build();
-    }
-
     @PostMapping("/item/{id}/tie")
-    public ResponseEntity<Void> tie(@PathVariable Long id, @Valid @RequestBody TieRequestDTO request,
-                                    @AuthenticationPrincipal User user) {
-        itemService.tie(id, request.type(), request.targetType(), request.targetId(), user);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<AssociationDTO> tie(@PathVariable Long id, @Valid @RequestBody TieRequestDTO request,
+                                             @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.tie(id, request.targetId(), request.text(), user));
     }
 
-    @DeleteMapping("/item/{id}/tie")
-    public ResponseEntity<Void> untie(@PathVariable Long id,
-                                      @RequestParam AssociationTargetType targetType,
-                                      @RequestParam Long targetId,
+    @PutMapping("/item/{id}/association/{associationId}")
+    public ResponseEntity<AssociationDTO> updateAssociation(@PathVariable Long id, @PathVariable Long associationId,
+            @Valid @RequestBody AssociationTextDTO request, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.updateAssociation(id, associationId, request.text(), user));
+    }
+
+    @DeleteMapping("/item/{id}/association/{associationId}")
+    public ResponseEntity<Void> untie(@PathVariable Long id, @PathVariable Long associationId,
                                       @AuthenticationPrincipal User user) {
-        itemService.untie(id, targetType, targetId, user);
+        itemService.untie(id, associationId, user);
         return ResponseEntity.noContent().build();
     }
 

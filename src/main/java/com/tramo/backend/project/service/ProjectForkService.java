@@ -14,8 +14,6 @@ import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 import com.tramo.backend.tag.service.TagService;
 import com.tramo.backend.trail.entity.Association;
-import com.tramo.backend.trail.entity.AssociationTargetType;
-import com.tramo.backend.trail.entity.AssociationType;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
 import com.tramo.backend.trail.entity.Trail;
@@ -124,10 +122,7 @@ public class ProjectForkService {
 
     private void forkFromLiveTables(Project fork, Long sourceProjectId) {
         Map<Long, Item> itemCopies = new HashMap<>();
-        Map<Long, Trail> trailCopies = new HashMap<>();
 
-        List<TrailItem> sourceSteps = new ArrayList<>();
-        List<TrailItem> copiedSteps = new ArrayList<>();
         for (Trail sourceTrail : trailRepository.findByProjectId(sourceProjectId)) {
             Trail trailCopy = new Trail();
             trailCopy.setTitle(sourceTrail.getTitle());
@@ -137,7 +132,6 @@ public class ProjectForkService {
             trailCopy.setProject(fork);
             trailCopy.setForkedFrom(sourceTrail);
             trailCopy = trailRepository.save(trailCopy);
-            trailCopies.put(sourceTrail.getId(), trailCopy);
 
             for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
                 Item itemCopy = itemCopies.computeIfAbsent(membership.getItem().getId(),
@@ -147,46 +141,25 @@ public class ProjectForkService {
                 membershipCopy.setTrail(trailCopy);
                 membershipCopy.setItem(itemCopy);
                 membershipCopy.setOrderIndex(membership.getOrderIndex());
-                membershipCopy.setAnnotation(membership.getAnnotation());
                 membershipCopy = trailItemRepository.save(membershipCopy);
-                sourceSteps.add(membership);
-                copiedSteps.add(membershipCopy);
             }
         }
 
-        Map<Long, Association> assocCopies = new HashMap<>();
+        for (Item item : itemRepository.findByProjectId(sourceProjectId)) {
+            itemCopies.computeIfAbsent(item.getId(), ignored -> copyItem(item, fork, true));
+        }
         for (Long sourceItemId : itemCopies.keySet()) {
             for (Association assoc : itemLinkRepository.findBySourceItemId(sourceItemId)) {
-                Long newTargetId = switch (assoc.getTargetType()) {
-                    case ITEM -> {
-                        Item t = itemCopies.get(assoc.getTargetId());
-                        yield t != null ? t.getId() : null;
-                    }
-                    case TRAIL -> {
-                        Trail t = trailCopies.get(assoc.getTargetId());
-                        yield t != null ? t.getId() : null;
-                    }
-                };
-                if (newTargetId == null) continue;
-
+                Item target = itemCopies.get(assoc.getTargetId());
+                if (target == null) continue;
                 Association copy = new Association();
                 copy.setSourceItem(itemCopies.get(sourceItemId));
-                copy.setType(assoc.getType());
-                copy.setTargetType(assoc.getTargetType());
-                copy.setTargetId(newTargetId);
+                copy.setProjectId(fork.getId());
+                copy.setTargetItem(target);
+                copy.setText(assoc.getText());
                 copy.setCreatedDate(new Date());
-                assocCopies.put(assoc.getId(), itemLinkRepository.save(copy));
+                itemLinkRepository.save(copy);
             }
-        }
-
-        for (int i = 0; i < sourceSteps.size(); i++) {
-            Association srcAssoc = sourceSteps.get(i).getAssociation();
-            if (srcAssoc == null) continue;
-            Association newAssoc = assocCopies.get(srcAssoc.getId());
-            if (newAssoc == null) continue;
-            TrailItem copy = copiedSteps.get(i);
-            copy.setAssociation(newAssoc);
-            trailItemRepository.save(copy);
         }
     }
 
@@ -196,6 +169,7 @@ public class ProjectForkService {
         copy.setUnfiled(unfiled);
         copy.setTitle(source.getTitle());
         copy.setType(source.getType());
+        copy.setTitleAlign(source.getTitleAlign());
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (source.getContent() != null) {
@@ -211,8 +185,6 @@ public class ProjectForkService {
         ProjectSnapshotData data = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
 
         Map<Long, Item> itemCopies = new HashMap<>();
-        List<Long> stepArrivalAssociationIds = new ArrayList<>();
-        List<TrailItem> copiedSteps = new ArrayList<>();
 
         for (ProjectSnapshotData.TrailData trailData : data.trails()) {
             Trail trailCopy = new Trail();
@@ -234,10 +206,7 @@ public class ProjectForkService {
                 membershipCopy.setTrail(trailCopy);
                 membershipCopy.setItem(itemCopy);
                 membershipCopy.setOrderIndex(orderIndex++);
-                membershipCopy.setAnnotation(itemData.annotation());
                 membershipCopy = trailItemRepository.save(membershipCopy);
-                stepArrivalAssociationIds.add(itemData.associationId());
-                copiedSteps.add(membershipCopy);
             }
         }
 
@@ -259,23 +228,14 @@ public class ProjectForkService {
 
                 Association copy = new Association();
                 copy.setSourceItem(sourceCopy);
-                copy.setType(AssociationType.valueOf(assocData.type()));
-                copy.setTargetType(AssociationTargetType.ITEM);
-                copy.setTargetId(targetCopy.getId());
+                copy.setProjectId(fork.getId());
+                copy.setTargetItem(targetCopy);
+                copy.setText(assocData.text());
                 copy.setCreatedDate(new Date());
                 assocCopies.put(assocData.id(), itemLinkRepository.save(copy));
             }
         }
 
-        for (int i = 0; i < copiedSteps.size(); i++) {
-            Long srcAssocId = stepArrivalAssociationIds.get(i);
-            if (srcAssocId == null) continue;
-            Association newAssoc = assocCopies.get(srcAssocId);
-            if (newAssoc == null) continue;
-            TrailItem copy = copiedSteps.get(i);
-            copy.setAssociation(newAssoc);
-            trailItemRepository.save(copy);
-        }
     }
 
     private Item copyItemFromData(ProjectSnapshotData.ItemData itemData, Project fork, boolean unfiled) {

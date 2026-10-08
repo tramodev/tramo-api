@@ -19,8 +19,6 @@ public class PublicItemDTO {
     private String content;
     private String titleAlign;
     
-    private String annotation;
-    private String associationId;
     
     
     private List<AssociationDTO> associations;
