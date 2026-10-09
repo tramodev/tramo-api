@@ -9,6 +9,7 @@ import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
+import com.tramo.backend.trail.dto.MapItemPreviewDTO;
 import com.tramo.backend.trail.dto.AssociationTextDTO;
 import com.tramo.backend.trail.dto.TieRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
@@ -22,6 +23,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -50,6 +52,12 @@ public class ItemController {
     @GetMapping("/project/{projectId}/item")
     public ResponseEntity<List<ItemResponseDTO>> getItemsForProject(@PathVariable String projectId, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(itemService.getItemsForProject(projectIdCodec.decode(projectId), user));
+    }
+
+    @GetMapping("/project/{projectId}/map-preview")
+    public ResponseEntity<Map<String, MapItemPreviewDTO>> getMapPreviews(@PathVariable String projectId,
+                                                                          @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getMapPreviews(projectIdCodec.decode(projectId), user));
     }
 
     @GetMapping("/project/{projectId}/text-stats")
