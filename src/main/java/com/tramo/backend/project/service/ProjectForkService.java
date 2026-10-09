@@ -33,9 +33,11 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 @Service
@@ -153,9 +155,10 @@ public class ProjectForkService {
                 Item target = itemCopies.get(assoc.getTargetId());
                 if (target == null) continue;
                 Association copy = new Association();
-                copy.setSourceItem(itemCopies.get(sourceItemId));
+                Item sourceCopy = itemCopies.get(sourceItemId);
+                copy.setSourceItem(sourceCopy.getId() < target.getId() ? sourceCopy : target);
                 copy.setProjectId(fork.getId());
-                copy.setTargetItem(target);
+                copy.setTargetItem(sourceCopy.getId() < target.getId() ? target : sourceCopy);
                 copy.setText(assoc.getText());
                 copy.setCreatedDate(new Date());
                 itemLinkRepository.save(copy);
@@ -218,21 +221,29 @@ public class ProjectForkService {
                 data.trails().stream().flatMap(trailData -> trailData.items().stream()),
                 data.looseItems().stream()).toList();
 
-        Map<Long, Association> assocCopies = new HashMap<>();
+        Map<String, Association> assocCopies = new HashMap<>();
+        Set<Long> seenIds = new HashSet<>();
         for (ProjectSnapshotData.ItemData itemData : allItemData) {
             Item sourceCopy = itemCopies.get(itemData.id());
             for (ProjectSnapshotData.AssociationData assocData : itemData.associations()) {
-                if (assocCopies.containsKey(assocData.id())) continue;
+                if (!seenIds.add(assocData.id())) continue;
                 Item targetCopy = itemCopies.get(assocData.targetId());
-                if (targetCopy == null) continue;
+                if (sourceCopy == null || targetCopy == null) continue;
+                String pair = Math.min(itemData.id(), assocData.targetId()) + ":" + Math.max(itemData.id(), assocData.targetId());
+                Association existing = assocCopies.get(pair);
+                if (existing != null) {
+                    if (assocData.text() != null && !assocData.text().isBlank() && !assocData.text().equals(existing.getText()))
+                        existing.setText(existing.getText() == null ? assocData.text() : existing.getText() + "\n\n" + assocData.text());
+                    continue;
+                }
 
                 Association copy = new Association();
-                copy.setSourceItem(sourceCopy);
+                copy.setSourceItem(sourceCopy.getId() < targetCopy.getId() ? sourceCopy : targetCopy);
                 copy.setProjectId(fork.getId());
-                copy.setTargetItem(targetCopy);
+                copy.setTargetItem(sourceCopy.getId() < targetCopy.getId() ? targetCopy : sourceCopy);
                 copy.setText(assocData.text());
                 copy.setCreatedDate(new Date());
-                assocCopies.put(assocData.id(), itemLinkRepository.save(copy));
+                assocCopies.put(pair, itemLinkRepository.save(copy));
             }
         }
 

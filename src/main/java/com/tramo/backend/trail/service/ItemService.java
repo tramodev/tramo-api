@@ -418,60 +418,67 @@ public class ItemService {
     
     @Transactional
     public AssociationDTO tie(Long sourceId, Long targetId, String text, User requester) {
-        itemRepository.lockById(sourceId).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        Long firstId = Math.min(sourceId, targetId);
+        Long secondId = Math.max(sourceId, targetId);
+        itemRepository.lockById(firstId).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item source = getOwnedItem(sourceId, requester);
         Item target = getOwnedItem(targetId, requester);
         if (sourceId.equals(targetId)) throw new RequestValidationException(RequestErrorCode.ITEM_SELF_LINK_FORBIDDEN);
         if (source.getProject() == null || target.getProject() == null || !source.getProject().getId().equals(target.getProject().getId()))
             throw new RequestValidationException(RequestErrorCode.ASSOCIATION_PROJECT_INVALID);
-        if (itemLinkRepository.findBySourceItemIdAndTargetItemId(sourceId, targetId).isPresent())
+        if (itemLinkRepository.findBySourceItemIdAndTargetItemId(firstId, secondId).isPresent())
             throw new RequestValidationException(RequestErrorCode.ASSOCIATION_DUPLICATE);
         Association association = new Association();
-        association.setSourceItem(source);
+        association.setSourceItem(sourceId.equals(firstId) ? source : target);
         association.setProjectId(source.getProject().getId());
-        association.setTargetItem(target);
+        association.setTargetItem(targetId.equals(secondId) ? target : source);
         association.setText(connectionText(text));
         association.setCreatedDate(new Date());
-        return associationDTO(itemLinkRepository.save(association), target.getTitle());
+        return associationDTO(itemLinkRepository.save(association), sourceId, target.getTitle());
     }
 
     @Transactional
-    public AssociationDTO updateAssociation(Long sourceId, Long associationId, String text, User requester) {
-        Association association = ownedAssociation(sourceId, associationId, requester);
+    public AssociationDTO updateAssociation(Long itemId, Long associationId, String text, User requester) {
+        Association association = ownedAssociation(itemId, associationId, requester);
         association.setText(connectionText(text));
-        return associationDTO(itemLinkRepository.save(association), association.getTargetItem().getTitle());
+        Item other = association.getSourceItem().getId().equals(itemId) ? association.getTargetItem() : association.getSourceItem();
+        return associationDTO(itemLinkRepository.save(association), itemId, other.getTitle());
     }
 
     @Transactional
-    public void untie(Long sourceId, Long associationId, User requester) {
-        itemLinkRepository.delete(ownedAssociation(sourceId, associationId, requester));
+    public void untie(Long itemId, Long associationId, User requester) {
+        itemLinkRepository.delete(ownedAssociation(itemId, associationId, requester));
     }
 
-    private Association ownedAssociation(Long sourceId, Long associationId, User requester) {
-        getOwnedItem(sourceId, requester);
+    private Association ownedAssociation(Long itemId, Long associationId, User requester) {
+        getOwnedItem(itemId, requester);
         Association association = itemLinkRepository.findById(associationId)
-                .filter(a -> a.getSourceItem().getId().equals(sourceId))
+                .filter(a -> a.getSourceItem().getId().equals(itemId) || a.getTargetId().equals(itemId))
                 .orElseThrow(() -> new ResourceNotFoundException("Association not found"));
-        getOwnedItem(association.getTargetId(), requester);
+        getOwnedItem(otherId(association, itemId), requester);
         return association;
     }
 
     private String connectionText(String text) {
-        if (text != null && text.length() > 2000) throw new RequestValidationException(RequestErrorCode.VALUE_SIZE_INVALID);
+        if (text != null && text.length() > 4002) throw new RequestValidationException(RequestErrorCode.VALUE_SIZE_INVALID);
         return text == null || text.isBlank() ? null : text.strip();
     }
 
-    private AssociationDTO associationDTO(Association association, String title) {
-        return new AssociationDTO(String.valueOf(association.getId()), String.valueOf(association.getTargetId()), title, association.getText());
+    private Long otherId(Association association, Long itemId) {
+        return association.getSourceItem().getId().equals(itemId) ? association.getTargetId() : association.getSourceItem().getId();
+    }
+
+    private AssociationDTO associationDTO(Association association, Long itemId, String title) {
+        return new AssociationDTO(String.valueOf(association.getId()), String.valueOf(otherId(association, itemId)), title, association.getText());
     }
 
     public List<AssociationDTO> getAssociations(Long id, User requester) {
         Item item = getOwnedItem(id, requester);
-        List<Association> associations = itemLinkRepository.findBySourceItemId(item.getId());
-        Set<Long> ids = associations.stream().map(Association::getTargetId).collect(Collectors.toSet());
+        List<Association> associations = itemLinkRepository.findBySourceItemIdOrTargetItemId(item.getId(), item.getId());
+        Set<Long> ids = associations.stream().map(a -> otherId(a, item.getId())).collect(Collectors.toSet());
         Map<Long, String> titles = ids.isEmpty() ? Map.of() : itemRepository.findIdTitleByIdIn(ids).stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> (String) row[1]));
-        return associations.stream().map(a -> associationDTO(a, titles.get(a.getTargetId()))).toList();
+        return associations.stream().map(a -> associationDTO(a, item.getId(), titles.get(otherId(a, item.getId())))).toList();
     }
 
     private Item getOwnedItem(Long id, User requester) {

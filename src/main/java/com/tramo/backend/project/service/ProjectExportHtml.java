@@ -71,7 +71,7 @@ public class ProjectExportHtml {
         if (!relations.isEmpty()) {
             html.append("<aside><h4>Connections</h4><ul>");
             for (var association : relations) {
-                html.append("<li>").append(itemLink(association.sourceItemId())).append(" → ").append(itemLink(association.targetId()));
+                html.append("<li>").append(itemLink(association.sourceItemId())).append(" — ").append(itemLink(association.targetId()));
                 if (association.text() != null) html.append("<p>").append(escape(association.text())).append("</p>");
                 html.append("</li>");
             }

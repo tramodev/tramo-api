@@ -11,6 +11,7 @@ import java.util.Optional;
 
 public interface AssociationRepository extends JpaRepository<Association, Long> {
     List<Association> findBySourceItemId(Long sourceItemId);
+    List<Association> findBySourceItemIdOrTargetItemId(Long sourceItemId, Long targetItemId);
     List<Association> findBySourceItemIdIn(Collection<Long> sourceItemIds);
     Optional<Association> findBySourceItemIdAndTargetItemId(Long sourceItemId, Long targetId);
 

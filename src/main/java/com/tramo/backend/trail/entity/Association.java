@@ -22,7 +22,7 @@ public class Association {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "target_id", nullable = false)
     private Item targetItem;
-    @Column(length = 2000)
+    @Column(length = 4002)
     private String text;
     @Column(nullable = false)
     private Long projectId;

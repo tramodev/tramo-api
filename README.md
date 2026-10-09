@@ -6,7 +6,7 @@
 
 Backend for **Tramo**, a tool for capturing ideas as an associative graph and then
 carving ordered, shareable paths through them. The model is a modern take on
-Vannevar Bush's Memex: atomic **items** connected by directed **associations** (the
+Vannevar Bush's Memex: atomic **items** connected by undirected **associations** (the
 graph), and **trails** that linearize a subset of that graph into something you can
 read and study one step at a time.
 
@@ -19,12 +19,10 @@ The core domain lives in the `trail` package and is built on two layers.
 - **Item** — an atomic unit of content (title + rich-text body in `ItemContent`).
   An item can appear in many trails at once (transclusion): it is referenced, not
   copied.
-- **Association** — a directed connection from one note to another note in the same
-  project, with optional shared text (up to 2,000 characters). Direction means
-  “from this note to that note”; it implies neither dependency nor reading order.
-  Each directed pair is unique; the reverse connection is independent. A note
-  cannot connect to itself. Deleting a note deletes its incoming and outgoing
-  connections, leaving other notes intact.
+- **Association** — a connection between two notes in the same project, with
+  optional shared text (up to 4,002 characters). Each pair has one connection,
+  visible and editable from either note. A note cannot connect to itself.
+  Deleting a note deletes its connections, leaving other notes intact.
 
 **The trail** — an independent reading order:
 

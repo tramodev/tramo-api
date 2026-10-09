@@ -367,7 +367,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void tyingItemsIsDirectionalAndRejectsDuplicates() throws Exception {
+    void tyingItemsConnectsBothNotesAndRejectsEitherDuplicate() throws Exception {
         User owner = createUser("linker");
         Project project = createProject(owner, "Linking", "private");
         long trailId = createTrail(owner, project, "Linking trail");
@@ -376,6 +376,7 @@ class TrailItemTest extends AbstractIntegrationTest {
 
         tie(owner, itemA, itemB).andExpect(status().isOk());
         tie(owner, itemA, itemB).andExpect(status().isBadRequest());
+        tie(owner, itemB, itemA).andExpect(status().isBadRequest());
 
         assertThat(itemLinkRepository.count()).isEqualTo(1);
 
@@ -387,7 +388,8 @@ class TrailItemTest extends AbstractIntegrationTest {
         
         mockMvc.perform(get("/api/item/" + itemB + "/association").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].targetTitle").value("A"));
     }
 
     @Test
@@ -409,7 +411,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         long itemB = createItem(owner, trailId, "B");
 
         tie(owner, itemA, itemB).andExpect(status().isOk());
-        mockMvc.perform(delete("/api/item/" + itemA + "/association/" + itemLinkRepository.findBySourceItemId(itemA).get(0).getId())
+        mockMvc.perform(delete("/api/item/" + itemB + "/association/" + itemLinkRepository.findBySourceItemId(itemA).get(0).getId())
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
