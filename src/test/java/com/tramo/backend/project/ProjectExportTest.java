@@ -95,7 +95,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         assertThat(data.path("items").get(0).path("titleAlign").asText()).isEqualTo("right");
         assertThat(data.path("looseItemIds").get(0).asLong()).isEqualTo(f.loose);
         assertThat(data.path("associations").get(0).path("text").asText()).isEqualTo("Context");
-        assertThat(html(entries)).contains("→", "Context", "Notes outside trails", "<em><strong>Shared body</strong></em>");
+        assertThat(html(entries)).contains("—", "Context", "Notes outside trails", "<em><strong>Shared body</strong></em>");
         assertThat(html(entries).split("Shared body", -1)).hasSize(3);
         var anchors = java.util.regex.Pattern.compile("id=\"([^\"]+)\"").matcher(html(entries));
         Set<String> unique = new HashSet<>();
