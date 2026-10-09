@@ -117,8 +117,9 @@ public class ProjectStartService {
     private StartedProjectDTO example(Project project, User user) {
         Long vision = trail(project.getId(), "Bush’s vision", "Meet Vannevar Bush, read the idea behind his essay, and explore the Memex.", user);
         Long connections = trail(project.getId(), "Thinking in trails", "Explore how the Memex connects records into reusable paths of thought.", user);
-        Long bush = note(vision, "Vannevar Bush", "Vannevar Bush was an American engineer and science administrator. In 1945, he published As We May Think, an essay about how people might use technology to work with a growing body of knowledge.\nRather than only storing more information, his proposal focused on helping a reader find, connect and revisit ideas.", user);
-        note(vision, "As We May Think", "Published in The Atlantic in July 1945, As We May Think asks how tools could help people consult and connect the records they collect. Bush contrasts rigid indexing with the way thought moves by association.\nHis proposed answer includes the Memex: a personal library where a reader could build lasting connections between records. Read the original: https://www.w3.org/History/1945/vbush/", user, bush, "Vannevar Bush");
+        Long bush = note(vision, "Vannevar Bush", null, user);
+        Long essay = note(vision, "As We May Think", "Published in The Atlantic in July 1945, As We May Think asks how tools could help people consult and connect the records they collect. Bush contrasts rigid indexing with the way thought moves by association.\nHis proposed answer includes the Memex: a personal library where a reader could build lasting connections between records. Read the original: https://www.w3.org/History/1945/vbush/", user);
+        mention(bush, "Vannevar Bush was an American engineer and science administrator. In 1945, he published ", "As We May Think", ", an essay about how people might use technology to work with a growing body of knowledge.", "Rather than only storing more information, his proposal focused on helping a reader find, connect and revisit ideas.", essay, user);
         Long memex = note(vision, "Memex", "The Memex was a proposed device for storing and consulting a person’s books, records and communications. Bush imagined a desk with screens and microfilm, rather than a modern computer or the web.\nIts distinctive idea was associative access: a reader could connect records and follow those connections later. The same record could belong to several trails. The Memex described in the essay was a proposal, not a finished product.", user);
         itemService.attachToTrail(connections, memex, user);
         note(connections, "Associative trails", "An associative trail is a named path through connected records. In Bush’s proposal, a reader could join records, add comments and return to the path without reconstructing every connection.\nA record could appear in more than one trail. That lets one source support different explanations while each trail keeps its own context and order.", user, memex, "Memex");
@@ -147,10 +148,21 @@ public class ProjectStartService {
             text.lines().forEach(line -> paragraphs.add(Map.of("type", "paragraph", "version", 1, "children", List.of(textNode(line)))));
             if (linkedId != null) paragraphs.add(Map.of("type", "paragraph", "version", 1, "children", List.of(
                     textNode("Related note: "),
-                    Map.of("type", "link", "version", 1, "url", "#", "rel", "tramo-idea:" + linkedId, "children", List.of(textNode(linkedTitle))))));
+                    linkNode(linkedId, linkedTitle))));
             itemService.updateContent(id, mapper.writeValueAsString(Map.of("root", Map.of("type", "root", "version", 1, "children", paragraphs))), user);
         }
         return id;
+    }
+
+    private void mention(Long sourceId, String before, String title, String after, String continuation, Long targetId, User user) {
+        var paragraphs = List.of(
+                Map.of("type", "paragraph", "version", 1, "children", List.of(textNode(before), linkNode(targetId, title), textNode(after))),
+                Map.of("type", "paragraph", "version", 1, "children", List.of(textNode(continuation))));
+        itemService.updateContent(sourceId, mapper.writeValueAsString(Map.of("root", Map.of("type", "root", "version", 1, "children", paragraphs))), user);
+    }
+
+    private Map<String, Object> linkNode(Long id, String title) {
+        return Map.of("type", "link", "version", 1, "url", "#", "rel", "tramo-idea:" + id, "children", List.of(textNode(title)));
     }
 
     private Map<String, Object> textNode(String text) {
