@@ -76,6 +76,30 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void repeatedNoteLinksProduceOneThumbnailConnection() throws Exception {
+        User owner = createUser("thumbfb5");
+        Project project = createProject(owner, "Linked", "private", "A description", null);
+        long trailId = createTrail(owner, project, "T");
+        long itemA = createItem(owner, trailId, "A");
+        long itemB = createItem(owner, trailId, "B");
+        String link = "{\"root\":{\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"},{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}";
+        setContent(owner, itemA, link.replace("\"", "\\\""));
+
+        mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].thumbnailGraph.items[0].associations.length()").value(1));
+
+        mockMvc.perform(post("/api/item/" + itemA + "/tie")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetId\":" + itemB + "}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].thumbnailGraph.items[0].associations.length()").value(1));
+    }
+
+    @Test
     void emptyProjectHasNoThumbnailAtAll() throws Exception {
         User owner = createUser("thumbfb3");
         createProject(owner, "Bare", "private", "A description", null);
