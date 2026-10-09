@@ -11,6 +11,7 @@ import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
+import com.tramo.backend.trail.dto.MapItemPreviewDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.dto.TrailItemDTO;
 import com.tramo.backend.trail.entity.Item;
@@ -42,6 +43,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -148,6 +151,61 @@ public class ItemService {
         return itemRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public Map<String, MapItemPreviewDTO> getMapPreviews(Long projectId, User requester) {
+        getOwnedProject(projectId, requester);
+        List<Item> items = itemRepository.findForExport(projectId);
+        Set<Long> itemIds = items.stream().map(Item::getId).collect(Collectors.toSet());
+        Map<String, MapItemPreviewDTO> previews = new LinkedHashMap<>();
+        for (Item item : items) {
+            String content = item.getContent() == null ? null : item.getContent().getContent();
+            previews.put(String.valueOf(item.getId()), mapPreview(content, itemIds));
+        }
+        return previews;
+    }
+
+    private MapItemPreviewDTO mapPreview(String content, Set<Long> itemIds) {
+        if (content == null || content.isBlank()) return new MapItemPreviewDTO("", List.of());
+        try {
+            JsonNode root = objectMapper.readTree(content).path("root");
+            StringBuilder preview = new StringBuilder();
+            JsonNode blocks = root.path("children");
+            if (blocks.isArray()) {
+                for (JsonNode block : blocks) {
+                    StringBuilder text = new StringBuilder();
+                    appendPlainText(block, text);
+                    String trimmed = text.toString().trim();
+                    if (trimmed.isEmpty()) continue;
+                    if (!preview.isEmpty()) preview.append("\n\n");
+                    preview.append(trimmed);
+                    if (preview.length() > 256) {
+                        preview.setLength(256);
+                        preview = new StringBuilder(preview.toString().stripTrailing()).append("...");
+                        break;
+                    }
+                }
+            }
+            Set<String> linkedIds = new LinkedHashSet<>();
+            collectMapLinks(root, itemIds, linkedIds);
+            return new MapItemPreviewDTO(preview.toString(), List.copyOf(linkedIds));
+        } catch (Exception ignored) {
+            return new MapItemPreviewDTO("", List.of());
+        }
+    }
+
+    private void collectMapLinks(JsonNode node, Set<Long> itemIds, Set<String> linkedIds) {
+        if ("link".equals(node.path("type").asText(""))) {
+            String rel = node.path("rel").asText("");
+            if (rel.startsWith("tramo-idea:") || rel.startsWith("mypath-idea:")) {
+                try {
+                    Long id = Long.parseLong(rel.substring(rel.indexOf(':') + 1));
+                    if (itemIds.contains(id)) linkedIds.add(String.valueOf(id));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        for (JsonNode child : node.path("children")) collectMapLinks(child, itemIds, linkedIds);
     }
 
     public List<Long> searchItemIds(Long projectId, String q, User requester) {
