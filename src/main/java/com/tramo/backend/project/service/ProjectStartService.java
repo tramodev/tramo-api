@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
@@ -117,13 +118,11 @@ public class ProjectStartService {
         Long vision = trail(project.getId(), "Bush’s vision", "Meet Vannevar Bush, read the idea behind his essay, and explore the Memex.", user);
         Long connections = trail(project.getId(), "Thinking in trails", "Explore how the Memex connects records into reusable paths of thought.", user);
         Long bush = note(vision, "Vannevar Bush", "Vannevar Bush was an American engineer and science administrator. In 1945, he published As We May Think, an essay about how people might use technology to work with a growing body of knowledge.\nRather than only storing more information, his proposal focused on helping a reader find, connect and revisit ideas.", user);
-        Long essay = note(vision, "As We May Think", "Published in The Atlantic in July 1945, As We May Think asks how tools could help people consult and connect the records they collect. Bush contrasts rigid indexing with the way thought moves by association.\nHis proposed answer includes the Memex: a personal library where a reader could build lasting connections between records. Read the original: https://www.w3.org/History/1945/vbush/", user);
+        note(vision, "As We May Think", "Published in The Atlantic in July 1945, As We May Think asks how tools could help people consult and connect the records they collect. Bush contrasts rigid indexing with the way thought moves by association.\nHis proposed answer includes the Memex: a personal library where a reader could build lasting connections between records. Read the original: https://www.w3.org/History/1945/vbush/", user, bush, "Vannevar Bush");
         Long memex = note(vision, "Memex", "The Memex was a proposed device for storing and consulting a person’s books, records and communications. Bush imagined a desk with screens and microfilm, rather than a modern computer or the web.\nIts distinctive idea was associative access: a reader could connect records and follow those connections later. The same record could belong to several trails. The Memex described in the essay was a proposal, not a finished product.", user);
         itemService.attachToTrail(connections, memex, user);
-        Long trails = note(connections, "Associative trails", "An associative trail is a named path through connected records. In Bush’s proposal, a reader could join records, add comments and return to the path without reconstructing every connection.\nA record could appear in more than one trail. That lets one source support different explanations while each trail keeps its own context and order.", user);
-        Long sharing = note(connections, "Sharing a trail", "Bush imagined readers copying trails for other people to explore and extend in their own Memex. Sharing meant passing along a path through material, not just an isolated document.\nTry that idea here: edit the shared Memex note and open Bush’s vision. Both trails use the same note and connections, while keeping independent reading orders.", user);
-        itemService.tie(essay, bush, "Bush’s essay describes his vision for connecting records.", user);
-        itemService.tie(trails, memex, "Associative trails connect records in the Memex.", user);
+        note(connections, "Associative trails", "An associative trail is a named path through connected records. In Bush’s proposal, a reader could join records, add comments and return to the path without reconstructing every connection.\nA record could appear in more than one trail. That lets one source support different explanations while each trail keeps its own context and order.", user, memex, "Memex");
+        note(connections, "Sharing a trail", "Bush imagined readers copying trails for other people to explore and extend in their own Memex. Sharing meant passing along a path through material, not just an isolated document.\nTry that idea here: edit the shared Memex note and open Bush’s vision. Both trails use the same note while keeping independent reading orders. Type @ in a note to link another note.", user);
         return result(project, vision, bush);
     }
 
@@ -136,14 +135,26 @@ public class ProjectStartService {
     }
 
     private Long note(Long trailId, String title, String text, User user) {
+        return note(trailId, title, text, user, null, null);
+    }
+
+    private Long note(Long trailId, String title, String text, User user, Long linkedId, String linkedTitle) {
         var request = new ItemRequestDTO();
         request.setTitle(title);
         Long id = itemService.create(trailId, request, user).getId();
         if (text != null) {
-            var paragraphs = text.lines().map(line -> Map.of("type", "paragraph", "version", 1, "children", List.of(Map.of("type", "text", "version", 1, "text", line, "format", 0, "mode", "normal", "style", "", "detail", 0)))).toList();
+            var paragraphs = new ArrayList<Map<String, Object>>();
+            text.lines().forEach(line -> paragraphs.add(Map.of("type", "paragraph", "version", 1, "children", List.of(textNode(line)))));
+            if (linkedId != null) paragraphs.add(Map.of("type", "paragraph", "version", 1, "children", List.of(
+                    textNode("Related note: "),
+                    Map.of("type", "link", "version", 1, "url", "#", "rel", "tramo-idea:" + linkedId, "children", List.of(textNode(linkedTitle))))));
             itemService.updateContent(id, mapper.writeValueAsString(Map.of("root", Map.of("type", "root", "version", 1, "children", paragraphs))), user);
         }
         return id;
+    }
+
+    private Map<String, Object> textNode(String text) {
+        return Map.of("type", "text", "version", 1, "text", text, "format", 0, "mode", "normal", "style", "", "detail", 0);
     }
 
     private StartedProjectDTO result(Project project, Long trailId, Long itemId) {
