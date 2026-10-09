@@ -11,6 +11,11 @@ import com.tramo.backend.trail.entity.TrailItem;
 import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +23,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, List<Association>> outgoingByItemId) {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     static GraphLookup forTrailIds(List<Long> trailIds, TrailItemRepository trailItemRepository,
                                     AssociationRepository itemLinkRepository) {
         if (trailIds.isEmpty()) return new GraphLookup(Map.of(), Map.of());
@@ -47,17 +53,50 @@ record GraphLookup(Map<Long, List<TrailItem>> membershipsByTrailId, Map<Long, Li
                         membershipsByTrailId.getOrDefault(trail.getId(), List.of()).stream()
                                 .map(m -> String.valueOf(m.getItem().getId())).toList()))
                 .toList();
-        List<GraphPreviewDTO.GraphItemDTO> items = itemById.values().stream()
-                .map(item -> new GraphPreviewDTO.GraphItemDTO(
-                        String.valueOf(item.getId()),
-                        item.getTitle(),
-                        outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
-                                .filter(a -> itemById.containsKey(a.getTargetId()))
-                                .map(a -> new AssociationDTO(String.valueOf(a.getId()), String.valueOf(a.getTargetId()),
-                                        itemById.get(a.getTargetId()).getTitle(), a.getText()))
-                                .toList()
-                ))
-                .toList();
+        Set<String> pairs = new HashSet<>();
+        outgoingByItemId.values().stream().flatMap(List::stream)
+                .filter(a -> itemById.containsKey(a.getSourceItem().getId()) && itemById.containsKey(a.getTargetId()))
+                .forEach(a -> pairs.add(pair(a.getSourceItem().getId(), a.getTargetId())));
+        List<GraphPreviewDTO.GraphItemDTO> items = itemById.values().stream().map(item -> {
+            List<AssociationDTO> associations = new ArrayList<>(outgoingByItemId.getOrDefault(item.getId(), List.of()).stream()
+                    .filter(a -> itemById.containsKey(a.getTargetId()))
+                    .map(a -> new AssociationDTO(String.valueOf(a.getId()), String.valueOf(a.getTargetId()),
+                            itemById.get(a.getTargetId()).getTitle(), a.getText()))
+                    .toList());
+            String content = item.getContent() == null ? null : item.getContent().getContent();
+            for (Long targetId : linkedItemIds(content)) {
+                String pair = pair(item.getId(), targetId);
+                if (item.getId().equals(targetId) || !itemById.containsKey(targetId) || !pairs.add(pair)) continue;
+                associations.add(new AssociationDTO("reference:" + pair, String.valueOf(targetId), itemById.get(targetId).getTitle(), null));
+            }
+            return new GraphPreviewDTO.GraphItemDTO(String.valueOf(item.getId()), item.getTitle(), associations);
+        }).toList();
         return new GraphPreviewDTO(previewTrails, items);
+    }
+
+    private static String pair(Long a, Long b) {
+        return Math.min(a, b) + ":" + Math.max(a, b);
+    }
+
+    private static Set<Long> linkedItemIds(String content) {
+        if (content == null || content.isBlank()) return Set.of();
+        try {
+            Set<Long> ids = new HashSet<>();
+            collectLinks(MAPPER.readTree(content).path("root"), ids);
+            return ids;
+        } catch (RuntimeException ignored) {
+            return Set.of();
+        }
+    }
+
+    private static void collectLinks(JsonNode node, Set<Long> ids) {
+        if ("link".equals(node.path("type").asText(""))) {
+            String rel = node.path("rel").asText("");
+            if (rel.startsWith("tramo-idea:") || rel.startsWith("mypath-idea:")) {
+                try { ids.add(Long.parseLong(rel.substring(rel.indexOf(':') + 1))); }
+                catch (NumberFormatException ignored) { }
+            }
+        }
+        for (JsonNode child : node.path("children")) collectLinks(child, ids);
     }
 }
