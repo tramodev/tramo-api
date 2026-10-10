@@ -67,23 +67,9 @@ public class ProjectExportHtml {
     private void article(StringBuilder html, Long id, String anchor) {
         var item = items.get(id);
         html.append("<article id=\"").append(anchor).append("\"><h3 style=\"text-align:").append(alignment(item.titleAlign())).append("\">").append(escape(item.title())).append("</h3>").append(bodies.get(id));
-        List<ProjectExportDTO.AssociationData> relations = data.associations().stream().filter(a -> a.sourceItemId().equals(id) || a.targetId().equals(id)).toList();
-        if (!relations.isEmpty()) {
-            html.append("<aside><h4>Connections</h4><ul>");
-            for (var association : relations) {
-                html.append("<li>").append(itemLink(association.sourceItemId())).append(" — ").append(itemLink(association.targetId()));
-                if (association.text() != null) html.append("<p>").append(escape(association.text())).append("</p>");
-                html.append("</li>");
-            }
-            html.append("</ul></aside>");
-        }
         html.append("</article>");
     }
 
-    private String itemLink(Long id) {
-        var item = items.get(id);
-        return item != null && anchors.containsKey(id) ? "<a href=\"#" + anchors.get(id) + "\">" + escape(item.title()) + "</a>" : "Note " + id + " (outside this export)";
-    }
     private String node(JsonNode n, Long itemId, int depth) {
         if (depth > 100 || ++nodes > 200000) throw ProjectExportException.tooLarge();
         String type = n.path("type").asText("");

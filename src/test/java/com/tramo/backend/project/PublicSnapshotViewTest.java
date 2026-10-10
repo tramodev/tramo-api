@@ -46,11 +46,6 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
         setContent(owner, itemA, "body of A");
-        mockMvc.perform(post("/api/item/" + itemA + "/tie")
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"text\":\"Context\",\"targetId\":" + itemB + "}"))
-                .andExpect(status().isOk());
         publish(owner, project);
         return project;
     }
@@ -69,18 +64,6 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.trails[0].items.length()").value(2))
                 .andExpect(jsonPath("$.trails[0].items[0].title").value("A"))
                 .andExpect(jsonPath("$.trails[0].items[0].content").value("body of A"));
-    }
-
-    @Test
-    void snapshotViewCarriesAssociationsWithTargetTitles() throws Exception {
-        User owner = createUser("psvowner2");
-        Project project = publishedProjectWithContent(owner, "Linked");
-
-        mockMvc.perform(get("/api/public/project/" + pid(project)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.trails[0].items[0].associations.length()").value(1))
-                .andExpect(jsonPath("$.trails[0].items[0].associations[0].text").value("Context"))
-                .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetTitle").value("B"));
     }
 
     @Test

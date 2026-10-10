@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.snapshot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 
@@ -16,7 +17,7 @@ public record ProjectSnapshotData(
         List<TrailData> trails,
         List<ItemData> looseItems
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 4;
+    public static final int CURRENT_SCHEMA_VERSION = 5;
 
     public List<ItemData> looseItems() {
         return looseItems == null ? List.of() : looseItems;
@@ -26,11 +27,7 @@ public record ProjectSnapshotData(
                              Long forkedFromId, List<ItemData> items) {
     }
 
-    public record ItemData(Long id, String title, String type, String titleAlign, String content,
-                            List<AssociationData> associations) {
-    }
-
-    
-    public record AssociationData(Long id, Long targetId, String targetTitle, String text) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ItemData(Long id, String title, String type, String titleAlign, String content) {
     }
 }

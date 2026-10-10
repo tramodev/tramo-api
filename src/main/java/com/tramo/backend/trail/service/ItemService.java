@@ -7,7 +7,6 @@ import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.trail.dto.ItemTextStatsDTO;
 import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.exception.ResourceNotFoundException;
-import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
@@ -17,10 +16,8 @@ import com.tramo.backend.trail.dto.TrailItemDTO;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
 import com.tramo.backend.trail.entity.ItemImageReference;
-import com.tramo.backend.trail.entity.Association;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -61,7 +58,6 @@ public class ItemService {
 
     private final ItemRepository itemRepository;
     private final TrailItemRepository trailItemRepository;
-    private final AssociationRepository itemLinkRepository;
     private final TrailService trailService;
     private final TrailRepository trailRepository;
     private final ProjectRepository projectRepository;
@@ -73,14 +69,13 @@ public class ItemService {
     private final EditorImageService editorImages;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
-                        AssociationRepository itemLinkRepository, TrailService trailService,
+                        TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
                         ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
-        this.itemLinkRepository = itemLinkRepository;
         this.trailService = trailService;
         this.trailRepository = trailRepository;
         this.projectRepository = projectRepository;
@@ -330,8 +325,6 @@ public class ItemService {
     }
 
     private void deleteItemCompletely(Item item, Long ownerId) {
-        itemLinkRepository.deleteBySourceItemId(item.getId());
-        itemLinkRepository.deleteByTargetItemId(item.getId());
         trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
         imageDeletionQueue.queueItemImages(item.getId(), ownerId);
         itemImageReferenceRepository.deleteByItemId(item.getId());
@@ -474,71 +467,6 @@ public class ItemService {
     }
 
     
-    @Transactional
-    public AssociationDTO tie(Long sourceId, Long targetId, String text, User requester) {
-        Long firstId = Math.min(sourceId, targetId);
-        Long secondId = Math.max(sourceId, targetId);
-        itemRepository.lockById(firstId).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        Item source = getOwnedItem(sourceId, requester);
-        Item target = getOwnedItem(targetId, requester);
-        if (sourceId.equals(targetId)) throw new RequestValidationException(RequestErrorCode.ITEM_SELF_LINK_FORBIDDEN);
-        if (source.getProject() == null || target.getProject() == null || !source.getProject().getId().equals(target.getProject().getId()))
-            throw new RequestValidationException(RequestErrorCode.ASSOCIATION_PROJECT_INVALID);
-        if (itemLinkRepository.findBySourceItemIdAndTargetItemId(firstId, secondId).isPresent())
-            throw new RequestValidationException(RequestErrorCode.ASSOCIATION_DUPLICATE);
-        Association association = new Association();
-        association.setSourceItem(sourceId.equals(firstId) ? source : target);
-        association.setProjectId(source.getProject().getId());
-        association.setTargetItem(targetId.equals(secondId) ? target : source);
-        association.setText(connectionText(text));
-        association.setCreatedDate(new Date());
-        return associationDTO(itemLinkRepository.save(association), sourceId, target.getTitle());
-    }
-
-    @Transactional
-    public AssociationDTO updateAssociation(Long itemId, Long associationId, String text, User requester) {
-        Association association = ownedAssociation(itemId, associationId, requester);
-        association.setText(connectionText(text));
-        Item other = association.getSourceItem().getId().equals(itemId) ? association.getTargetItem() : association.getSourceItem();
-        return associationDTO(itemLinkRepository.save(association), itemId, other.getTitle());
-    }
-
-    @Transactional
-    public void untie(Long itemId, Long associationId, User requester) {
-        itemLinkRepository.delete(ownedAssociation(itemId, associationId, requester));
-    }
-
-    private Association ownedAssociation(Long itemId, Long associationId, User requester) {
-        getOwnedItem(itemId, requester);
-        Association association = itemLinkRepository.findById(associationId)
-                .filter(a -> a.getSourceItem().getId().equals(itemId) || a.getTargetId().equals(itemId))
-                .orElseThrow(() -> new ResourceNotFoundException("Association not found"));
-        getOwnedItem(otherId(association, itemId), requester);
-        return association;
-    }
-
-    private String connectionText(String text) {
-        if (text != null && text.length() > 4002) throw new RequestValidationException(RequestErrorCode.VALUE_SIZE_INVALID);
-        return text == null || text.isBlank() ? null : text.strip();
-    }
-
-    private Long otherId(Association association, Long itemId) {
-        return association.getSourceItem().getId().equals(itemId) ? association.getTargetId() : association.getSourceItem().getId();
-    }
-
-    private AssociationDTO associationDTO(Association association, Long itemId, String title) {
-        return new AssociationDTO(String.valueOf(association.getId()), String.valueOf(otherId(association, itemId)), title, association.getText());
-    }
-
-    public List<AssociationDTO> getAssociations(Long id, User requester) {
-        Item item = getOwnedItem(id, requester);
-        List<Association> associations = itemLinkRepository.findBySourceItemIdOrTargetItemId(item.getId(), item.getId());
-        Set<Long> ids = associations.stream().map(a -> otherId(a, item.getId())).collect(Collectors.toSet());
-        Map<Long, String> titles = ids.isEmpty() ? Map.of() : itemRepository.findIdTitleByIdIn(ids).stream()
-                .collect(Collectors.toMap(row -> (Long) row[0], row -> (String) row[1]));
-        return associations.stream().map(a -> associationDTO(a, item.getId(), titles.get(otherId(a, item.getId())))).toList();
-    }
-
     private Item getOwnedItem(Long id, User requester) {
         Item item = itemRepository.findByIdWithProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));

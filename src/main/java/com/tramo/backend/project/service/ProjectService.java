@@ -16,7 +16,6 @@ import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -54,7 +53,6 @@ public class ProjectService {
     private final ProjectVoteRepository projectVoteRepository;
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final ProjectViewRepository projectViewRepository;
-    private final AssociationRepository itemLinkRepository;
     private final ItemImageReferenceRepository itemImageReferenceRepository;
     private final NotificationService notificationService;
     private final ProjectReportRepository projectReportRepository;
@@ -73,7 +71,7 @@ public class ProjectService {
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
                            ProjectVoteRepository projectVoteRepository, ProjectBookmarkRepository projectBookmarkRepository,
-                           ProjectViewRepository projectViewRepository, AssociationRepository itemLinkRepository,
+                           ProjectViewRepository projectViewRepository,
                            ItemImageReferenceRepository itemImageReferenceRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
                            CommentReportRepository commentReportRepository,
@@ -96,7 +94,6 @@ public class ProjectService {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
-        this.itemLinkRepository = itemLinkRepository;
         this.itemImageReferenceRepository = itemImageReferenceRepository;
         this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
@@ -260,8 +257,6 @@ public class ProjectService {
                 Long itemId = membership.getItem().getId();
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                    itemLinkRepository.deleteBySourceItemId(itemId);
-                    itemLinkRepository.deleteByTargetItemId(itemId);
                     itemRepository.deleteById(itemId);
                 }
             }
@@ -276,8 +271,6 @@ public class ProjectService {
                 itemRepository.save(item);
                 continue;
             }
-            itemLinkRepository.deleteBySourceItemId(item.getId());
-            itemLinkRepository.deleteByTargetItemId(item.getId());
             trailItemRepository.deleteAll(trailItemRepository.findByItemId(item.getId()));
             itemRepository.delete(item);
         }

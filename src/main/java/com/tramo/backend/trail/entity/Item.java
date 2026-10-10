@@ -46,7 +46,4 @@ public class Item {
 
     
     
-    @OneToMany(mappedBy = "sourceItem", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Association> outgoingLinks;
-
 }

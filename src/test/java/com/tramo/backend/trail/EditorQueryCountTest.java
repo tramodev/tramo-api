@@ -26,15 +26,6 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
                 {"title":"%s"}""".formatted(title));
     }
 
-    private void tie(User owner, long sourceItem, long targetItem) throws Exception {
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/item/" + sourceItem + "/tie")
-                        .header("Authorization", bearer(owner))
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"text\":\"Context\",\"targetId\":" + targetItem + "}"))
-                .andExpect(status().isOk());
-    }
-
     @Test
     void getAllForTrailQueryCountDoesNotScaleWithItemCount() throws Exception {
         User owner = createUser("eqcowner1");
@@ -166,26 +157,4 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
         assertThat(large).isEqualTo(small);
     }
 
-    @Test
-    void getAssociationsQueryCountDoesNotScaleWithAssociationCount() throws Exception {
-        User owner = createUser("eqcowner4");
-        Project project = createProject(owner, "Associations", "private");
-        long trailId = createTrail(owner, project, "T");
-        long source = createItem(owner, trailId, "Source");
-        tie(owner, source, createItem(owner, trailId, "Target 0"));
-
-        long small = queryCount(() -> mockMvc.perform(get("/api/item/" + source + "/association")
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk()));
-
-        for (int i = 1; i < 6; i++) {
-            tie(owner, source, createItem(owner, trailId, "Target " + i));
-        }
-
-        long large = queryCount(() -> mockMvc.perform(get("/api/item/" + source + "/association")
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk()));
-
-        assertThat(large).isEqualTo(small);
-    }
 }

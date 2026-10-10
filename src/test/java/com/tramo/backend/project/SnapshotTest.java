@@ -5,9 +5,11 @@ package com.tramo.backend.project;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
+import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -17,6 +19,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SnapshotTest extends AbstractIntegrationTest {
+
+    @Test
+    void olderSnapshotItemsIgnoreRemovedAssociations() {
+        ProjectSnapshotData.ItemData item = new ObjectMapper().readValue("""
+                {"id":1,"title":"A","type":"note","titleAlign":"center","content":"text","associations":[{"targetId":2}]}
+                """, ProjectSnapshotData.ItemData.class);
+        assertThat(item.content()).isEqualTo("text");
+    }
 
     @Autowired
     private ProjectSnapshotRepository projectSnapshotRepository;
@@ -331,39 +341,6 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void publishSnapshotsAssociationsBetweenItems() throws Exception {
-        User owner = createUser("pubowner5");
-        Project project = seedProject(owner, "Linked");
-        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
-                {"title":"T"}""");
-        long itemA = postForId(owner, "/api/trail/" + trailId + "/item", """
-                {"title":"A"}""");
-        long itemB = postForId(owner, "/api/trail/" + trailId + "/item", """
-                {"title":"B"}""");
-        mockMvc.perform(post("/api/item/" + itemA + "/tie")
-                        .header("Authorization", bearer(owner))
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"text\":\"Context\",\"targetId\":" + itemB + "}"))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk());
-
-        String versionsJson = mockMvc.perform(get("/api/project/" + pid(project) + "/versions")
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        long snapshotId = ((Number) com.jayway.jsonpath.JsonPath.read(versionsJson, "$[0].id")).longValue();
-
-        mockMvc.perform(get("/api/project/" + pid(project) + "/versions/" + snapshotId)
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.trails[0].items[0].associations.length()").value(1))
-                .andExpect(jsonPath("$.content.trails[0].items[0].associations[0].targetTitle").value("B"));
     }
 
     @Test

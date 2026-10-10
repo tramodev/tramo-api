@@ -4,7 +4,6 @@ package com.tramo.backend.trail;
 
 import com.jayway.jsonpath.JsonPath;
 import com.tramo.backend.AbstractIntegrationTest;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
@@ -38,9 +37,6 @@ class TrailItemTest extends AbstractIntegrationTest {
 
     @Autowired
     TrailItemRepository trailItemRepository;
-
-    @Autowired
-    AssociationRepository itemLinkRepository;
 
     @Autowired
     TrailRepository trailRepository;
@@ -357,95 +353,6 @@ class TrailItemTest extends AbstractIntegrationTest {
         assertThat(trailItemRepository.findByItemId(itemId)).isEmpty();
         assertThat(itemRepository.findById(itemId)).isPresent();
         assertThat(itemRepository.findById(itemId).orElseThrow().getUnfiled()).isTrue();
-    }
-
-    private ResultActions tie(User owner, long sourceItem, long targetId) throws Exception {
-        return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
-                .header("Authorization", bearer(owner))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"text\":\"Context\",\"targetId\":" + targetId + "}"));
-    }
-
-    @Test
-    void tyingItemsConnectsBothNotesAndRejectsEitherDuplicate() throws Exception {
-        User owner = createUser("linker");
-        Project project = createProject(owner, "Linking", "private");
-        long trailId = createTrail(owner, project, "Linking trail");
-        long itemA = createItem(owner, trailId, "A");
-        long itemB = createItem(owner, trailId, "B");
-
-        tie(owner, itemA, itemB).andExpect(status().isOk());
-        tie(owner, itemA, itemB).andExpect(status().isBadRequest());
-        tie(owner, itemB, itemA).andExpect(status().isBadRequest());
-
-        assertThat(itemLinkRepository.count()).isEqualTo(1);
-
-        mockMvc.perform(get("/api/item/" + itemA + "/association").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].targetTitle").value("B"));
-
-        
-        mockMvc.perform(get("/api/item/" + itemB + "/association").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].targetTitle").value("A"));
-    }
-
-    @Test
-    void selfTieIsRejected() throws Exception {
-        User owner = createUser("selflinker");
-        Project project = createProject(owner, "Selfish", "private");
-        long trailId = createTrail(owner, project, "Selfish trail");
-        long itemId = createItem(owner, trailId, "Alone");
-
-        tie(owner, itemId, itemId).andExpect(status().isBadRequest());
-    }
-
-    @Test
-    void untieRemovesAssociation() throws Exception {
-        User owner = createUser("unlinker");
-        Project project = createProject(owner, "Unlinking", "private");
-        long trailId = createTrail(owner, project, "Unlinking trail");
-        long itemA = createItem(owner, trailId, "A");
-        long itemB = createItem(owner, trailId, "B");
-
-        tie(owner, itemA, itemB).andExpect(status().isOk());
-        mockMvc.perform(delete("/api/item/" + itemB + "/association/" + itemLinkRepository.findBySourceItemId(itemA).get(0).getId())
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
-
-        assertThat(itemLinkRepository.count()).isZero();
-    }
-
-    @Test
-    void cannotTieToAnotherUsersItem() throws Exception {
-        User owner = createUser("linkowner");
-        User other = createUser("linkother");
-        Project mine = createProject(owner, "MineL", "private");
-        Project theirs = createProject(other, "TheirsL", "private");
-        long myTrail = createTrail(owner, mine, "My trail");
-        long theirTrail = createTrail(other, theirs, "Their trail");
-        long myItem = createItem(owner, myTrail, "My item");
-        long theirItem = createItem(other, theirTrail, "Their item");
-
-        tie(owner, myItem, theirItem).andExpect(status().isForbidden());
-    }
-
-    @Test
-    void forkCopiesItemAssociations() throws Exception {
-        User owner = createUser("forkorigin");
-        User forker = createUser("forkuser");
-        Project source = createProject(owner, "Forkable", "published");
-        long trailId = createTrail(owner, source, "T");
-        long itemA = createItem(owner, trailId, "A");
-        long itemB = createItem(owner, trailId, "B");
-        tie(owner, itemA, itemB).andExpect(status().isOk());
-
-        assertThat(itemLinkRepository.count()).isEqualTo(1);
-        postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
-        
-        assertThat(itemLinkRepository.count()).isEqualTo(2);
     }
 
     @Test

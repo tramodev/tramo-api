@@ -34,7 +34,6 @@ public class ProjectExportService {
     private final ItemRepository items;
     private final TrailRepository trails;
     private final TrailItemRepository steps;
-    private final AssociationRepository associations;
     private final ItemImageReferenceRepository legacyReferences;
     private final EditorImageRepository images;
     private final PrivateImageStorage privateStorage;
@@ -43,11 +42,11 @@ public class ProjectExportService {
     private final TransactionTemplate reads;
 
     public ProjectExportService(AccessGuard access, ProjectIdCodec codec, ItemRepository items, TrailRepository trails,
-            TrailItemRepository steps, AssociationRepository associations, ItemImageReferenceRepository legacyReferences,
+            TrailItemRepository steps, ItemImageReferenceRepository legacyReferences,
             EditorImageRepository images, PrivateImageStorage privateStorage, R2Client publicStorage,
             ObjectMapper mapper, PlatformTransactionManager transactions) {
         this.access = access; this.codec = codec; this.items = items; this.trails = trails; this.steps = steps;
-        this.associations = associations; this.legacyReferences = legacyReferences; this.images = images;
+        this.legacyReferences = legacyReferences; this.images = images;
         this.privateStorage = privateStorage; this.publicStorage = publicStorage; this.mapper = mapper;
         reads = new TransactionTemplate(transactions);
         reads.setReadOnly(true);
@@ -68,8 +67,8 @@ public class ProjectExportService {
             Set<String> warnings = new LinkedHashSet<>();
             String html = new ProjectExportHtml(mapper, snapshot.data(), warnings).render();
             var source = snapshot.data();
-            var data = new ProjectExportDTO(2, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
-                    source.associations(), source.assets(), List.copyOf(warnings));
+            var data = new ProjectExportDTO(3, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
+                    source.assets(), List.copyOf(warnings));
             archive = Files.createTempFile("tramo-export-", ".zip");
             long total = 0;
             try (var zip = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(archive)))) {
@@ -124,11 +123,6 @@ public class ProjectExportService {
                 item.getContent() == null ? null : item.getContent().getContent(), Boolean.TRUE.equals(item.getUnfiled()), date(item.getCreatedDate()), date(item.getModifiedDate()))).toList();
         List<ProjectExportDTO.TrailData> paths = orderedTrails.stream().map(trail -> new ProjectExportDTO.TrailData(trail.getId(), trail.getTitle(), trail.getDescription(), trail.getVisibility(), trail.getVersion(),
                 trail.getForkedFrom() == null ? null : trail.getForkedFrom().getId(), stepsByTrail.getOrDefault(trail.getId(), List.of()))).toList();
-        Map<Long, Association> relationshipMap = new TreeMap<>();
-        if (!found.isEmpty()) associations.findBySourceItemIdIn(found.stream().map(Item::getId).toList())
-                .forEach(association -> relationshipMap.put(association.getId(), association));
-        List<ProjectExportDTO.AssociationData> ties = relationshipMap.values().stream()
-                .map(a -> new ProjectExportDTO.AssociationData(a.getId(), a.getSourceItem().getId(), a.getTargetId(), a.getText())).toList();
         Set<String> references = new LinkedHashSet<>();
         for (var item : notes) {
             if (item.content() == null || item.content().isBlank()) continue;
@@ -171,7 +165,7 @@ public class ProjectExportService {
         var metadata = new ProjectExportDTO.ProjectData(codec.encode(projectId), project.getTitle(), project.getDescription(), String.valueOf(project.getVisibility()),
                 project.getProjectTags().stream().map(tag -> tag.getName()).sorted().toList(), String.valueOf(project.getThumbnailType()), thumbnail,
                 project.getThumbnailTrail() == null ? null : project.getThumbnailTrail().getId(), date(project.getCreationDate()), date(project.getModifiedDate()));
-        return new Snapshot(new ProjectExportDTO(2, Instant.now().toString(), metadata, notes, paths, found.stream().map(Item::getId).filter(id -> !placed.contains(id)).toList(), ties, assets, List.of()), resources);
+        return new Snapshot(new ProjectExportDTO(3, Instant.now().toString(), metadata, notes, paths, found.stream().map(Item::getId).filter(id -> !placed.contains(id)).toList(), assets, List.of()), resources);
     }
     private static void collect(JsonNode node, Set<String> references, int depth) {
         if (depth > 100) throw ProjectExportException.tooLarge();

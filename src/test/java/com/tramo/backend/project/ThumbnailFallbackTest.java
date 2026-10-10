@@ -55,19 +55,13 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void projectWithConnectedItemsPrefersTheGraphOverAnImage() throws Exception {
+    void projectWithMentionedItemsPrefersTheGraphOverAnImage() throws Exception {
         User owner = createUser("thumbfb2");
         Project project = createProject(owner, "Connected", "private", "A description", null);
         long trailId = createTrail(owner, project, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        String url = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
-        setContent(owner, itemA, "look at " + url + " here");
-        mockMvc.perform(post("/api/item/" + itemA + "/tie")
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"text\":\"Context\",\"targetId\":" + itemB + "}"))
-                .andExpect(status().isOk());
+        setContent(owner, itemA, ("{\"root\":{\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}").replace("\"", "\\\""));
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
@@ -87,16 +81,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].thumbnailGraph.items[0].associations.length()").value(1));
-
-        mockMvc.perform(post("/api/item/" + itemA + "/tie")
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"targetId\":" + itemB + "}"))
-                .andExpect(status().isOk());
-        mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].thumbnailGraph.items[0].associations.length()").value(1));
+                .andExpect(jsonPath("$[0].thumbnailGraph.items[0].linkedItemIds.length()").value(1));
     }
 
     @Test
