@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.dto;
 
-import com.tramo.backend.trail.dto.AssociationDTO;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.List;
 
 @Getter
 @Setter
@@ -18,8 +16,4 @@ public class PublicItemDTO {
     private String type;
     private String content;
     private String titleAlign;
-    
-    
-    
-    private List<AssociationDTO> associations;
 }

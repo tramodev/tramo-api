@@ -6,7 +6,7 @@
 
 Backend for **Tramo**, a tool for capturing ideas as an associative graph and then
 carving ordered, shareable paths through them. The model is a modern take on
-Vannevar Bush's Memex: atomic **items** connected by undirected **associations** (the
+Vannevar Bush's Memex: atomic **items** connected by references in their content (the
 graph), and **trails** that linearize a subset of that graph into something you can
 read and study one step at a time.
 
@@ -14,26 +14,23 @@ read and study one step at a time.
 
 The core domain lives in the `trail` package and is built on two layers.
 
-**The graph** — how ideas actually relate, non-linear and reusable:
+**The graph** — how ideas relate through references in note content:
 
 - **Item** — an atomic unit of content (title + rich-text body in `ItemContent`).
   An item can appear in many trails at once (transclusion): it is referenced, not
   copied.
-- **Association** — a connection between two notes in the same project, with
-  optional shared text (up to 4,002 characters). Each pair has one connection,
-  visible and editable from either note. A note cannot connect to itself.
-  Deleting a note deletes its connections, leaving other notes intact.
+- **Reference** — a note can mention another note with `@` in its rich-text body.
+  These references appear as connections in the map.
 
 **The trail** — an independent reading order:
 
 - **Trail** — a named, ordered sequence of notes, versioned and forkable.
 - **TrailItem** — membership of a note in a trail, with its `orderIndex`.
-  Adding, removing or reordering memberships never creates or changes connections.
-  Notes reused in several trails retain the same content and connection text.
+  Notes reused in several trails retain the same content and references.
 
 A **Project** groups trails and loose items and is the unit of sharing and forking:
 publishing snapshots the project to the public explore feed; forking copies its
-items, associations and trails into the forker's own space so later edits to the
+items and trails into the forker's own space so later edits to the
 original never mutate the fork.
 
 ## Tech stack

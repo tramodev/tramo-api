@@ -34,13 +34,6 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                 {"title":"%s"}""".formatted(title));
     }
 
-    private ResultActions tie(User owner, long sourceItem, long targetId) throws Exception {
-        return mockMvc.perform(post("/api/item/" + sourceItem + "/tie")
-                .header("Authorization", bearer(owner))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"text\":\"Context\",\"targetId\":" + targetId + "}"));
-    }
-
     @Test
     void publicProjectExposesThumbnailImageUrlWhenDedicatedButNotForGraphOrNone() throws Exception {
         User owner = createUser("publicthumbowner");
@@ -63,43 +56,4 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.thumbnailImageUrl").value(thumbnail));
     }
 
-    @Test
-    void publicProjectExposesTrailAndStepMetadataButFiltersCrossProjectAssociations() throws Exception {
-        User owner = createUser("publicdetailowner");
-        Project project = createProject(owner, "Detailed", "published", "desc", "tag");
-        long trailId = createTrail(owner, project, "Main trail");
-        long itemA = createItem(owner, trailId, "A");
-        long itemB = createItem(owner, trailId, "B");
-
-        mockMvc.perform(put("/api/trail/" + trailId)
-                        .header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"description":"A trail about A and B"}"""))
-                .andExpect(status().isOk());
-
-        tie(owner, itemA, itemB).andExpect(status().isOk());
-
-        String assocResponse = mockMvc.perform(get("/api/item/" + itemA + "/association")
-                        .header("Authorization", bearer(owner)))
-                .andReturn().getResponse().getContentAsString();
-        String assocId = JsonPath.read(assocResponse, "$[0].id");
-
-
-
-        
-        Project otherProject = createProject(owner, "Unrelated", "private");
-        long otherTrailId = createTrail(owner, otherProject, "Other trail");
-        long itemC = createItem(owner, otherTrailId, "Secret item C");
-        tie(owner, itemA, itemC).andExpect(status().isBadRequest());
-
-        mockMvc.perform(get("/api/public/project/" + pid(project)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.trails[0].description").value("A trail about A and B"))
-                .andExpect(jsonPath("$.trails[0].version").value(1))
-                .andExpect(jsonPath("$.trails[0].forkedFromId").value(nullValue()))
-                .andExpect(jsonPath("$.trails[0].items[0].associations.length()").value(1))
-                .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetTitle").value("B"))
-                .andExpect(jsonPath("$.trails[0].items[0].associations[0].targetId").value(String.valueOf(itemB)));
-    }
 }

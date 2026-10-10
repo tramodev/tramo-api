@@ -33,8 +33,6 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         long source = postForId(user, "/api/trail/" + trail + "/item", "{\"title\":\"Source\"}");
         long last = postForId(user, "/api/trail/" + trail + "/item", "{\"title\":\"Last\"}");
         items.attachToTrail(other, source, user); items.updateContent(source, ORIGINAL, user);
-        mockMvc.perform(post("/api/item/" + source + "/tie").header("Authorization", bearer(user)).contentType("application/json").content("{\"text\":\"Context\",\"targetId\":" + last + "}")).andExpect(status().isOk());
-        Long association = jdbcTemplate.queryForObject("SELECT id FROM association WHERE source_item_id = ?", Long.class, source);
         return new Fixture(user, project, trail, other, source, last);
     }
     ExtractSelectionRequest request(Fixture f, boolean step, UUID id) {
@@ -47,7 +45,7 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         return mapper.readTree(response);
     }
     @Test
-    void movesContentToLooseNoteKeepsSharedSourceIdentityAndRelationships() throws Exception {
+    void movesContentToLooseNoteKeepsSharedSourceIdentity() throws Exception {
         Fixture f = fixture(); long count = repository.count();
         JsonNode result = send(f, request(f, false, UUID.randomUUID())); long id = result.path("item").path("id").asLong();
         assertThat(repository.count()).isEqualTo(count + 1);
@@ -56,7 +54,6 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         assertThat(items.getContent(f.source, f.user).getContent()).contains("tramo-idea:" + id, "before ", " after").doesNotContain("selected");
         assertThat(items.getAllForTrail(f.trail, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source, f.last);
         assertThat(items.getAllForTrail(f.other, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source);
-        assertThat(items.getAssociations(f.source, f.user)).hasSize(1); assertThat(items.getAssociations(id, f.user)).isEmpty();
         items.updateContent(id, "", f.user); items.delete(id, f.user);
         assertThat(items.getContent(f.source, f.user).getContent()).contains("tramo-idea:" + id);
         assertThat(repository.findById(f.source)).isPresent();

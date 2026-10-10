@@ -11,7 +11,6 @@ import com.tramo.backend.trail.dto.TrailResponseDTO;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
@@ -32,19 +31,17 @@ public class TrailService {
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
     private final ItemRepository itemRepository;
-    private final AssociationRepository itemLinkRepository;
     private final AccessGuard accessGuard;
     private final ProjectIdCodec projectIdCodec;
     private final ImageDeletionQueue imageDeletionQueue;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
-                        ItemRepository itemRepository, AssociationRepository itemLinkRepository,
+                        ItemRepository itemRepository,
                         AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
                         ImageDeletionQueue imageDeletionQueue) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
-        this.itemLinkRepository = itemLinkRepository;
         this.accessGuard = accessGuard;
         this.projectIdCodec = projectIdCodec;
         this.imageDeletionQueue = imageDeletionQueue;
@@ -105,8 +102,6 @@ public class TrailService {
                 if (item.getProject() == null) {
 
                     imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
-                    itemLinkRepository.deleteBySourceItemId(item.getId());
-                    itemLinkRepository.deleteByTargetItemId(item.getId());
                     itemRepository.delete(item);
                 } else {
                     

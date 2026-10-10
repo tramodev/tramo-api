@@ -75,18 +75,15 @@ class ProjectExportTest extends AbstractIntegrationTest {
     JsonNode json(Map<String, byte[]> entries) { return mapper.readTree(new String(entries.get("project.json"), StandardCharsets.UTF_8)); }
 
     @Test
-    void sharedNotesOrderAnnotationsAndRelationsArePreservedWithoutChangingTheOriginal() throws Exception {
+    void sharedNotesOrderAndContentArePreservedWithoutChangingTheOriginal() throws Exception {
         Fixture f = fixture();
-        mockMvc.perform(post("/api/item/" + f.shared + "/tie").header("Authorization", bearer(f.owner)).contentType("application/json")
-                .content("{\"text\":\"Context\",\"targetId\":" + f.loose + "}")).andExpect(status().isOk());
-        long relation = jdbcTemplate.queryForObject("SELECT id FROM association WHERE source_item_id = ?", Long.class, f.shared);
         Date edited = projects.findById(f.project.getId()).orElseThrow().getLastEditedDate();
         String original = itemService.getContent(f.shared, f.owner).getContent();
         long itemCount = items.count();
         long snapshots = jdbcTemplate.queryForObject("SELECT count(*) FROM project_snapshot", Long.class);
         Map<String, byte[]> entries = unzip(download(f));
         JsonNode data = json(entries);
-        assertThat(data.path("formatVersion").asInt()).isEqualTo(2);
+        assertThat(data.path("formatVersion").asInt()).isEqualTo(3);
         assertThat(data.path("exportedAt").asText()).isNotBlank();
         assertThat(data.path("items").size()).isEqualTo(2);
         assertThat(data.path("trails").size()).isEqualTo(2);
@@ -94,8 +91,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         assertThat(data.path("items").get(0).path("content").asText()).isEqualTo(original);
         assertThat(data.path("items").get(0).path("titleAlign").asText()).isEqualTo("right");
         assertThat(data.path("looseItemIds").get(0).asLong()).isEqualTo(f.loose);
-        assertThat(data.path("associations").get(0).path("text").asText()).isEqualTo("Context");
-        assertThat(html(entries)).contains("—", "Context", "Notes outside trails", "<em><strong>Shared body</strong></em>");
+        assertThat(html(entries)).contains("Notes outside trails", "<em><strong>Shared body</strong></em>");
         assertThat(html(entries).split("Shared body", -1)).hasSize(3);
         var anchors = java.util.regex.Pattern.compile("id=\"([^\"]+)\"").matcher(html(entries));
         Set<String> unique = new HashSet<>();

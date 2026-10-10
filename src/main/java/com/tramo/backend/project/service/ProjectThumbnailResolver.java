@@ -6,7 +6,6 @@ import com.tramo.backend.project.dto.GraphPreviewDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.trail.entity.Trail;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import org.springframework.stereotype.Component;
@@ -22,13 +21,10 @@ import java.util.stream.Collectors;
 public class ProjectThumbnailResolver {
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
-    private final AssociationRepository itemLinkRepository;
 
-    public ProjectThumbnailResolver(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
-                                     AssociationRepository itemLinkRepository) {
+    public ProjectThumbnailResolver(TrailRepository trailRepository, TrailItemRepository trailItemRepository) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
-        this.itemLinkRepository = itemLinkRepository;
     }
 
     ThumbnailResolution resolveThumbnail(Project project) {
@@ -58,7 +54,7 @@ public class ProjectThumbnailResolver {
             Map<Long, List<Trail>> trailsByProjectId = trailRepository.findByProjectIdIn(graphProjectIds).stream()
                     .collect(Collectors.groupingBy(t -> t.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
             List<Long> allTrailIds = trailsByProjectId.values().stream().flatMap(List::stream).map(Trail::getId).toList();
-            GraphLookup lookup = GraphLookup.forTrailIds(allTrailIds, trailItemRepository, itemLinkRepository);
+            GraphLookup lookup = GraphLookup.forTrailIds(allTrailIds, trailItemRepository);
 
             for (Project project : chosenGraphProjects) {
                 result.put(project.getId(), new ThumbnailResolution(null,
@@ -70,7 +66,7 @@ public class ProjectThumbnailResolver {
                 GraphPreviewDTO chosen = null;
                 for (Trail trail : trailsByProjectId.getOrDefault(project.getId(), List.of())) {
                     GraphPreviewDTO graph = lookup.buildGraphPreview(trail);
-                    if (graph != null && graph.items().stream().anyMatch(i -> !i.associations().isEmpty())) {
+                    if (graph != null && graph.items().stream().anyMatch(i -> !i.linkedItemIds().isEmpty())) {
                         chosen = graph;
                         break;
                     }

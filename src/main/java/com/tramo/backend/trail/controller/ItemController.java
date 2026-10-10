@@ -4,14 +4,11 @@ package com.tramo.backend.trail.controller;
 
 import com.tramo.backend.trail.dto.ProjectTextStatsDTO;
 import com.tramo.backend.common.ProjectIdCodec;
-import com.tramo.backend.trail.dto.AssociationDTO;
 import com.tramo.backend.trail.dto.ItemContentRequestDTO;
 import com.tramo.backend.trail.dto.ItemContentResponseDTO;
 import com.tramo.backend.trail.dto.ItemRequestDTO;
 import com.tramo.backend.trail.dto.ItemResponseDTO;
 import com.tramo.backend.trail.dto.MapItemPreviewDTO;
-import com.tramo.backend.trail.dto.AssociationTextDTO;
-import com.tramo.backend.trail.dto.TieRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.dto.TrailOrderRequestDTO;
 import com.tramo.backend.trail.dto.TrailItemDTO;
@@ -128,28 +125,4 @@ public class ItemController {
         return ResponseEntity.noContent().build();
     }
 
-    
-    @PostMapping("/item/{id}/tie")
-    public ResponseEntity<AssociationDTO> tie(@PathVariable Long id, @Valid @RequestBody TieRequestDTO request,
-                                             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(itemService.tie(id, request.targetId(), request.text(), user));
-    }
-
-    @PutMapping("/item/{id}/association/{associationId}")
-    public ResponseEntity<AssociationDTO> updateAssociation(@PathVariable Long id, @PathVariable Long associationId,
-            @Valid @RequestBody AssociationTextDTO request, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(itemService.updateAssociation(id, associationId, request.text(), user));
-    }
-
-    @DeleteMapping("/item/{id}/association/{associationId}")
-    public ResponseEntity<Void> untie(@PathVariable Long id, @PathVariable Long associationId,
-                                      @AuthenticationPrincipal User user) {
-        itemService.untie(id, associationId, user);
-        return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/item/{id}/association")
-    public ResponseEntity<List<AssociationDTO>> getAssociations(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(itemService.getAssociations(id, user));
-    }
 }

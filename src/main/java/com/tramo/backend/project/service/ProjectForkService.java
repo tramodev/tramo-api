@@ -13,12 +13,10 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 import com.tramo.backend.tag.service.TagService;
-import com.tramo.backend.trail.entity.Association;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
 import com.tramo.backend.trail.entity.Trail;
 import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.AssociationRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
@@ -48,7 +46,6 @@ public class ProjectForkService {
     private final TrailRepository trailRepository;
     private final TrailItemRepository trailItemRepository;
     private final ItemRepository itemRepository;
-    private final AssociationRepository itemLinkRepository;
     private final BlockedUserRepository blockedUserRepository;
     private final PrivacyPolicy privacyPolicy;
     private final TagService tagService;
@@ -61,7 +58,7 @@ public class ProjectForkService {
     public ProjectForkService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
                                TrailItemRepository trailItemRepository, ItemRepository itemRepository,
-                               AssociationRepository itemLinkRepository, BlockedUserRepository blockedUserRepository,
+                               BlockedUserRepository blockedUserRepository,
                                PrivacyPolicy privacyPolicy, TagService tagService,
                                NotificationService notificationService, BadgeService badgeService,
                                ProjectResponseMapper responseMapper, ObjectMapper objectMapper, EditorImageService editorImages) {
@@ -71,7 +68,6 @@ public class ProjectForkService {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
-        this.itemLinkRepository = itemLinkRepository;
         this.blockedUserRepository = blockedUserRepository;
         this.privacyPolicy = privacyPolicy;
         this.tagService = tagService;
@@ -150,20 +146,6 @@ public class ProjectForkService {
         for (Item item : itemRepository.findByProjectId(sourceProjectId)) {
             itemCopies.computeIfAbsent(item.getId(), ignored -> copyItem(item, fork, true));
         }
-        for (Long sourceItemId : itemCopies.keySet()) {
-            for (Association assoc : itemLinkRepository.findBySourceItemId(sourceItemId)) {
-                Item target = itemCopies.get(assoc.getTargetId());
-                if (target == null) continue;
-                Association copy = new Association();
-                Item sourceCopy = itemCopies.get(sourceItemId);
-                copy.setSourceItem(sourceCopy.getId() < target.getId() ? sourceCopy : target);
-                copy.setProjectId(fork.getId());
-                copy.setTargetItem(sourceCopy.getId() < target.getId() ? target : sourceCopy);
-                copy.setText(assoc.getText());
-                copy.setCreatedDate(new Date());
-                itemLinkRepository.save(copy);
-            }
-        }
     }
 
     private Item copyItem(Item source, Project fork, boolean unfiled) {
@@ -215,36 +197,6 @@ public class ProjectForkService {
 
         for (ProjectSnapshotData.ItemData itemData : data.looseItems()) {
             itemCopies.computeIfAbsent(itemData.id(), ignored -> copyItemFromData(itemData, fork, true));
-        }
-
-        List<ProjectSnapshotData.ItemData> allItemData = Stream.concat(
-                data.trails().stream().flatMap(trailData -> trailData.items().stream()),
-                data.looseItems().stream()).toList();
-
-        Map<String, Association> assocCopies = new HashMap<>();
-        Set<Long> seenIds = new HashSet<>();
-        for (ProjectSnapshotData.ItemData itemData : allItemData) {
-            Item sourceCopy = itemCopies.get(itemData.id());
-            for (ProjectSnapshotData.AssociationData assocData : itemData.associations()) {
-                if (!seenIds.add(assocData.id())) continue;
-                Item targetCopy = itemCopies.get(assocData.targetId());
-                if (sourceCopy == null || targetCopy == null) continue;
-                String pair = Math.min(itemData.id(), assocData.targetId()) + ":" + Math.max(itemData.id(), assocData.targetId());
-                Association existing = assocCopies.get(pair);
-                if (existing != null) {
-                    if (assocData.text() != null && !assocData.text().isBlank() && !assocData.text().equals(existing.getText()))
-                        existing.setText(existing.getText() == null ? assocData.text() : existing.getText() + "\n\n" + assocData.text());
-                    continue;
-                }
-
-                Association copy = new Association();
-                copy.setSourceItem(sourceCopy.getId() < targetCopy.getId() ? sourceCopy : targetCopy);
-                copy.setProjectId(fork.getId());
-                copy.setTargetItem(sourceCopy.getId() < targetCopy.getId() ? targetCopy : sourceCopy);
-                copy.setText(assocData.text());
-                copy.setCreatedDate(new Date());
-                assocCopies.put(pair, itemLinkRepository.save(copy));
-            }
         }
 
     }
