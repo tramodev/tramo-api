@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -46,7 +47,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"" + content + "\"}"))
+                        .content(new ObjectMapper().writeValueAsString(java.util.Map.of("content", content))))
                 .andExpect(status().isNoContent());
     }
 
@@ -151,6 +152,26 @@ class ForkContentTest extends AbstractIntegrationTest {
         assertThat(looseCopy.getProject().getId()).isEqualTo(fork.getId());
         assertThat(itemsOf(fork)).extracting(Item::getTitle).containsExactly("Filed");
 
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void forkRetargetsMentionLinksToCopiedNotes(boolean published) throws Exception {
+        User owner = createUser("mentionowner");
+        User forker = createUser("mentionforker");
+        Project source = createProject(owner, "Linked", "unlisted", "A description", null);
+        long trailId = createTrail(owner, source, "T");
+        long first = createItem(owner, trailId, "First");
+        long second = createItem(owner, trailId, "Second");
+        setContent(owner, first, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + second + "\",\"children\":[{\"type\":\"text\",\"text\":\"Second\"}]}]}}");
+        if (published) publish(owner, source);
+
+        Project fork = forkOf(forker, source);
+        List<Item> copies = itemsOf(fork);
+        Item firstCopy = copies.stream().filter(item -> item.getTitle().equals("First")).findFirst().orElseThrow();
+        Item secondCopy = copies.stream().filter(item -> item.getTitle().equals("Second")).findFirst().orElseThrow();
+        assertThat(firstCopy.getContent().getContent()).contains("tramo-idea:" + secondCopy.getId());
+        assertThat(firstCopy.getContent().getContent()).doesNotContain("tramo-idea:" + second);
     }
 
     @Test
