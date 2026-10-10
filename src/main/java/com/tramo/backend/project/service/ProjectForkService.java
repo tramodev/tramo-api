@@ -27,6 +27,8 @@ import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -146,6 +148,7 @@ public class ProjectForkService {
         for (Item item : itemRepository.findByProjectId(sourceProjectId)) {
             itemCopies.computeIfAbsent(item.getId(), ignored -> copyItem(item, fork, true));
         }
+        retargetMentions(itemCopies);
     }
 
     private Item copyItem(Item source, Project fork, boolean unfiled) {
@@ -198,7 +201,38 @@ public class ProjectForkService {
         for (ProjectSnapshotData.ItemData itemData : data.looseItems()) {
             itemCopies.computeIfAbsent(itemData.id(), ignored -> copyItemFromData(itemData, fork, true));
         }
+        retargetMentions(itemCopies);
 
+    }
+
+    private void retargetMentions(Map<Long, Item> itemCopies) {
+        for (Item copy : itemCopies.values()) {
+            ItemContent content = copy.getContent();
+            if (content == null || content.getContent() == null
+                    || (!content.getContent().contains("tramo-idea:") && !content.getContent().contains("mypath-idea:"))) continue;
+            JsonNode root;
+            try { root = objectMapper.readTree(content.getContent()); }
+            catch (RuntimeException invalid) { continue; }
+            if (retargetMentions(root, itemCopies)) content.setContent(objectMapper.writeValueAsString(root));
+        }
+    }
+
+    private boolean retargetMentions(JsonNode node, Map<Long, Item> itemCopies) {
+        boolean changed = false;
+        if (node.isObject() && "link".equals(node.path("type").asText(""))) {
+            String rel = node.path("rel").asText("");
+            if (rel.startsWith("tramo-idea:") || rel.startsWith("mypath-idea:")) {
+                try {
+                    Item target = itemCopies.get(Long.parseLong(rel.substring(rel.indexOf(':') + 1)));
+                    if (target != null) {
+                        ((ObjectNode) node).put("rel", "tramo-idea:" + target.getId());
+                        changed = true;
+                    }
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        for (JsonNode child : node) changed = retargetMentions(child, itemCopies) || changed;
+        return changed;
     }
 
     private Item copyItemFromData(ProjectSnapshotData.ItemData itemData, Project fork, boolean unfiled) {
