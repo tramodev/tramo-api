@@ -49,10 +49,12 @@ public class RateLimitFilter implements Filter {
             if (!tryConsumeOrReject(bucket, res)) return;
         }
 
-        if ("GET".equals(req.getMethod()) && path.startsWith("/api/project/") && path.endsWith("/map-preview")) {
+        if ("GET".equals(req.getMethod()) && path.startsWith("/api/project/")
+                && (path.endsWith("/map-preview") || path.endsWith("/editor"))) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
-                Bucket bucket = rateLimiterService.resolveBucket("user:map-preview:" + user.getId(), 30, 30, Duration.ofMinutes(1));
+                String action = path.endsWith("/editor") ? "editor" : "map-preview";
+                Bucket bucket = rateLimiterService.resolveBucket("user:" + action + ":" + user.getId(), 30, 30, Duration.ofMinutes(1));
                 if (!tryConsumeOrReject(bucket, res)) return;
             }
         }

@@ -13,6 +13,8 @@ import java.util.Optional;
 
 @Repository
 public interface TrailItemRepository extends JpaRepository<TrailItem, Long> {
+    @Query("SELECT ti FROM TrailItem ti JOIN FETCH ti.trail t JOIN FETCH ti.item WHERE t.project.id = :projectId ORDER BY t.id, ti.orderIndex, ti.id")
+    List<TrailItem> findEditorSteps(@Param("projectId") Long projectId);
     
     
     

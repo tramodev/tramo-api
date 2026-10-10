@@ -11,10 +11,53 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-
-
-
 class EditorQueryCountTest extends AbstractIntegrationTest {
+
+    @Test
+    void editorBootstrapQueryCountDoesNotScaleWithTrailOrItemCount() throws Exception {
+        User owner = createUser("eqcbootstrap");
+        Project project = createProject(owner, "Editor", "private");
+        long firstTrail = createTrail(owner, project, "First");
+        createItem(owner, firstTrail, "First note");
+
+        long small = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/editor")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.contents.length()").value(1)));
+
+        long secondTrail = createTrail(owner, project, "Second");
+        for (int i = 0; i < 6; i++) createItem(owner, firstTrail, "First " + i);
+        for (int i = 0; i < 6; i++) createItem(owner, secondTrail, "Second " + i);
+
+        long large = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/editor")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.contents.length()").value(7)));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void editorBootstrapSelectsRequestedTrailAndRejectsAnotherOwner() throws Exception {
+        User owner = createUser("eqcselection");
+        User other = createUser("eqcother");
+        Project project = createProject(owner, "Editor selection", "private");
+        long firstTrail = createTrail(owner, project, "First");
+        long secondTrail = createTrail(owner, project, "Second");
+        long itemId = createItem(owner, secondTrail, "Chosen");
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/editor")
+                        .param("noteId", String.valueOf(itemId))
+                        .param("trailId", String.valueOf(secondTrail))
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.selectedTrailId").value(secondTrail))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.selectedItemId").value(itemId));
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/editor")
+                        .header("Authorization", bearer(other)))
+                .andExpect(status().isForbidden());
+    }
 
     private long createTrail(User owner, Project project, String title) throws Exception {
         return postForId(owner, "/api/project/" + pid(project) + "/trail", """
