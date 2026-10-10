@@ -39,7 +39,7 @@ public class Item {
     
     private Boolean unfiled = false;
 
-    @OneToOne(cascade = CascadeType.ALL)
+    @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL)
     private ItemContent content;
     @OneToMany(mappedBy = "item")
     List<TrailItem> trailItem;

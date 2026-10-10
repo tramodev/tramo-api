@@ -12,6 +12,7 @@ import com.tramo.backend.project.service.ProjectStartService;
 import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
+import com.tramo.backend.project.dto.EditorBootstrapDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
 import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
@@ -20,6 +21,7 @@ import com.tramo.backend.project.service.ProjectEngagementService;
 import com.tramo.backend.project.service.ProjectForkService;
 import com.tramo.backend.project.service.ProjectPublishService;
 import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ProjectEditorService;
 import com.tramo.backend.security.ClientIp;
 import com.tramo.backend.user.entity.User;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +37,7 @@ import java.util.List;
 public class ProjectController {
     private final ProjectStartService startService;
     private final ProjectService projectService;
+    private final ProjectEditorService projectEditorService;
     private final ProjectPublishService publishService;
     private final ProjectForkService forkService;
     private final ProjectEngagementService engagementService;
@@ -42,9 +45,10 @@ public class ProjectController {
     private final ProjectIdCodec projectIdCodec;
     private final ClientIp clientIp;
 
-    public ProjectController(ProjectStartService startService, ProjectService projectService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
+    public ProjectController(ProjectStartService startService, ProjectService projectService, ProjectEditorService projectEditorService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
         this.startService = startService;
         this.projectService = projectService;
+        this.projectEditorService = projectEditorService;
         this.publishService = publishService;
         this.forkService = forkService;
         this.engagementService = engagementService;
@@ -85,6 +89,13 @@ public class ProjectController {
     @GetMapping("/{id}")
     public ResponseEntity<ProjectResponseDTO> getById(@PathVariable String id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getById(projectIdCodec.decode(id), user));
+    }
+
+    @GetMapping("/{id}/editor")
+    public ResponseEntity<EditorBootstrapDTO> getEditor(@PathVariable String id,
+            @RequestParam(required = false) Long noteId, @RequestParam(required = false) Long trailId,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectEditorService.get(projectIdCodec.decode(id), noteId, trailId, user));
     }
 
     @PutMapping("/{id}")

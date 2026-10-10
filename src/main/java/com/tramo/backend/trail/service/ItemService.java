@@ -331,6 +331,7 @@ public class ItemService {
         itemRepository.delete(item);
     }
 
+    @Transactional
     public ItemContentResponseDTO getContent(Long id, User requester) {
         Item item = getOwnedItem(id, requester);
         String content = item.getContent() != null ? item.getContent().getContent() : "";

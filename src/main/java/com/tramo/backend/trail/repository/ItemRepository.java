@@ -15,6 +15,11 @@ import java.util.Optional;
 
 @Repository
 public interface ItemRepository extends JpaRepository<Item, Long> {
+    @Query("SELECT i FROM Item i WHERE i.project.id = :projectId ORDER BY i.id")
+    List<Item> findEditorItems(@Param("projectId") Long projectId);
+
+    @Query("SELECT i FROM Item i LEFT JOIN FETCH i.content WHERE i.id = :id")
+    Optional<Item> findByIdWithContent(@Param("id") Long id);
     @Query(value = "SELECT id FROM item WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Long> lockById(@Param("id") Long id);
 
