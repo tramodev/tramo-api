@@ -41,6 +41,8 @@ public class PatreonClient {
     private String clientSecret;
     @Value("${app.patreon.redirect-uri}")
     private String redirectUri;
+    @Value("${app.patreon.campaign-id}")
+    private String campaignId;
 
     public record PatreonTokens(String accessToken, String refreshToken) {
     }
@@ -65,7 +67,19 @@ public class PatreonClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record MembershipIncluded(MembershipAttributes attributes) {
+    private record MembershipIncluded(String type, MembershipAttributes attributes, MembershipRelationships relationships) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MembershipRelationships(CampaignRelationship campaign) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record CampaignRelationship(CampaignData data) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record CampaignData(String id) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -104,19 +118,25 @@ public class PatreonClient {
             
             
             response = restClient.get()
-                    .uri("/api/oauth2/v2/identity?include=memberships")
+                    .uri("/api/oauth2/v2/identity?include=memberships.campaign&fields[member]=patron_status")
                     .headers(headers -> headers.setBearerAuth(accessToken))
                     .retrieve()
                     .body(IdentityResponse.class);
         } catch (RestClientException ex) {
             throw new InvalidTokenException("Failed to fetch Patreon identity: " + describe(ex), ex);
         }
-        if (response == null || response.data() == null) {
+        if (response == null || response.data() == null || response.data().id() == null || response.data().id().isBlank()) {
             throw new InvalidTokenException("Failed to fetch Patreon identity: empty identity response");
         }
 
         boolean activePatron = response.included() != null && response.included().stream()
-                .anyMatch(membership -> membership.attributes() != null
+                .anyMatch(membership -> membership != null && !campaignId.isBlank()
+                        && "member".equals(membership.type())
+                        && membership.relationships() != null
+                        && membership.relationships().campaign() != null
+                        && membership.relationships().campaign().data() != null
+                        && campaignId.equals(membership.relationships().campaign().data().id())
+                        && membership.attributes() != null
                         && "active_patron".equals(membership.attributes().patronStatus()));
         return new PatreonIdentity(response.data().id(), activePatron);
     }

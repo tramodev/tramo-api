@@ -64,6 +64,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.patreon.client-secret", () -> "test-patreon-client-secret");
         registry.add("app.patreon.redirect-uri", () -> "http://localhost:8080/api/auth/patreon/callback");
         registry.add("app.patreon.webhook-secret", () -> TEST_PATREON_WEBHOOK_SECRET);
+        registry.add("app.patreon.campaign-id", () -> "tramo-campaign");
         registry.add("app.project-id.salt", () -> "test-project-id-salt");
         registry.add("app.r2.account-id", () -> "test-account-id");
         registry.add("app.r2.access-key", () -> "test-access-key");

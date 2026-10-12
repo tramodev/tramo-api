@@ -43,7 +43,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
 
     private String pledgePayload(String patreonUserId, String memberId) {
         return """
-                {"data":{"id":"%s","type":"member","relationships":{"user":{"data":{"id":"%s","type":"user"}}}}}"""
+                {"data":{"id":"%s","type":"member","attributes":{"patron_status":"active_patron"},
+                "relationships":{"user":{"data":{"id":"%s","type":"user"}},
+                "campaign":{"data":{"id":"tramo-campaign","type":"campaign"}}}}}"""
                 .formatted(memberId, patreonUserId);
     }
 
@@ -138,6 +140,45 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                         .header("X-Patreon-Signature", "deadbeef")
                         .content(body))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void ignoresPledgeForAnotherCampaign() throws Exception {
+        User user = createUser("othercampaign");
+        user.setPatreonUserId("patreon-other");
+        userRepository.save(user);
+        String body = pledgePayload("patreon-other").replace("tramo-campaign", "other-campaign");
+
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", "members:pledge:create")
+                        .header("X-Patreon-Signature", sign(body))
+                        .content(body))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(jsonPath("$.supporter").value(false));
+    }
+
+    @Test
+    void declinedPledgeUpdateRemovesSupporter() throws Exception {
+        User user = createUser("declinedpatron");
+        user.setPatreonUserId("patreon-declined");
+        userRepository.save(user);
+        String activeBody = pledgePayload("patreon-declined");
+        String declinedBody = activeBody.replace("active_patron", "declined_patron");
+
+        for (String body : new String[]{activeBody, declinedBody}) {
+            mockMvc.perform(post("/api/webhooks/patreon")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Patreon-Event", "members:pledge:update")
+                            .header("X-Patreon-Signature", sign(body))
+                            .content(body))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(jsonPath("$.supporter").value(false));
     }
 
     @Test

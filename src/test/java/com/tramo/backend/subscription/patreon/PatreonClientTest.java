@@ -23,6 +23,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class PatreonClientTest {
 
+    private static final String IDENTITY_URL = "https://www.patreon.com/api/oauth2/v2/identity?include=memberships.campaign&fields%5Bmember%5D=patron_status";
+
     private PatreonClient patreonClient;
     private MockRestServiceServer server;
 
@@ -32,6 +34,7 @@ class PatreonClientTest {
         ReflectionTestUtils.setField(patreonClient, "clientId", "cid");
         ReflectionTestUtils.setField(patreonClient, "clientSecret", "csecret");
         ReflectionTestUtils.setField(patreonClient, "redirectUri", "https://tramo.dev/callback");
+        ReflectionTestUtils.setField(patreonClient, "campaignId", "tramo-campaign");
 
         RestClient.Builder builder = RestClient.builder().baseUrl("https://www.patreon.com");
         server = MockRestServiceServer.bindTo(builder).build();
@@ -92,12 +95,13 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentitySendsBearerTokenAndDetectsActivePatron() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andExpect(method(org.springframework.http.HttpMethod.GET))
                 .andExpect(header("Authorization", "Bearer at-1"))
                 .andRespond(withSuccess("""
                         {"data":{"id":"patreon-42","type":"user"},
-                         "included":[{"type":"member","attributes":{"patron_status":"active_patron"}}]}""",
+                         "included":[{"type":"member","attributes":{"patron_status":"active_patron"},
+                         "relationships":{"campaign":{"data":{"id":"tramo-campaign"}}}}]}""",
                         MediaType.APPLICATION_JSON));
 
         PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity("at-1");
@@ -109,10 +113,11 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityTreatsFormerPatronAsInactive() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withSuccess("""
                         {"data":{"id":"patreon-42"},
-                         "included":[{"attributes":{"patron_status":"former_patron"}}]}""",
+                          "included":[{"type":"member","attributes":{"patron_status":"former_patron"},
+                          "relationships":{"campaign":{"data":{"id":"tramo-campaign"}}}}]}""",
                         MediaType.APPLICATION_JSON));
 
         assertThat(patreonClient.fetchIdentity("at-1").activePatron()).isFalse();
@@ -120,7 +125,7 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityTreatsMissingMembershipsAsInactive() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withSuccess("{\"data\":{\"id\":\"patreon-42\"}}", MediaType.APPLICATION_JSON));
 
         PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity("at-1");
@@ -131,7 +136,7 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityIgnoresMembershipWithoutAttributes() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withSuccess("""
                         {"data":{"id":"patreon-42"},"included":[{"type":"member"}]}""",
                         MediaType.APPLICATION_JSON));
@@ -141,11 +146,13 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityFindsActivePatronAmongSeveralMemberships() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withSuccess("""
                         {"data":{"id":"patreon-42"},
-                         "included":[{"attributes":{"patron_status":"declined_patron"}},
-                                     {"attributes":{"patron_status":"active_patron"}}]}""",
+                          "included":[{"type":"member","attributes":{"patron_status":"active_patron"},
+                                       "relationships":{"campaign":{"data":{"id":"other-campaign"}}}},
+                                      {"type":"member","attributes":{"patron_status":"active_patron"},
+                                       "relationships":{"campaign":{"data":{"id":"tramo-campaign"}}}}]}""",
                         MediaType.APPLICATION_JSON));
 
         assertThat(patreonClient.fetchIdentity("at-1").activePatron()).isTrue();
@@ -153,7 +160,7 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityRejectsResponseWithoutData() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withSuccess("{\"included\":[]}", MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> patreonClient.fetchIdentity("at-1"))
@@ -163,7 +170,7 @@ class PatreonClientTest {
 
     @Test
     void fetchIdentityWrapsUnauthorized() {
-        server.expect(requestTo("https://www.patreon.com/api/oauth2/v2/identity?include=memberships"))
+        server.expect(requestTo(IDENTITY_URL))
                 .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"errors\":[{\"code\":1}]}"));
@@ -172,5 +179,28 @@ class PatreonClientTest {
                 .isInstanceOf(InvalidTokenException.class)
                 .hasMessageContaining("Failed to fetch Patreon identity")
                 .hasMessageContaining("401");
+    }
+
+    @Test
+    void fetchIdentityDoesNotGrantSupporterForAnotherCampaign() {
+        server.expect(requestTo(IDENTITY_URL))
+                .andRespond(withSuccess("""
+                        {"data":{"id":"patreon-42"},
+                         "included":[{"type":"member","attributes":{"patron_status":"active_patron"},
+                         "relationships":{"campaign":{"data":{"id":"other-campaign"}}}}]}""",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(patreonClient.fetchIdentity("at-1").activePatron()).isFalse();
+    }
+
+    @Test
+    void fetchIdentityDoesNotGrantSupporterWhenCampaignIsMissing() {
+        server.expect(requestTo(IDENTITY_URL))
+                .andRespond(withSuccess("""
+                        {"data":{"id":"patreon-42"},
+                         "included":[{"type":"member","attributes":{"patron_status":"active_patron"}}]}""",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(patreonClient.fetchIdentity("at-1").activePatron()).isFalse();
     }
 }

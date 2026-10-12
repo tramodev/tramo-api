@@ -38,6 +38,8 @@ public class PatreonWebhookController {
     private static final Set<String> DEACTIVATION_EVENTS = Set.of("members:pledge:delete");
 
     private final String webhookSecret;
+    @Value("${app.patreon.campaign-id}")
+    private String campaignId;
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
@@ -62,6 +64,10 @@ public class PatreonWebhookController {
         if (!signatureValid(rawBody, signature)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+        if (eventType == null || (!ACTIVATION_EVENTS.contains(eventType) && !DEACTIVATION_EVENTS.contains(eventType))) {
+            log.warn("event=patreon_webhook_ignored code=UNKNOWN_EVENT");
+            return ResponseEntity.ok().build();
+        }
 
         try {
             webhookSignatureRepository.save(new PatreonWebhookSignature(signature));
@@ -70,11 +76,12 @@ public class PatreonWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        String patreonUserId = extractPatreonUserId(rawBody);
-        if (patreonUserId == null) {
-            log.warn("Patreon webhook payload missing member->user relationship, ignoring");
+        JsonNode member = extractMember(rawBody);
+        if (member == null) {
+            log.warn("event=patreon_webhook_ignored code=INVALID_MEMBER");
             return ResponseEntity.ok().build();
         }
+        String patreonUserId = member.path("relationships").path("user").path("data").path("id").asText();
 
         Optional<User> user = userRepository.findByPatreonUserId(patreonUserId);
         if (user.isEmpty()) {
@@ -85,9 +92,12 @@ public class PatreonWebhookController {
         if (DEACTIVATION_EVENTS.contains(eventType)) {
             subscriptionService.deactivateSupporterSubscription(user.get());
         } else if (ACTIVATION_EVENTS.contains(eventType)) {
-            subscriptionService.activateSupporterSubscription(user.get(), subscriptionService.findOrCreateSupporterPlan());
-        } else {
-            log.warn("event=patreon_webhook_ignored code=UNKNOWN_EVENT");
+            String patronStatus = member.path("attributes").path("patron_status").asText("");
+            if ("active_patron".equals(patronStatus)) {
+                subscriptionService.activateSupporterSubscription(user.get(), subscriptionService.findOrCreateSupporterPlan());
+            } else if ("former_patron".equals(patronStatus) || "declined_patron".equals(patronStatus)) {
+                subscriptionService.deactivateSupporterSubscription(user.get());
+            }
         }
         return ResponseEntity.ok().build();
     }
@@ -109,11 +119,16 @@ public class PatreonWebhookController {
 
     
     
-    private String extractPatreonUserId(String rawBody) {
+    private JsonNode extractMember(String rawBody) {
         try {
-            JsonNode root = objectMapper.readTree(rawBody);
-            JsonNode userId = root.path("data").path("relationships").path("user").path("data").path("id");
-            return userId.isMissingNode() || userId.isNull() ? null : userId.asText();
+            JsonNode member = objectMapper.readTree(rawBody).path("data");
+            JsonNode userId = member.path("relationships").path("user").path("data").path("id");
+            String memberCampaignId = member.path("relationships").path("campaign").path("data").path("id").asText("");
+            if (campaignId.isBlank() || !"member".equals(member.path("type").asText()) || !campaignId.equals(memberCampaignId)
+                    || !userId.isString() || userId.asText().isBlank()) {
+                return null;
+            }
+            return member;
         } catch (Exception ex) {
             return null;
         }
