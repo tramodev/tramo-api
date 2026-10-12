@@ -6,6 +6,7 @@ import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.subscription.entity.Plan;
 import com.tramo.backend.subscription.service.SubscriptionService;
+import com.tramo.backend.subscription.patreon.PatreonClient;
 import com.tramo.backend.upload.entity.UploadRecord;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.entity.User;
@@ -16,6 +17,7 @@ import org.springframework.http.MediaType;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +51,29 @@ class SubscriptionTest extends AbstractIntegrationTest {
     @Test
     void statusRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/subscription")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void patreonSyncRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/subscription/patreon/sync")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void patreonSyncActivatesVerifiedMembershipAndIsRateLimited() throws Exception {
+        User user = createUser("syncedpatron");
+        user.setPatreonUserId("patreon-sync");
+        user.setPatreonAccessToken("access-sync");
+        userRepository.save(user);
+        when(patreonClient.fetchIdentity("access-sync"))
+                .thenReturn(new PatreonClient.PatreonIdentity("patreon-sync", true));
+
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/subscription/patreon/sync").header("Authorization", bearer(user)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.supporter").value(true));
+        }
+        mockMvc.perform(post("/api/subscription/patreon/sync").header("Authorization", bearer(user)))
+                .andExpect(status().isTooManyRequests());
     }
 
     @Test

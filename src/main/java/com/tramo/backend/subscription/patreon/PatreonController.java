@@ -107,9 +107,11 @@ public class PatreonController {
         }
 
         User user;
+        boolean activePatron;
         try {
             final PatreonClient.PatreonTokens tokens = patreonClient.exchangeCode(code);
             final PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity(tokens.accessToken());
+            activePatron = identity.activePatron();
 
             user = connectToken.getUser();
             transactionTemplate.executeWithoutResult(status -> {
@@ -120,13 +122,19 @@ public class PatreonController {
 
                 if (identity.activePatron()) {
                     subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
+                } else {
+                    subscriptionService.deactivateSupporterSubscription(user);
                 }
             });
         } catch (InvalidTokenException ex) {
             return rejected("OAUTH_FAILED", ex);
         }
 
-        return redirectTo("connected");
+        if (activePatron) {
+            return redirectTo("connected");
+        }
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create("https://www.patreon.com/cw/Tramodev/membership")).build();
     }
 
     private ResponseEntity<Void> rejected(String code, Throwable failure) {

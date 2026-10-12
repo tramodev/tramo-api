@@ -3,6 +3,7 @@
 package com.tramo.backend.subscription.controller;
 
 import com.tramo.backend.subscription.dto.SubscriptionStatusDTO;
+import com.tramo.backend.subscription.patreon.PatreonMembershipService;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.user.entity.User;
 import org.springframework.http.ResponseEntity;
@@ -14,14 +15,21 @@ import org.springframework.web.bind.annotation.*;
 public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
+    private final PatreonMembershipService patreonMembershipService;
 
-    public SubscriptionController(SubscriptionService subscriptionService) {
+    public SubscriptionController(SubscriptionService subscriptionService, PatreonMembershipService patreonMembershipService) {
         this.subscriptionService = subscriptionService;
+        this.patreonMembershipService = patreonMembershipService;
     }
 
     @GetMapping
     public ResponseEntity<SubscriptionStatusDTO> status(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(subscriptionService.getStatus(user));
+    }
+
+    @PostMapping("/patreon/sync")
+    public ResponseEntity<SubscriptionStatusDTO> syncPatreon(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(patreonMembershipService.sync(user));
     }
 
     @PostMapping("/mock-upgrade")

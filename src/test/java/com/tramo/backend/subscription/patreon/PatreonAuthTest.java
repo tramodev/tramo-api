@@ -74,11 +74,14 @@ class PatreonAuthTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/auth/patreon/callback").param("code", "auth-code").param("state", state))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", containsString("patreon=connected")));
+                .andExpect(header().string("Location", "https://www.patreon.com/cw/Tramodev/membership"));
 
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.supporter").value(false));
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getPatreonUserId())
+                .isEqualTo("patreon-456");
     }
 
     @Test

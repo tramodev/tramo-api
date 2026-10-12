@@ -23,7 +23,8 @@ public class RateLimitFilter implements Filter {
 
     private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "DELETE", "PATCH");
     private static final Set<String> TIGHT_TIER_PATHS = Set.of(
-            "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign"
+            "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign",
+            "/api/subscription/patreon/sync"
     );
 
     private final RateLimiterService rateLimiterService;
@@ -133,4 +134,3 @@ public class RateLimitFilter implements Filter {
         return false;
     }
 }
-
