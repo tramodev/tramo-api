@@ -10,6 +10,8 @@ import lombok.Getter;
 public class SubscriptionStatusDTO {
     private boolean supporter;
     private long storageUsedBytes;
+    private long storageImageBytes;
+    private long storageTextBytes;
     private long storageQuotaBytes;
     private long publishesPerWeek;  
 }

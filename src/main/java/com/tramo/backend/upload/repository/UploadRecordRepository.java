@@ -32,7 +32,8 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
     @Query("SELECT COALESCE(SUM(u.bytes), 0) FROM UploadRecord u WHERE u.userId = :userId")
     long sumBytesByUserId(@Param("userId") Long userId);
 
-    @Query(value = "SELECT (SELECT COALESCE(SUM(bytes), 0) FROM upload_record WHERE user_id = :userId) + " +
+    @Query(value = "SELECT (SELECT COALESCE(SUM(bytes), 0) FROM upload_record WHERE user_id = :userId) AS imageBytes, " +
+            "(" +
             "(SELECT COALESCE(SUM(octet_length(c.content)), 0) FROM item_content c WHERE EXISTS " +
             "(SELECT 1 FROM item i WHERE i.content_id = c.id AND (EXISTS " +
             "(SELECT 1 FROM project p WHERE p.id = i.project_id AND p.user_id = :userId) OR EXISTS " +
@@ -41,8 +42,18 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
             "(SELECT COALESCE(SUM(octet_length(t.description)), 0) FROM trail t JOIN project p ON p.id = t.project_id " +
             "WHERE p.user_id = :userId) + " +
             "(SELECT COALESCE(SUM(octet_length(s.content)), 0) FROM project_snapshot s JOIN project p ON p.id = s.project_id " +
-            "WHERE p.user_id = :userId)", nativeQuery = true)
-    long sumStorageBytesByUserId(@Param("userId") Long userId);
+            "WHERE p.user_id = :userId)) AS textBytes", nativeQuery = true)
+    StorageUsage getStorageUsageByUserId(@Param("userId") Long userId);
+
+    default long sumStorageBytesByUserId(Long userId) {
+        StorageUsage usage = getStorageUsageByUserId(userId);
+        return usage.getImageBytes() + usage.getTextBytes();
+    }
+
+    interface StorageUsage {
+        long getImageBytes();
+        long getTextBytes();
+    }
 
     @Query("SELECT COALESCE(SUM(u.bytes), 0) FROM UploadRecord u WHERE u.projectId = :projectId")
     long sumBytesByProjectId(@Param("projectId") Long projectId);

@@ -81,10 +81,12 @@ public class SubscriptionService {
 
     public SubscriptionStatusDTO getStatus(User user) {
         boolean supporter = isSupporter(user);
-        long used = uploadRecordRepository.sumStorageBytesByUserId(user.getId());
+        var usage = uploadRecordRepository.getStorageUsageByUserId(user.getId());
         return new SubscriptionStatusDTO(
                 supporter,
-                used,
+                usage.getImageBytes() + usage.getTextBytes(),
+                usage.getImageBytes(),
+                usage.getTextBytes(),
                 supporter ? supporterStorageBytes : freeStorageBytes,
                 -1);
     }

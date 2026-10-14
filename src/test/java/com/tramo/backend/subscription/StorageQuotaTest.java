@@ -51,7 +51,9 @@ class StorageQuotaTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"));
         save(user, note, "é".repeat(5)).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.storageUsedBytes").value(8192));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.storageUsedBytes").value(8192))
+                .andExpect(jsonPath("$.storageImageBytes").value(8182))
+                .andExpect(jsonPath("$.storageTextBytes").value(10));
         save(user, note, "a").andExpect(status().isNoContent());
     }
 
@@ -81,6 +83,10 @@ class StorageQuotaTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         Long snapshotBytes = jdbcTemplate.queryForObject("SELECT SUM(octet_length(content)) FROM project_snapshot", Long.class);
         assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(2 + snapshotBytes);
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageImageBytes").value(0))
+                .andExpect(jsonPath("$.storageTextBytes").value(2 + snapshotBytes));
     }
 
     @Test
@@ -195,6 +201,10 @@ class StorageQuotaTest extends AbstractIntegrationTest {
         long trail = postForId(user, "/api/project/" + pid(project) + "/trail",
                 "{\"title\":\"Trail\",\"description\":\"" + "é".repeat(5) + "\"}");
         assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(8192);
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageImageBytes").value(8182))
+                .andExpect(jsonPath("$.storageTextBytes").value(10));
         save(user, note(user, project), "a").andExpect(status().isTooManyRequests());
         mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
                         .contentType("application/json").content("{\"description\":\"a\"}"))
@@ -273,5 +283,20 @@ class StorageQuotaTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(forker)))
                 .andExpect(status().isTooManyRequests());
         assertThat(projectRepository.findByOwnerId(forker.getId())).isEmpty();
+    }
+
+    @Test
+    void storageBreakdownIsEmptyForANewAccountAndDoesNotIncludeOtherUsers() throws Exception {
+        User user = createUser("emptybreakdown");
+        User other = createUser("otherbreakdown");
+        Project project = createProject(other, "Other storage", "private");
+        reserve(other, 100);
+        save(other, note(other, project), "text").andExpect(status().isNoContent());
+        postForId(other, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\",\"description\":\"description\"}");
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageUsedBytes").value(0))
+                .andExpect(jsonPath("$.storageImageBytes").value(0))
+                .andExpect(jsonPath("$.storageTextBytes").value(0));
     }
 }
