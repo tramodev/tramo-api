@@ -3,6 +3,7 @@
 package com.tramo.backend.moderation.service;
 
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
+import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.comment.entity.Comment;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.comment.service.CommentService;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Service;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 @Service
@@ -45,6 +47,7 @@ public class ModerationService {
     private final UserRepository userRepository;
     private final ProjectIdCodec projectIdCodec;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final NotificationService notifications;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
                               CommentReportRepository commentReportRepository,
@@ -54,7 +57,7 @@ public class ModerationService {
                               CommentService commentService,
                               UserRepository userRepository,
                               ProjectIdCodec projectIdCodec,
-                              RefreshTokenRepository refreshTokenRepository) {
+                              RefreshTokenRepository refreshTokenRepository, NotificationService notifications) {
         this.projectReportRepository = projectReportRepository;
         this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
@@ -64,6 +67,7 @@ public class ModerationService {
         this.userRepository = userRepository;
         this.projectIdCodec = projectIdCodec;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -183,8 +187,10 @@ public class ModerationService {
             throw new AccessDeniedException("Cannot ban yourself");
         }
         target.setBanned(true);
+        target.setSessionVersion(UUID.randomUUID());
         userRepository.save(target);
         refreshTokenRepository.deleteByUserId(userId);
+        notifications.revokeSessionsAfterCommit(userId);
         logAction(admin, "BAN", "USER", userId, reason);
     }
 

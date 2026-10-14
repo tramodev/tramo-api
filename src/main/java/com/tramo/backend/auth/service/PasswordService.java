@@ -11,6 +11,7 @@ import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
+import com.tramo.backend.notification.service.NotificationService;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,17 +33,19 @@ public class PasswordService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final EmailService emailService;
     private final IdentityRateLimiter identityRateLimiter;
+    private final NotificationService notifications;
 
     public PasswordService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                            PasswordResetTokenRepository passwordResetTokenRepository,
                            RefreshTokenRepository refreshTokenRepository, EmailService emailService,
-                           IdentityRateLimiter identityRateLimiter) {
+                           IdentityRateLimiter identityRateLimiter, NotificationService notifications) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.emailService = emailService;
         this.identityRateLimiter = identityRateLimiter;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -75,6 +78,7 @@ public class PasswordService {
         passwordResetTokenRepository.delete(resetToken);
 
         refreshTokenRepository.deleteByUserId(user.getId());
+        notifications.revokeSessionsAfterCommit(user.getId());
     }
 
     @Transactional
@@ -88,6 +92,7 @@ public class PasswordService {
         user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);
         refreshTokenRepository.deleteByUserId(user.getId());
+        notifications.revokeSessionsAfterCommit(user.getId());
     }
 
     private String createPasswordResetToken(User user) {

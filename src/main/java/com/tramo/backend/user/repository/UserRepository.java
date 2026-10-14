@@ -12,9 +12,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.UUID;
 
 
 public interface UserRepository extends JpaRepository<User, Long> {
+    @Query("select u.id as id, u.sessionVersion as sessionVersion, u.banned as banned from User u where u.id in :ids")
+    List<SessionState> findSessionStates(@Param("ids") Collection<Long> ids);
+
+    interface SessionState {
+        Long getId();
+        UUID getSessionVersion();
+        boolean getBanned();
+    }
+
     @Query(value = "SELECT id FROM users WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Long> lockStorageById(@Param("id") Long id);
     Optional<User> findByUsernameIgnoreCase(String username);

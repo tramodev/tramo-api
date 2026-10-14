@@ -7,10 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.notification.service.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -19,6 +22,28 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class QueryCountTest extends AbstractIntegrationTest {
+    @Autowired NotificationService notifications;
+
+    @Test
+    void heartbeatSessionValidationUsesOneQueryRegardlessOfConnectedUsers() throws Exception {
+        var users = new ArrayList<User>();
+        try {
+            User first = createUser("qcssefirst");
+            users.add(first);
+            notifications.subscribe(first);
+            long small = queryCount(notifications::sendHeartbeat);
+            for (int i = 0; i < 5; i++) {
+                User user = createUser("qcsse" + i);
+                users.add(user);
+                notifications.subscribe(user);
+            }
+            long large = queryCount(notifications::sendHeartbeat);
+            assertThat(small).isEqualTo(1);
+            assertThat(large).isEqualTo(small);
+        } finally {
+            users.forEach(user -> notifications.revokeSessionsAfterCommit(user.getId()));
+        }
+    }
 
     @Test
     void subscriptionStorageQueryCountDoesNotScaleWithNotesOrSnapshots() throws Exception {

@@ -4,6 +4,7 @@ package com.tramo.backend.notification.service;
 
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.common.Pagination;
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.NotificationTypes;
@@ -18,6 +19,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.service.PrivacyPolicy;
 import com.tramo.backend.user.service.UserPreferencesService;
+import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -43,17 +49,21 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final ProjectIdCodec projectIdCodec;
-    private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private record Connection(SseEmitter emitter, UUID sessionVersion) {}
+
+    private final Map<Long, CopyOnWriteArrayList<Connection>> emitters = new ConcurrentHashMap<>();
     private final long sseTimeoutMs;
     private final PrivacyPolicy privacyPolicy;
+    private final UserRepository userRepository;
 
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
                                 @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs,
-                                PrivacyPolicy privacyPolicy) {
+                                PrivacyPolicy privacyPolicy, UserRepository userRepository) {
         this.notificationRepository = notificationRepository;
         this.projectIdCodec = projectIdCodec;
         this.sseTimeoutMs = sseTimeoutMs;
         this.privacyPolicy = privacyPolicy;
+        this.userRepository = userRepository;
     }
 
     @Scheduled(cron = "0 30 3 * * *")
@@ -83,12 +93,13 @@ public class NotificationService {
 
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
+        Connection connection = new Connection(emitter, user.getSessionVersion());
         synchronized (emitters) {
             if (emitters.getOrDefault(user.getId(), new CopyOnWriteArrayList<>()).size() >= 5
                     || emitters.values().stream().mapToInt(List::size).sum() >= 1000) {
                 throw new LimitExceededException("Too many notification connections. Close another tab and retry.");
             }
-            emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>()).add(emitter);
+            emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>()).add(connection);
         }
 
         Runnable cleanup = () -> removeEmitter(user.getId(), emitter);
@@ -112,7 +123,7 @@ public class NotificationService {
     private void removeEmitter(Long userId, SseEmitter emitter) {
         synchronized (emitters) {
             emitters.computeIfPresent(userId, (id, list) -> {
-                list.remove(emitter);
+                list.removeIf(connection -> connection.emitter() == emitter);
                 return list.isEmpty() ? null : list;
             });
         }
@@ -132,28 +143,76 @@ public class NotificationService {
     }
 
     private void sendUnreadCount(User recipient) {
-        CopyOnWriteArrayList<SseEmitter> userEmitters = emitters.get(recipient.getId());
+        CopyOnWriteArrayList<Connection> userEmitters = emitters.get(recipient.getId());
         if (userEmitters == null || userEmitters.isEmpty()) return;
 
-        UnreadCountDTO payload = new UnreadCountDTO(getUnreadCount(recipient));
-        sendToAll(recipient.getId(), userEmitters, SseEmitter.event().name("unread-count").data(payload));
+        try {
+            UserRepository.SessionState state = userRepository.findSessionStates(List.of(recipient.getId()))
+                    .stream().findFirst().orElse(null);
+            UnreadCountDTO payload = new UnreadCountDTO(getUnreadCount(recipient));
+            sendToAll(recipient.getId(), userEmitters, state, SseEmitter.event().name("unread-count").data(payload));
+        } catch (Exception failure) {
+            SafeLog.failure(log, "notification_delivery_failed", "INTERNAL_ERROR", failure);
+        }
     }
 
     @Scheduled(fixedRateString = "${app.notifications.sse-heartbeat-ms:25000}")
     public void sendHeartbeat() {
-        emitters.forEach((id, list) -> sendToAll(id, list, SseEmitter.event().comment("keep-alive")));
+        if (emitters.isEmpty()) return;
+        try {
+            Set<Long> ids = Set.copyOf(emitters.keySet());
+            Map<Long, UserRepository.SessionState> states = userRepository.findSessionStates(ids).stream()
+                    .collect(Collectors.toMap(UserRepository.SessionState::getId, Function.identity()));
+            for (Long id : ids) {
+                var connections = emitters.get(id);
+                if (connections != null) sendToAll(id, connections, states.get(id), SseEmitter.event().comment("keep-alive"));
+            }
+        } catch (Exception failure) {
+            SafeLog.failure(log, "notification_heartbeat_failed", "INTERNAL_ERROR", failure);
+        }
     }
 
-    private void sendToAll(Long userId, CopyOnWriteArrayList<SseEmitter> userEmitters, SseEmitter.SseEventBuilder event) {
-        for (SseEmitter emitter : userEmitters) {
+    public void revokeSessionsAfterCommit(Long userId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    closeConnections(userId);
+                }
+            });
+        } else {
+            closeConnections(userId);
+        }
+    }
+
+    private void closeConnections(Long userId) {
+        List<Connection> connections;
+        synchronized (emitters) {
+            connections = emitters.remove(userId);
+        }
+        if (connections != null) connections.forEach(connection -> closeEmitter(userId, connection.emitter()));
+    }
+
+    private void closeEmitter(Long userId, SseEmitter emitter) {
+        removeEmitter(userId, emitter);
+        try {
+            emitter.complete();
+        } catch (Exception responseAlreadyTornDown) {
+        }
+    }
+
+    private void sendToAll(Long userId, CopyOnWriteArrayList<Connection> userEmitters,
+                           UserRepository.SessionState state, SseEmitter.SseEventBuilder event) {
+        for (Connection connection : userEmitters) {
+            SseEmitter emitter = connection.emitter();
+            if (state == null || state.getBanned() || !Objects.equals(state.getSessionVersion(), connection.sessionVersion())) {
+                closeEmitter(userId, emitter);
+                continue;
+            }
             try {
                 emitter.send(event);
             } catch (Exception subscriberIsGone) {
-                removeEmitter(userId, emitter);
-                try {
-                    emitter.complete();
-                } catch (Exception responseAlreadyTornDown) {
-                }
+                closeEmitter(userId, emitter);
             }
         }
     }

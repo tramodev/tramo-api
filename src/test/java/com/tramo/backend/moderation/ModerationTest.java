@@ -174,6 +174,7 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findById(target.getId()).orElseThrow().isBanned()).isTrue();
+        assertThat(userRepository.findById(target.getId()).orElseThrow().getSessionVersion()).isNotNull();
         assertThat(moderationLogRepository.findAll())
                 .anyMatch(l -> "BAN".equals(l.getAction()) && l.getTargetId().equals(target.getId()));
 
@@ -182,6 +183,8 @@ class ModerationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findById(target.getId()).orElseThrow().isBanned()).isFalse();
+        mockMvc.perform(get("/api/profile/me").header("Authorization", bearer(target)))
+                .andExpect(status().isUnauthorized());
         assertThat(moderationLogRepository.findAll())
                 .anyMatch(l -> "UNBAN".equals(l.getAction()) && l.getTargetId().equals(target.getId()));
     }
