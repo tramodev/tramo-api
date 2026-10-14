@@ -5,6 +5,8 @@ package com.tramo.backend.trail.service;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.trail.dto.TrailRequestDTO;
 import com.tramo.backend.trail.dto.TrailResponseDTO;
@@ -34,17 +36,19 @@ public class TrailService {
     private final AccessGuard accessGuard;
     private final ProjectIdCodec projectIdCodec;
     private final ImageDeletionQueue imageDeletionQueue;
+    private final SubscriptionService subscriptions;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
                         ItemRepository itemRepository,
                         AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
-                        ImageDeletionQueue imageDeletionQueue) {
+                        ImageDeletionQueue imageDeletionQueue, SubscriptionService subscriptions) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
         this.accessGuard = accessGuard;
         this.projectIdCodec = projectIdCodec;
         this.imageDeletionQueue = imageDeletionQueue;
+        this.subscriptions = subscriptions;
     }
 
     @Transactional
@@ -53,6 +57,10 @@ public class TrailService {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Project project = accessGuard.getOwnedProject(projectId, requester);
+        ContentLimits.assertTrailDescription(request.getDescription());
+        subscriptions.lockStorage(requester);
+        long bytes = ContentLimits.bytes(request.getDescription());
+        if (bytes > 0) subscriptions.assertUploadAllowed(requester, bytes, subscriptions.isSupporter(requester));
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
         trail.setDescription(request.getDescription());
@@ -76,11 +84,15 @@ public class TrailService {
 
     @Transactional
     public TrailResponseDTO update(Long id, TrailRequestDTO request, User requester) {
+        ContentLimits.assertTrailDescription(request.getDescription());
+        subscriptions.lockStorage(requester);
         Trail trail = getOwnedTrail(id, requester);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             trail.setTitle(request.getTitle());
         }
         if (request.getDescription() != null) {
+            long growth = (long) ContentLimits.bytes(request.getDescription()) - ContentLimits.bytes(trail.getDescription());
+            if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
             trail.setDescription(request.getDescription());
         }
         if (request.getVisibility() != null) {

@@ -132,8 +132,10 @@ public class ProjectForkService {
         Map<Long, Item> itemCopies = new HashMap<>();
 
         for (Trail sourceTrail : trailRepository.findByProjectId(sourceProjectId)) {
+            ContentLimits.assertTrailDescription(sourceTrail.getDescription());
             Trail trailCopy = new Trail();
             trailCopy.setTitle(sourceTrail.getTitle());
+            trailCopy.setDescription(sourceTrail.getDescription());
             trailCopy.setVisibility(sourceTrail.getVisibility());
             trailCopy.setCreationDate(new Date());
             trailCopy.setModifiedDate(new Date());
@@ -184,6 +186,7 @@ public class ProjectForkService {
         Map<Long, Item> itemCopies = new HashMap<>();
 
         for (ProjectSnapshotData.TrailData trailData : data.trails()) {
+            ContentLimits.assertTrailDescription(trailData.description());
             Trail trailCopy = new Trail();
             trailCopy.setTitle(trailData.title());
             trailCopy.setDescription(trailData.description());

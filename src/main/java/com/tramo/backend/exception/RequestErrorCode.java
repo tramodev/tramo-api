@@ -58,6 +58,7 @@ public enum RequestErrorCode {
     COMMENT_REQUIRED("Comment cannot be empty"),
     THUMBNAIL_TYPE_INVALID("Invalid thumbnail type"),
     BIO_SIZE_INVALID("Bio must be at most 500 characters"),
+    TRAIL_DESCRIPTION_SIZE_INVALID("Trail description must be at most 10000 characters"),
     LOCATION_SIZE_INVALID("Location must be at most 100 characters"),
     WEBSITE_SIZE_INVALID("Website must be at most 200 characters"),
     PROFILE_VISIBILITY_INVALID("profileVisibility must be 'public' or 'private'"),

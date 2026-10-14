@@ -183,4 +183,95 @@ class StorageQuotaTest extends AbstractIntegrationTest {
         publish.backfillMissingPublishSnapshots();
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM project_snapshot", Integer.class)).isZero();
     }
+
+    @Test
+    void trailDescriptionsUseUtf8BytesAndShareTheQuotaWithNotesAndUploads() throws Exception {
+        User user = createUser("trailquota");
+        Project project = createProject(user, "Trail quota", "private");
+        reserve(user, 8192 - 10);
+        mockMvc.perform(post("/api/project/" + pid(project) + "/trail").header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"title\":\"Trail\",\"description\":\"" + "é".repeat(6) + "\"}"))
+                .andExpect(status().isTooManyRequests());
+        long trail = postForId(user, "/api/project/" + pid(project) + "/trail",
+                "{\"title\":\"Trail\",\"description\":\"" + "é".repeat(5) + "\"}");
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(8192);
+        save(user, note(user, project), "a").andExpect(status().isTooManyRequests());
+        mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"description\":\"a\"}"))
+                .andExpect(status().isOk());
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(8183);
+        mockMvc.perform(delete("/api/trail/" + trail).header("Authorization", bearer(user)))
+                .andExpect(status().isNoContent());
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(8182);
+    }
+
+    @Test
+    void oversizedTrailDescriptionsAreRejectedOnCreateAndUpdateWithoutChangingData() throws Exception {
+        User user = createUser("traildescriptionlimit");
+        Project project = createProject(user, "Trail limit", "private");
+        String oversized = "a".repeat(10001);
+        mockMvc.perform(post("/api/project/" + pid(project) + "/trail").header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"title\":\"Trail\",\"description\":\"" + oversized + "\"}"))
+                .andExpect(status().isBadRequest());
+        long trail = postForId(user, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\",\"description\":\"before\"}");
+        mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"description\":\"" + oversized + "\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/trail/" + trail).header("Authorization", bearer(user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.description").value("before"));
+    }
+
+    @Test
+    void historicalOverQuotaTrailDescriptionsCanBeReducedButNotIncreased() throws Exception {
+        User user = createUser("historicaltrailquota");
+        Project project = createProject(user, "Legacy trail", "private");
+        long trail = postForId(user, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\"}");
+        jdbcTemplate.update("UPDATE trail SET description = ? WHERE id = ?", "a".repeat(11000), trail);
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(11000);
+        mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"description\":\"before\"}"))
+                .andExpect(status().isOk());
+        reserve(user, 8192);
+        mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"description\":\"short\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/trail/" + trail).header("Authorization", bearer(user))
+                        .contentType("application/json").content("{\"description\":\"longer\"}"))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void concurrentTrailCreatesCannotSpendTheSameRemainingQuota() throws Exception {
+        User user = createUser("concurrenttrailquota");
+        Project project = createProject(user, "Concurrent trails", "private");
+        reserve(user, 8192 - 10);
+        CountDownLatch start = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        java.util.concurrent.Callable<Integer> create = () -> {
+            start.await();
+            return mockMvc.perform(post("/api/project/" + pid(project) + "/trail").header("Authorization", bearer(user))
+                            .contentType("application/json").content("{\"title\":\"Trail\",\"description\":\"1234567\"}"))
+                    .andReturn().getResponse().getStatus();
+        };
+        try {
+            var first = executor.submit(create);
+            var second = executor.submit(create);
+            start.countDown();
+            assertThat(List.of(first.get(10, java.util.concurrent.TimeUnit.SECONDS), second.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 429);
+            assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(8189);
+        } finally { executor.shutdownNow(); }
+    }
+
+    @Test
+    void forkedTrailDescriptionsCannotBypassQuota() throws Exception {
+        User owner = createUser("trailforkowner");
+        User forker = createUser("trailforkreader");
+        Project project = createProject(owner, "Trail fork", "unlisted");
+        postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\",\"description\":\"description\"}");
+        reserve(forker, 8192 - 1);
+        mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(forker)))
+                .andExpect(status().isTooManyRequests());
+        assertThat(projectRepository.findByOwnerId(forker.getId())).isEmpty();
+    }
 }

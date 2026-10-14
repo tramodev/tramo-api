@@ -38,6 +38,8 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
             "(SELECT 1 FROM project p WHERE p.id = i.project_id AND p.user_id = :userId) OR EXISTS " +
             "(SELECT 1 FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id " +
             "WHERE ti.item_id = i.id AND p.user_id = :userId)))) + " +
+            "(SELECT COALESCE(SUM(octet_length(t.description)), 0) FROM trail t JOIN project p ON p.id = t.project_id " +
+            "WHERE p.user_id = :userId) + " +
             "(SELECT COALESCE(SUM(octet_length(s.content)), 0) FROM project_snapshot s JOIN project p ON p.id = s.project_id " +
             "WHERE p.user_id = :userId)", nativeQuery = true)
     long sumStorageBytesByUserId(@Param("userId") Long userId);
