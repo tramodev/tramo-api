@@ -24,8 +24,8 @@ public class RefreshToken {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(unique = true, nullable = false)
-    private String token;
+    @Column(unique = true, nullable = false, length = 64)
+    private String tokenHash;
 
     @ManyToOne(optional = false)
     private User user;
@@ -35,7 +35,5 @@ public class RefreshToken {
     private boolean revoked;
 
     private Instant revokedAt;
-
-    private String replacementToken;
 
 }

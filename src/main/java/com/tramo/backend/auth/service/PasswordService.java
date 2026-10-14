@@ -53,17 +53,17 @@ public class PasswordService {
 
         userRepository.findByEmail(email).ifPresent(user -> {
             passwordResetTokenRepository.deleteByUserId(user.getId());
-            PasswordResetToken token = createPasswordResetToken(user);
-            emailService.sendPasswordResetEmail(user, token.getToken());
+            String token = createPasswordResetToken(user);
+            emailService.sendPasswordResetEmail(user, token);
         });
     }
 
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public void resetPassword(String token, String newPassword) {
-        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByTokenHashForUpdate(OpaqueToken.hash(token))
                 .orElseThrow(() -> new InvalidTokenException("Invalid or expired reset link"));
 
-        if (resetToken.getExpiresAt().isBefore(Instant.now())) {
+        if (!resetToken.getExpiresAt().isAfter(Instant.now())) {
             passwordResetTokenRepository.delete(resetToken);
             throw new InvalidTokenException("Invalid or expired reset link");
         }
@@ -90,12 +90,14 @@ public class PasswordService {
         refreshTokenRepository.deleteByUserId(user.getId());
     }
 
-    private PasswordResetToken createPasswordResetToken(User user) {
+    private String createPasswordResetToken(User user) {
+        String rawToken = OpaqueToken.generate();
         PasswordResetToken token = new PasswordResetToken();
         token.setUser(user);
-        token.setToken(UUID.randomUUID().toString());
+        token.setTokenHash(OpaqueToken.hash(rawToken));
         token.setExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
-        return passwordResetTokenRepository.save(token);
+        passwordResetTokenRepository.save(token);
+        return rawToken;
     }
 
     @Scheduled(cron = "0 0 3 * * *")

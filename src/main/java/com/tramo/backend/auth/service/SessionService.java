@@ -21,13 +21,10 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
 
 @Service
 public class SessionService {
-    private static final Duration REFRESH_RETRY_WINDOW = Duration.ofSeconds(5);
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
     private final UserRepository userRepository;
@@ -49,16 +46,18 @@ public class SessionService {
 
     public AuthResponse issueSession(User user) {
         String accessToken = jwtService.getToken(user);
-        RefreshToken refreshToken = createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken.getToken(), user.getUsername(), user.getBirthDate() == null);
+        String refreshToken = createRefreshToken(user);
+        return new AuthResponse(accessToken, refreshToken, user.getUsername(), user.getBirthDate() == null);
     }
 
-    public RefreshToken createRefreshToken(User user) {
+    private String createRefreshToken(User user) {
+        String token = OpaqueToken.generate();
         RefreshToken rt = new RefreshToken();
         rt.setUser(user);
-        rt.setToken(UUID.randomUUID().toString());
+        rt.setTokenHash(OpaqueToken.hash(token));
         rt.setExpiresAt(Instant.now().plus(30, ChronoUnit.DAYS));
-        return refreshTokenRepository.save(rt);
+        refreshTokenRepository.save(rt);
+        return token;
     }
 
     public AuthResponse login(LoginRequestDTO request) {
@@ -82,7 +81,7 @@ public class SessionService {
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public AuthResponse refresh(RefreshTokenRequestDTO request) {
         RefreshToken refreshToken = refreshTokenRepository
-                .findByTokenForUpdate(request.getRefreshToken())
+                .findByTokenHashForUpdate(OpaqueToken.hash(request.getRefreshToken()))
                 .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
 
         Instant now = Instant.now();
@@ -96,15 +95,6 @@ public class SessionService {
         }
 
         if (refreshToken.isRevoked()) {
-            if (refreshToken.getRevokedAt() != null
-                    && now.isBefore(refreshToken.getRevokedAt().plus(REFRESH_RETRY_WINDOW))) {
-                RefreshToken replacement = refreshTokenRepository
-                        .findByTokenForUpdate(refreshToken.getReplacementToken())
-                        .filter(token -> !token.isRevoked() && token.getExpiresAt().isAfter(Instant.now()))
-                        .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
-                return new AuthResponse(jwtService.getToken(user), replacement.getToken(),
-                        user.getUsername(), user.getBirthDate() == null);
-            }
             refreshTokenRepository.deleteByUserId(user.getId());
             throw new InvalidTokenException("Invalid refresh token");
         }
@@ -112,14 +102,13 @@ public class SessionService {
         AuthResponse response = issueSession(user);
         refreshToken.setRevoked(true);
         refreshToken.setRevokedAt(now);
-        refreshToken.setReplacementToken(response.getRefreshToken());
         refreshTokenRepository.save(refreshToken);
         return response;
     }
 
     @Transactional
     public void logout(RefreshTokenRequestDTO request) {
-        refreshTokenRepository.deleteByToken(request.getRefreshToken());
+        refreshTokenRepository.deleteByTokenHash(OpaqueToken.hash(request.getRefreshToken()));
     }
 
     @Scheduled(cron = "0 0 3 * * *")

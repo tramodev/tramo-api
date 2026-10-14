@@ -104,12 +104,12 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(@RequestBody RefreshTokenRequestDTO request) {
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequestDTO request) {
         return ResponseEntity.ok(sessionService.refresh(request));
     }
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
-            @RequestBody RefreshTokenRequestDTO request
+            @Valid @RequestBody RefreshTokenRequestDTO request
     ) {
         sessionService.logout(request);
         return ResponseEntity.ok().build();

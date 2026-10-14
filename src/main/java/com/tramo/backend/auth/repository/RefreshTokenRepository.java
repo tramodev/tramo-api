@@ -18,15 +18,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
-    Optional<RefreshToken> findByToken(String token);
+    Optional<RefreshToken> findByTokenHash(String tokenHash);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select t from RefreshToken t where t.token = :token")
-    Optional<RefreshToken> findByTokenForUpdate(@Param("token") String token);
+    @Query("select t from RefreshToken t where t.tokenHash = :tokenHash")
+    Optional<RefreshToken> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);
 
     @Modifying(flushAutomatically = true)
-    @Query("delete from RefreshToken t where t.token = :token")
-    void deleteByToken(@Param("token") String token);
+    @Query("delete from RefreshToken t where t.tokenHash = :tokenHash")
+    void deleteByTokenHash(@Param("tokenHash") String tokenHash);
 
     @Modifying(flushAutomatically = true)
     @Query("delete from RefreshToken t where t.user.id = :userId")

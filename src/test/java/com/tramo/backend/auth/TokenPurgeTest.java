@@ -11,6 +11,7 @@ import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.service.AgeGateService;
 import com.tramo.backend.auth.service.PasswordService;
+import com.tramo.backend.auth.service.OpaqueToken;
 import com.tramo.backend.auth.service.RegistrationService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
@@ -78,13 +79,13 @@ class TokenPurgeTest extends AbstractIntegrationTest {
 
         PasswordResetToken expiredReset = new PasswordResetToken();
         expiredReset.setUser(user);
-        expiredReset.setToken(UUID.randomUUID().toString());
+        expiredReset.setTokenHash(OpaqueToken.hash(OpaqueToken.generate()));
         expiredReset.setExpiresAt(Instant.now().minus(1, ChronoUnit.HOURS));
         passwordResetTokenRepository.save(expiredReset);
 
         PasswordResetToken liveReset = new PasswordResetToken();
         liveReset.setUser(user);
-        liveReset.setToken(UUID.randomUUID().toString());
+        liveReset.setTokenHash(OpaqueToken.hash(OpaqueToken.generate()));
         liveReset.setExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
         passwordResetTokenRepository.save(liveReset);
 
@@ -93,7 +94,7 @@ class TokenPurgeTest extends AbstractIntegrationTest {
 
         assertThat(emailVerificationTokenRepository.findByToken(expiredVerification.getToken())).isEmpty();
         assertThat(emailVerificationTokenRepository.findByToken(liveVerification.getToken())).isPresent();
-        assertThat(passwordResetTokenRepository.findByToken(expiredReset.getToken())).isEmpty();
-        assertThat(passwordResetTokenRepository.findByToken(liveReset.getToken())).isPresent();
+        assertThat(passwordResetTokenRepository.findByTokenHash(expiredReset.getTokenHash())).isEmpty();
+        assertThat(passwordResetTokenRepository.findByTokenHash(liveReset.getTokenHash())).isPresent();
     }
 }

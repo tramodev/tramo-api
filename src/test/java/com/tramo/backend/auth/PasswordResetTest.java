@@ -7,15 +7,21 @@ import com.tramo.backend.auth.entity.PasswordResetToken;
 import com.tramo.backend.auth.entity.RefreshToken;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
+import com.tramo.backend.auth.service.OpaqueToken;
+import com.tramo.backend.auth.service.PasswordService;
+import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,12 +41,17 @@ class PasswordResetTest extends AbstractIntegrationTest {
     @Autowired
     RefreshTokenRepository refreshTokenRepository;
 
-    private PasswordResetToken issueResetToken(User user, Instant expiresAt) {
+    @Autowired
+    PasswordService passwordService;
+
+    private String issueResetToken(User user, Instant expiresAt) {
+        String rawToken = OpaqueToken.generate();
         PasswordResetToken token = new PasswordResetToken();
         token.setUser(user);
-        token.setToken(UUID.randomUUID().toString());
+        token.setTokenHash(OpaqueToken.hash(rawToken));
         token.setExpiresAt(expiresAt);
-        return passwordResetTokenRepository.save(token);
+        passwordResetTokenRepository.save(token);
+        return rawToken;
     }
 
     private ResultActions resetPassword(String token, String newPassword) throws Exception {
@@ -71,7 +82,13 @@ class PasswordResetTest extends AbstractIntegrationTest {
         assertThat(passwordResetTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
-        verify(emailService).sendPasswordResetEmail(any(User.class), anyString());
+        ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendPasswordResetEmail(any(User.class), token.capture());
+        PasswordResetToken stored = passwordResetTokenRepository.findAll().get(0);
+        assertThat(stored.getTokenHash()).isEqualTo(OpaqueToken.hash(token.getValue()))
+                .isNotEqualTo(token.getValue());
+        resetPassword(stored.getTokenHash(), "NewPassw0rd!").andExpect(status().isUnauthorized());
+        resetPassword(token.getValue(), "NewPassw0rd!").andExpect(status().isNoContent());
     }
 
     @Test
@@ -112,8 +129,8 @@ class PasswordResetTest extends AbstractIntegrationTest {
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .isNotEmpty();
 
-        PasswordResetToken token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
-        resetPassword(token.getToken(), "NewPassw0rd!").andExpect(status().isNoContent());
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        resetPassword(token, "NewPassw0rd!").andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isUnauthorized());
@@ -127,7 +144,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
         assertThat(refreshTokenRepository.findAll())
                 .filteredOn((RefreshToken t) -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
-        assertThat(passwordResetTokenRepository.findByToken(token.getToken())).isEmpty();
+        assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isEmpty();
     }
 
     @Test
@@ -139,30 +156,61 @@ class PasswordResetTest extends AbstractIntegrationTest {
     @Test
     void resetPasswordRejectsExpiredTokenAndDeletesIt() throws Exception {
         User user = createUser("slowpoke");
-        PasswordResetToken token = issueResetToken(user, Instant.now().minus(1, ChronoUnit.MINUTES));
+        String token = issueResetToken(user, Instant.now().minus(1, ChronoUnit.MINUTES));
 
-        resetPassword(token.getToken(), "NewPassw0rd!")
+        resetPassword(token, "NewPassw0rd!")
                 .andExpect(status().isUnauthorized());
 
-        assertThat(passwordResetTokenRepository.findByToken(token.getToken())).isEmpty();
+        assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isEmpty();
         login("slowpoke", "Passw0rd123!").andExpect(status().isOk());
     }
 
     @Test
     void resetPasswordTokenIsSingleUse() throws Exception {
         User user = createUser("oneshot");
-        PasswordResetToken token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
 
-        resetPassword(token.getToken(), "NewPassw0rd!").andExpect(status().isNoContent());
-        resetPassword(token.getToken(), "OtherPassw0rd!").andExpect(status().isUnauthorized());
+        resetPassword(token, "NewPassw0rd!").andExpect(status().isNoContent());
+        resetPassword(token, "OtherPassw0rd!").andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentResetsConsumeTokenOnlyOnce() throws Exception {
+        User user = createUser("concurrentreset");
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        java.util.concurrent.Callable<Boolean> call = () -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
+            try {
+                passwordService.resetPassword(token, "NewPassw0rd!");
+                return true;
+            } catch (InvalidTokenException ex) {
+                return false;
+            }
+        };
+        try {
+            var first = executor.submit(call);
+            var second = executor.submit(call);
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            assertThat(passwordResetTokenRepository.findAll()).isEmpty();
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
     void resetPasswordEnforcesPasswordComplexity() throws Exception {
         User user = createUser("weakling");
-        PasswordResetToken token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
 
-        resetPassword(token.getToken(), "weakpass")
+        resetPassword(token, "weakpass")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.newPassword").exists());
     }

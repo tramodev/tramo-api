@@ -4,24 +4,22 @@ package com.tramo.backend.auth;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.service.GoogleTokenVerifier;
-import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class GoogleAuthTest extends AbstractIntegrationTest {
-
-    @Autowired
-    private PasswordResetTokenRepository passwordResetTokenRepository;
 
     private void stubGoogleToken(String email, String name) {
         when(googleTokenVerifier.verify(anyString()))
@@ -183,7 +181,9 @@ class GoogleAuthTest extends AbstractIntegrationTest {
                         .content("""
                                 {"email":"%s"}""".formatted(user.getEmail())))
                 .andExpect(status().isNoContent());
-        String token = passwordResetTokenRepository.findAll().get(0).getToken();
+        ArgumentCaptor<String> resetToken = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendPasswordResetEmail(any(User.class), resetToken.capture());
+        String token = resetToken.getValue();
         mockMvc.perform(post("/api/auth/reset-password").with(uniqueIp())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
