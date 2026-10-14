@@ -15,7 +15,7 @@ import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.user.service.PrivacyPolicy;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import com.tramo.backend.common.Pagination;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -73,14 +73,14 @@ public class FollowService {
 
     public PageResponseDTO<FollowUserDTO> getFollowers(String username, User requester, int page, int size) {
         User target = accessGuard.publicProfileTarget(username, requester);
-        Page<Follow> result = followRepository.findByFollowedIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
+        Page<Follow> result = followRepository.findByFollowedIdOrderByCreatedDateDesc(target.getId(), Pagination.page(page, size));
         List<User> users = result.getContent().stream().map(Follow::getFollower).toList();
         return toFollowUserPage(users, requester, result.hasNext());
     }
 
     public PageResponseDTO<FollowUserDTO> getFollowing(String username, User requester, int page, int size) {
         User target = accessGuard.publicProfileTarget(username, requester);
-        Page<Follow> result = followRepository.findByFollowerIdOrderByCreatedDateDesc(target.getId(), PageRequest.of(page, size));
+        Page<Follow> result = followRepository.findByFollowerIdOrderByCreatedDateDesc(target.getId(), Pagination.page(page, size));
         List<User> users = result.getContent().stream().map(Follow::getFollowed).toList();
         return toFollowUserPage(users, requester, result.hasNext());
     }

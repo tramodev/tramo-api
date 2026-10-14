@@ -88,7 +88,7 @@ class AgeGateTest extends AbstractIntegrationTest {
 
     private void stubGoogleToken(String email, String name) {
         when(googleTokenVerifier.verify(anyString()))
-                .thenReturn(new GoogleTokenVerifier.GoogleTokenPayload(email, name));
+                .thenReturn(new GoogleTokenVerifier.GoogleTokenPayload("google-" + email, email, name));
     }
 
     @Test

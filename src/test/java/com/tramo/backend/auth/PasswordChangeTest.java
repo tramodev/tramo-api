@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -69,8 +70,12 @@ class PasswordChangeTest extends AbstractIntegrationTest {
     @Test
     void wrongCurrentPasswordIsRejected() throws Exception {
         User user = createUser("pwchange3");
+        String accessToken = bearer(user);
 
         changePassword(user, "NotMyPassw0rd!", NEXT).andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/profile/me").header("Authorization", accessToken))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/auth/login")
                         .with(uniqueIp())
@@ -101,12 +106,22 @@ class PasswordChangeTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void changingPasswordRevokesExistingRefreshTokens() throws Exception {
+    void changingPasswordRevokesExistingAccessAndRefreshTokens() throws Exception {
         User user = createUser("pwchange7");
         String body = login("pwchange7", CURRENT);
         String refreshToken = com.jayway.jsonpath.JsonPath.read(body, "$.refreshToken");
+        String accessToken = com.jayway.jsonpath.JsonPath.read(body, "$.accessToken");
 
         changePassword(user, CURRENT, NEXT).andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/public/explore").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+
+        String newAccessToken = com.jayway.jsonpath.JsonPath.read(login("pwchange7", NEXT), "$.accessToken");
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + newAccessToken))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/auth/refresh")
                         .with(uniqueIp())

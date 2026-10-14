@@ -3,6 +3,8 @@
 package com.tramo.backend.notification.service;
 
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.common.Pagination;
+import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.NotificationTypes;
 import com.tramo.backend.notification.dto.NotificationDTO;
@@ -11,7 +13,6 @@ import com.tramo.backend.notification.entity.Notification;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
@@ -82,17 +83,15 @@ public class NotificationService {
 
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        emitters.compute(user.getId(), (id, userEmitters) -> {
-            CopyOnWriteArrayList<SseEmitter> list =
-                    userEmitters != null ? userEmitters : new CopyOnWriteArrayList<>();
-            list.add(emitter);
-            return list;
-        });
+        synchronized (emitters) {
+            if (emitters.getOrDefault(user.getId(), new CopyOnWriteArrayList<>()).size() >= 5
+                    || emitters.values().stream().mapToInt(List::size).sum() >= 1000) {
+                throw new LimitExceededException("Too many notification connections. Close another tab and retry.");
+            }
+            emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>()).add(emitter);
+        }
 
-        Runnable cleanup = () -> emitters.computeIfPresent(user.getId(), (id, userEmitters) -> {
-            userEmitters.remove(emitter);
-            return userEmitters.isEmpty() ? null : userEmitters;
-        });
+        Runnable cleanup = () -> removeEmitter(user.getId(), emitter);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(e -> cleanup.run());
@@ -108,6 +107,15 @@ public class NotificationService {
         }
 
         return emitter;
+    }
+
+    private void removeEmitter(Long userId, SseEmitter emitter) {
+        synchronized (emitters) {
+            emitters.computeIfPresent(userId, (id, list) -> {
+                list.remove(emitter);
+                return list.isEmpty() ? null : list;
+            });
+        }
     }
 
     private void publishUnreadCount(User recipient) {
@@ -128,22 +136,20 @@ public class NotificationService {
         if (userEmitters == null || userEmitters.isEmpty()) return;
 
         UnreadCountDTO payload = new UnreadCountDTO(getUnreadCount(recipient));
-        sendToAll(userEmitters, SseEmitter.event().name("unread-count").data(payload));
+        sendToAll(recipient.getId(), userEmitters, SseEmitter.event().name("unread-count").data(payload));
     }
 
     @Scheduled(fixedRateString = "${app.notifications.sse-heartbeat-ms:25000}")
     public void sendHeartbeat() {
-        for (CopyOnWriteArrayList<SseEmitter> userEmitters : emitters.values()) {
-            sendToAll(userEmitters, SseEmitter.event().comment("keep-alive"));
-        }
+        emitters.forEach((id, list) -> sendToAll(id, list, SseEmitter.event().comment("keep-alive")));
     }
 
-    private void sendToAll(CopyOnWriteArrayList<SseEmitter> userEmitters, SseEmitter.SseEventBuilder event) {
+    private void sendToAll(Long userId, CopyOnWriteArrayList<SseEmitter> userEmitters, SseEmitter.SseEventBuilder event) {
         for (SseEmitter emitter : userEmitters) {
             try {
                 emitter.send(event);
             } catch (Exception subscriberIsGone) {
-                userEmitters.remove(emitter);
+                removeEmitter(userId, emitter);
                 try {
                     emitter.complete();
                 } catch (Exception responseAlreadyTornDown) {
@@ -251,7 +257,7 @@ public class NotificationService {
 
     public PageResponseDTO<NotificationDTO> getNotifications(User user, int page, int size) {
         Page<Notification> result = notificationRepository.findByRecipientIdOrderByUpdatedDateDesc(
-                user.getId(), PageRequest.of(page, size));
+                user.getId(), Pagination.page(page, size));
         Set<Long> blockRelated = privacyPolicy.blockRelatedIds(user);
         List<NotificationDTO> items = result.getContent().stream()
                 .filter(n -> n.getLatestActor() == null || !blockRelated.contains(n.getLatestActor().getId()))

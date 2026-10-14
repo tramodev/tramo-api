@@ -6,6 +6,7 @@ import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.upload.ImageDeletionQueue;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
@@ -67,6 +68,7 @@ public class ProjectService {
     private final ProjectResponseMapper responseMapper;
     private final ProjectPublishService publishService;
     private final R2Client r2Client;
+    private final SubscriptionService subscriptions;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -79,8 +81,10 @@ public class ProjectService {
                            ProjectSnapshotRepository projectSnapshotRepository,
                            TagService tagService,
                            ImageDeletionQueue imageDeletionQueue,
-                           AccessGuard accessGuard, ProjectThumbnailResolver thumbnailResolver,
-                           ProjectResponseMapper responseMapper, ProjectPublishService publishService, R2Client r2Client) {
+                            AccessGuard accessGuard, ProjectThumbnailResolver thumbnailResolver,
+                            ProjectResponseMapper responseMapper, ProjectPublishService publishService, R2Client r2Client,
+                            SubscriptionService subscriptions) {
+        this.subscriptions = subscriptions;
         this.accessGuard = accessGuard;
         this.thumbnailResolver = thumbnailResolver;
         this.responseMapper = responseMapper;
@@ -148,6 +152,7 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponseDTO update(Long id, ProjectRequestDTO request, User requester) {
+        subscriptions.lockStorage(requester);
         Project project = accessGuard.getOwnedProject(id, requester);
         ProjectVisibility previousVisibility = project.getVisibility();
         boolean touchesModifiedDate = false;
@@ -216,7 +221,8 @@ public class ProjectService {
                 if (request.getImageUrl() == null || request.getImageUrl().isBlank()) {
                     throw new RequestValidationException(RequestErrorCode.THUMBNAIL_URL_REQUIRED);
                 }
-                if (!r2Client.isOwnedUrl(request.getImageUrl(), "thumbnail", requester.getId())) {
+                if (!(previousType == ProjectThumbnailType.DEDICATED && request.getImageUrl().equals(previousImageUrl))
+                        && !r2Client.isOwnedUrl(request.getImageUrl(), "thumbnail", requester.getId())) {
                     throw new RequestValidationException(RequestErrorCode.THUMBNAIL_UPLOAD_REQUIRED);
                 }
                 project.setThumbnailImageUrl(request.getImageUrl());

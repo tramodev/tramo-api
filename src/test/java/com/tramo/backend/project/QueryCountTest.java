@@ -20,6 +20,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class QueryCountTest extends AbstractIntegrationTest {
 
+    @Test
+    void subscriptionStorageQueryCountDoesNotScaleWithNotesOrSnapshots() throws Exception {
+        User owner = createUser("qcstorage");
+        long small = queryCount(() -> mockMvc.perform(get("/api/subscription").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+        for (int i = 0; i < 3; i++) {
+            Project project = seedPublishedProject(owner, "Storage " + i, 2, 2, null);
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        long large = queryCount(() -> mockMvc.perform(get("/api/subscription").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
     private Project seedPublishedProject(User owner, String title, int trails, int itemsPerTrail, User voter) throws Exception {
         Project project = createProject(owner, title, "published", "A description", "java,testing");
         for (int p = 0; p < trails; p++) {

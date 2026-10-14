@@ -3,11 +3,14 @@
 package com.tramo.backend.auth.service;
 
 import com.tramo.backend.auth.dto.AuthResponse;
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -20,44 +23,71 @@ public class GoogleAuthService {
     private final UserRepository userRepository;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final SessionService sessionService;
+    private final PasswordEncoder passwordEncoder;
+    private final IdentityRateLimiter identityRateLimiter;
 
     public GoogleAuthService(UserRepository userRepository, GoogleTokenVerifier googleTokenVerifier,
-                             SessionService sessionService) {
+                             SessionService sessionService, PasswordEncoder passwordEncoder,
+                             IdentityRateLimiter identityRateLimiter) {
         this.userRepository = userRepository;
         this.googleTokenVerifier = googleTokenVerifier;
         this.sessionService = sessionService;
+        this.passwordEncoder = passwordEncoder;
+        this.identityRateLimiter = identityRateLimiter;
     }
 
     @Transactional
-    public AuthResponse googleAuth(String idToken) {
+    public AuthResponse googleAuth(String idToken, String password) {
         GoogleTokenVerifier.GoogleTokenPayload payload = googleTokenVerifier.verify(idToken);
 
-        User user = userRepository.findByEmail(payload.email())
-                .orElseGet(() -> createGoogleUser(payload));
+        User user = userRepository.findByGoogleSub(payload.sub())
+                .orElseGet(() -> userRepository.findByEmailForUpdate(payload.email())
+                        .map(existing -> linkGoogleUser(existing, payload.sub(), password))
+                        .orElseGet(() -> createGoogleUser(payload)));
 
-        if (!user.isEmailVerified()) {
-            user.setEmailVerified(true);
-            userRepository.save(user);
+        if (!user.isEnabled() || !user.isAccountNonLocked()) {
+            throw new BadCredentialsException("Invalid account");
         }
 
         return sessionService.issueSession(user);
+    }
+
+    private User linkGoogleUser(User user, String sub, String password) {
+        if (user.isBanned()) {
+            throw new BadCredentialsException("Invalid account");
+        }
+        if (sub.equals(user.getGoogleSub())) {
+            return user;
+        }
+        if (user.getGoogleSub() != null) {
+            throw new RequestValidationException(RequestErrorCode.GOOGLE_ALREADY_LINKED);
+        }
+        if (!user.isEmailVerified()) {
+            throw new RequestValidationException(RequestErrorCode.GOOGLE_LINK_VERIFICATION_REQUIRED);
+        }
+        if (password == null || password.isBlank() || user.getPassword() == null) {
+            throw new RequestValidationException(RequestErrorCode.GOOGLE_LINK_REQUIRED);
+        }
+        identityRateLimiter.check("google-link", user.getEmail(), 10, 10);
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new RequestValidationException(RequestErrorCode.CURRENT_PASSWORD_INCORRECT);
+        }
+        user.setGoogleSub(sub);
+        return userRepository.save(user);
     }
 
     private User createGoogleUser(GoogleTokenVerifier.GoogleTokenPayload payload) {
         User user = new User();
         user.setUsername(generateUsernameFromEmail(payload.email()));
         user.setEmail(payload.email());
+        user.setGoogleSub(payload.sub());
         user.setPassword(null);
         user.setVisibility(true);
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
         user.setRole(Role.USER);
         user.setEmailVerified(true);
-        try {
-            return userRepository.save(user);
-        } catch (DataIntegrityViolationException e) {
-            return userRepository.findByEmail(payload.email()).orElseThrow(() -> e);
-        }
+        return userRepository.save(user);
     }
 
     private String generateUsernameFromEmail(String email) {

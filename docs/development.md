@@ -37,7 +37,6 @@ shell `export` statements or surrounding quotes. Never commit real credentials.
 | `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `R2_PUBLIC_BASE_URL` | Public and private buckets and the public base URL |
 | `MAIL_ENABLED`, `RESEND_API_KEY` | Mail toggle and SMTP credential; the example disables mail locally |
 | `PATREON_WEBHOOK_SECRET` | Optional in configuration; required to authenticate Patreon webhooks |
-| `PUBLIC_EDITOR_IMAGES_ENABLED` | Public editor image uploads; defaults to `false` |
 
 Generate each cryptographic key independently:
 

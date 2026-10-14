@@ -13,7 +13,7 @@ import com.tramo.backend.user.repository.FollowRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import com.tramo.backend.common.Pagination;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -59,7 +59,7 @@ public class BlockedUserService {
     }
 
     public PageResponseDTO<BlockedUserDTO> list(User blocker, int page, int size) {
-        Page<BlockedUser> result = blockedUserRepository.findByBlockerIdOrderByCreatedDateDesc(blocker.getId(), PageRequest.of(page, size));
+        Page<BlockedUser> result = blockedUserRepository.findByBlockerIdOrderByCreatedDateDesc(blocker.getId(), Pagination.page(page, size));
         var items = result.getContent().stream()
                 .map(b -> new BlockedUserDTO(b.getBlocked().getUsername(), b.getBlocked().getImageUrl(), b.getBlocked().getBio()))
                 .toList();

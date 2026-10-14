@@ -37,8 +37,4 @@ public interface ItemImageReferenceRepository extends JpaRepository<ItemImageRef
             "ORDER BY i.project.id ASC, i.id ASC, r.id ASC")
     List<ItemImageReference> findByProjectIdInOrderByItemIdAsc(@Param("projectIds") Collection<Long> projectIds);
 
-    @Query("SELECT COUNT(r) > 0 FROM ItemImageReference r " +
-            "WHERE r.url = :url AND r.item.id <> :excludeItemId AND r.item.project.owner.id = :ownerId")
-    boolean existsOtherItemReferencingUrl(@Param("ownerId") Long ownerId, @Param("url") String url,
-                                           @Param("excludeItemId") Long excludeItemId);
 }

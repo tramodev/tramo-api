@@ -2,6 +2,8 @@ package com.tramo.backend.trail.service;
 
 import com.tramo.backend.exception.*;
 import com.tramo.backend.project.service.AccessGuard;
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.trail.dto.*;
 import com.tramo.backend.trail.entity.*;
 import com.tramo.backend.trail.repository.*;
@@ -24,10 +26,12 @@ public class ExtractSelectionService {
     private final AccessGuard access;
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    private final SubscriptionService subscriptions;
     private static final Set<String> SELECTION_TYPES = Set.of("root", "paragraph", "heading", "quote", "list", "listitem", "text", "link", "autolink", "linebreak", "tab");
 
     public ExtractSelectionService(ItemService itemService, TrailService trailService, ItemRepository items,
-            TrailItemRepository memberships, AccessGuard access, JdbcTemplate jdbc, ObjectMapper mapper) {
+            TrailItemRepository memberships, AccessGuard access, JdbcTemplate jdbc, ObjectMapper mapper, SubscriptionService subscriptions) {
+        this.subscriptions = subscriptions;
         this.itemService = itemService; this.trailService = trailService; this.items = items;
         this.memberships = memberships; this.access = access; this.jdbc = jdbc; this.mapper = mapper;
     }
@@ -45,6 +49,9 @@ public class ExtractSelectionService {
 
     @Transactional
     public ExtractSelectionResponse extract(Long projectId, Long sourceId, ExtractSelectionRequest request, User user) {
+        ContentLimits.assertNote(request.extractedContent());
+        ContentLimits.assertNote(request.sourceContent());
+        subscriptions.lockStorage(user);
         var project = access.getOwnedProject(projectId, user);
         jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", request.operationId().toString());
         String fingerprint = hash(projectId + ":" + sourceId + ":" + mapper.writeValueAsString(request));
@@ -83,10 +90,10 @@ public class ExtractSelectionService {
         Long newId = itemService.createLoose(projectId, create, user).getId();
         Item created = items.findById(newId).orElseThrow();
         created.setTitleAlign(source.getTitleAlign());
-        itemService.updateContent(newId, request.extractedContent(), 0, user);
         countMarker(replacement.path("root"), marker, request.title().trim(), newId, 0);
         String sourceContent = mapper.writeValueAsString(replacement);
         itemService.updateContent(sourceId, sourceContent, request.extractionEpoch(), user);
+        itemService.updateContent(newId, request.extractedContent(), 0, user);
         source.getContent().setExtractionEpoch(request.extractionEpoch() + 1);
         if (trail != null) {
             List<TrailItem> ordered = new ArrayList<>(steps);

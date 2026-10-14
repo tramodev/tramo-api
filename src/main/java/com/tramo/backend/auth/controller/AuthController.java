@@ -95,7 +95,7 @@ public class AuthController {
 
     @PostMapping("/google")
     public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleAuthRequestDTO request) {
-        return ResponseEntity.ok(googleAuthService.googleAuth(request.getIdToken()));
+        return ResponseEntity.ok(googleAuthService.googleAuth(request.getIdToken(), request.getPassword()));
     }
 
     @PostMapping("/login")

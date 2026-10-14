@@ -40,6 +40,7 @@ public class GlobalExceptionHandler {
             "Animated GIF avatars are a supporter perk. Upgrade to use one.",
             "Profile banners are a supporter perk. Upgrade to use one.",
             "Upload throughput limit reached. Try again later.", "Too many attempts. Try again later.",
+            "Too many notification connections. Close another tab and retry.",
             "You're creating tags too fast. Try again later."
     );
 
@@ -198,6 +199,20 @@ public class GlobalExceptionHandler {
                 publicMessage(ex, "Limit exceeded"),
                 LocalDateTime.now()
         );
+        return handled(ex, error, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @ExceptionHandler(PayloadTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handlePayloadTooLarge(PayloadTooLargeException ex) {
+        ErrorResponse error = new ErrorResponse(413, ex.getMessage(), LocalDateTime.now());
+        error.setCode("PAYLOAD_TOO_LARGE");
+        return handled(ex, error, HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    @ExceptionHandler(StorageQuotaExceededException.class)
+    public ResponseEntity<ErrorResponse> handleStorageQuota(StorageQuotaExceededException ex) {
+        ErrorResponse error = new ErrorResponse(429, ex.getMessage(), LocalDateTime.now());
+        error.setCode("STORAGE_QUOTA_EXCEEDED");
         return handled(ex, error, HttpStatus.TOO_MANY_REQUESTS);
     }
 

@@ -5,6 +5,7 @@ package com.tramo.backend.security.jwt;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 
 import com.tramo.backend.user.entity.User;
@@ -35,6 +36,7 @@ public class JwtService {
         claims.put("emailVerified", user.isEmailVerified());
         claims.put("banned", user.isBanned());
         claims.put("requiresBirthDate", user.getBirthDate() == null);
+        claims.put("sessionVersion", Objects.toString(user.getSessionVersion(), null));
         return getToken(claims, user.getUsername());
     }
 
@@ -71,6 +73,15 @@ public class JwtService {
 
     public boolean isTokenValid(String token) {
         return !isTokenExpired(token);
+    }
+
+    public boolean isSessionValid(String token, User user) {
+        try {
+            String version = getClaim(token, claims -> claims.get("sessionVersion", String.class));
+            return Objects.equals(version, Objects.toString(user.getSessionVersion(), null));
+        } catch (JwtException | IllegalArgumentException | ClassCastException e) {
+            return false;
+        }
     }
 
     private Claims getAllClaims(String token)

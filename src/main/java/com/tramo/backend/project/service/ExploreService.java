@@ -3,6 +3,7 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.notification.service.NotificationService;
+import com.tramo.backend.common.Pagination;
 import com.tramo.backend.project.dto.AuthorCountDTO;
 import com.tramo.backend.project.dto.ExploreBundleDTO;
 import com.tramo.backend.project.dto.ProjectFeedItemDTO;
@@ -63,7 +64,7 @@ public class ExploreService {
     public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
         if (q.length() < 3) q = "";
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = Pagination.page(page, size);
         Long viewerId = requester == null ? null : requester.getId();
         Set<String> blockRelated = privacyPolicy.blockRelatedUsernames(requester);
 

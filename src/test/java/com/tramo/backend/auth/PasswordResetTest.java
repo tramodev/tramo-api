@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,9 +103,11 @@ class PasswordResetTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void resetPasswordChangesPasswordAndRevokesRefreshTokens() throws Exception {
+    void resetPasswordChangesPasswordAndRevokesAccessAndRefreshTokens() throws Exception {
         User user = createUser("resetter");
-        login("resetter", "Passw0rd123!").andExpect(status().isOk());
+        String body = login("resetter", "Passw0rd123!").andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(body, "$.accessToken");
         assertThat(refreshTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .isNotEmpty();
@@ -112,8 +115,15 @@ class PasswordResetTest extends AbstractIntegrationTest {
         PasswordResetToken token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
         resetPassword(token.getToken(), "NewPassw0rd!").andExpect(status().isNoContent());
 
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+
         login("resetter", "Passw0rd123!").andExpect(status().isUnauthorized());
-        login("resetter", "NewPassw0rd!").andExpect(status().isOk());
+        String newBody = login("resetter", "NewPassw0rd!").andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String newAccessToken = com.jayway.jsonpath.JsonPath.read(newBody, "$.accessToken");
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + newAccessToken))
+                .andExpect(status().isOk());
         assertThat(refreshTokenRepository.findAll())
                 .filteredOn((RefreshToken t) -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);

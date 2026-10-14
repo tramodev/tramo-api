@@ -24,7 +24,7 @@ public class GoogleTokenVerifier {
                 .build();
     }
 
-    public record GoogleTokenPayload(String email, String name) {
+    public record GoogleTokenPayload(String sub, String email, String name) {
     }
 
     public GoogleTokenPayload verify(String idToken) {
@@ -40,10 +40,14 @@ public class GoogleTokenVerifier {
         }
 
         GoogleIdToken.Payload payload = token.getPayload();
+        if (payload.getSubject() == null || payload.getSubject().isBlank()
+                || payload.getEmail() == null || payload.getEmail().isBlank()) {
+            throw new InvalidTokenException("Invalid Google token");
+        }
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
             throw new InvalidTokenException("Google account email is not verified");
         }
 
-        return new GoogleTokenPayload(payload.getEmail(), (String) payload.get("name"));
+        return new GoogleTokenPayload(payload.getSubject(), payload.getEmail(), (String) payload.get("name"));
     }
 }

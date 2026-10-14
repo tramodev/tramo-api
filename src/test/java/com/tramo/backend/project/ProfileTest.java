@@ -3,13 +3,14 @@
 package com.tramo.backend.project;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,6 +18,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProfileTest extends AbstractIntegrationTest {
 
     private static final String R2_BASE_URL = "https://test-bucket.example.com";
+
+    @Autowired
+    private SubscriptionService subscriptionService;
 
     @Test
     void updateProfileSetsBioLocationAndWebsite() throws Exception {
@@ -204,6 +208,7 @@ class ProfileTest extends AbstractIntegrationTest {
     void updateProfileAcceptsOwnedAvatarUrl() throws Exception {
         User user = createUser("profileavatarowner");
         String url = "%s/avatar/%d/hash.jpg".formatted(R2_BASE_URL, user.getId());
+        confirmPublicUpload(user, url);
 
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
@@ -218,6 +223,7 @@ class ProfileTest extends AbstractIntegrationTest {
     void updateProfileRejectsBannerFromNonSupporter() throws Exception {
         User user = createUser("profilebannerfree");
         String url = "%s/banner/%d/hash.jpg".formatted(R2_BASE_URL, user.getId());
+        confirmPublicUpload(user, url);
 
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
@@ -231,10 +237,10 @@ class ProfileTest extends AbstractIntegrationTest {
     @Test
     void updateProfileAcceptsBannerFromSupporter() throws Exception {
         User user = createUser("profilebannersupporter");
-        mockMvc.perform(post("/api/subscription/mock-upgrade").header("Authorization", bearer(user)))
-                .andExpect(status().isOk());
+        subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
 
         String url = "%s/banner/%d/hash.jpg".formatted(R2_BASE_URL, user.getId());
+        confirmPublicUpload(user, url);
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)

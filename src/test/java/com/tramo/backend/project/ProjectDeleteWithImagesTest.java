@@ -23,14 +23,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
 
-    private static final String IMAGE_URL = "https://test-bucket.example.com/editor-image/1/abcdef.jpg";
-
     @Autowired
     private ItemService itemService;
 
     @Test
     void deletesProjectWhoseItemsReferenceLegacyPublicUrls() throws Exception {
         User owner = createUser("pdwiowner");
+        String imageUrl = "https://test-bucket.example.com/editor-image/" + owner.getId() + "/abcdef.jpg";
         Project project = createProject(owner, "With images", "private");
         long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
                 {"title":"T"}""");
@@ -38,7 +37,7 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
                 {"title":"Has an image"}""");
 
         String content = """
-                {"root":{"children":[{"type":"text","text":"%s"}]}}""".formatted(IMAGE_URL);
+                {"root":{"children":[{"type":"text","text":"%s"}]}}""".formatted(imageUrl);
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -57,19 +56,19 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
         assertThat(remaining).isZero();
 
         Long queued = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, IMAGE_URL);
+                "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, imageUrl);
         assertThat(queued).isEqualTo(1L);
 
         jdbcTemplate.update("UPDATE pending_image_deletion SET requested_at = ? WHERE url = ?",
-                new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), IMAGE_URL);
+                new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), imageUrl);
         itemService.purgePendingImageDeletions();
 
         ArgumentCaptor<DeleteObjectRequest> deleted = ArgumentCaptor.forClass(DeleteObjectRequest.class);
         verify(s3Client).deleteObject(deleted.capture());
-        assertThat(deleted.getValue().key()).isEqualTo("editor-image/1/abcdef.jpg");
+        assertThat(deleted.getValue().key()).isEqualTo("editor-image/" + owner.getId() + "/abcdef.jpg");
 
         Long stillQueued = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, IMAGE_URL);
+                "SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, imageUrl);
         assertThat(stillQueued).isZero();
     }
 

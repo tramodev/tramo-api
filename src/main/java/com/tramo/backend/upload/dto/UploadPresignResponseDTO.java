@@ -4,10 +4,11 @@ package com.tramo.backend.upload.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import java.util.UUID;
 
 @Getter
 @AllArgsConstructor
 public class UploadPresignResponseDTO {
+    private UUID uploadId;
     private String uploadUrl;
-    private String publicUrl;
 }

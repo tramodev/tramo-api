@@ -72,11 +72,12 @@ class UploadTest extends AbstractIntegrationTest {
                                 {"contentType":"image/jpeg","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.uploadUrl").exists())
-                .andExpect(jsonPath("$.publicUrl").exists())
+                .andExpect(jsonPath("$.uploadId").exists())
+                .andExpect(jsonPath("$.publicUrl").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(response).contains("/avatar/" + user.getId() + "/" + FAKE_HASH);
-        assertThat(response).contains(".jpg");
+        assertThat(response).contains("temporary/");
+        assertThat(response).contains("test-private-bucket");
     }
 
     @Test
@@ -87,7 +88,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
@@ -95,14 +96,13 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(first).contains("\"publicUrl\"");
-        String firstPublicUrl = first.split("\"publicUrl\":\"")[1].split("\"")[0];
-        String secondPublicUrl = second.split("\"publicUrl\":\"")[1].split("\"")[0];
-        assertThat(firstPublicUrl).isEqualTo(secondPublicUrl);
+        String firstId = com.jayway.jsonpath.JsonPath.read(first, "$.uploadId");
+        String secondId = com.jayway.jsonpath.JsonPath.read(second, "$.uploadId");
+        assertThat(firstId).isEqualTo(secondId);
     }
 
     @Test
@@ -131,7 +131,7 @@ class UploadTest extends AbstractIntegrationTest {
                             .header("Authorization", bearer(user))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":26214400}""".formatted(FAKE_HASH)))
+                                    {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":26214400}""".formatted(FAKE_HASH)))
                     .andExpect(status().isOk());
         }
 
@@ -139,7 +139,7 @@ class UploadTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1}""".formatted(FAKE_HASH)))
                 .andExpect(status().is(429));
     }
 }

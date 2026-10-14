@@ -44,6 +44,7 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.thumbnailImageUrl").value(nullValue()));
 
         String thumbnail = "https://test-bucket.example.com/thumbnail/" + owner.getId() + "/thumb.png";
+        confirmPublicUpload(owner, thumbnail);
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)

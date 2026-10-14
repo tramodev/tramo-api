@@ -18,7 +18,7 @@ import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.service.PrivacyPolicy;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import com.tramo.backend.common.Pagination;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
@@ -54,13 +54,13 @@ public class ProfileFeedService {
 
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPage(User user, int page, int size) {
         Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
-                user.getId(), ProjectVisibility.PUBLISHED, PageRequest.of(page, size));
+                user.getId(), ProjectVisibility.PUBLISHED, Pagination.page(page, size));
         return new PageResponseDTO<>(feedMapper.toPublishedFeedItems(result.getContent(), user), result.hasNext());
     }
 
     public PageResponseDTO<ProjectFeedItemDTO> getBookmarksPage(User user, int page, int size) {
         Page<ProjectBookmark> result = projectBookmarkRepository.findByUserIdOrderByCreatedDateDescPaged(
-                user.getId(), PageRequest.of(page, size));
+                user.getId(), Pagination.page(page, size));
         List<Project> projects = result.getContent().stream().map(ProjectBookmark::getProject).toList();
         return new PageResponseDTO<>(feedMapper.toFeedItems(projects, user), result.hasNext());
     }
@@ -71,7 +71,7 @@ public class ProfileFeedService {
 
     private PageResponseDTO<ProjectFeedItemDTO> upvotedPage(Long targetId, User requester, int page, int size, boolean publishedOnly) {
         Page<ProjectVote> result = projectVoteRepository.findByUserIdOrderByCreatedDateDescPaged(
-                targetId, PageRequest.of(page, size));
+                targetId, Pagination.page(page, size));
         List<Project> projects = result.getContent().stream()
                 .map(ProjectVote::getProject)
                 .filter(p -> !publishedOnly
@@ -82,19 +82,20 @@ public class ProfileFeedService {
 
     public PageResponseDTO<ForkFeedItemDTO> getForksPage(User user, int page, int size) {
         Page<Project> result = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDescPaged(
-                user.getId(), PageRequest.of(page, size));
+                user.getId(), Pagination.page(page, size));
         return new PageResponseDTO<>(feedMapper.toForkFeedItems(result.getContent(), user), result.hasNext());
     }
 
     public PageResponseDTO<ActivityItemDTO> getActivityPage(User user, int page, int size) {
-        Pageable cap = PageRequest.of(0, Math.min((page + 1) * size, ACTIVITY_FEED_LIMIT));
+        Pageable requested = Pagination.page(page, size);
+        Pageable cap = Pagination.page(0, (int) Math.min(requested.getOffset() + size, ACTIVITY_FEED_LIMIT));
         List<ProjectBookmark> myBookmarks = projectBookmarkRepository.findByUserIdOrderByCreatedDateDesc(user.getId(), cap);
         List<ProjectVote> myVotes = projectVoteRepository.findByUserIdOrderByCreatedDateDesc(user.getId(), cap);
         List<Project> myForkedProjects = projectRepository.findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(user.getId(), cap);
         List<Project> myPublishedProjects = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDesc(user.getId(), ProjectVisibility.PUBLISHED, cap);
         List<ActivityItemDTO> all = getMyActivity(user, myBookmarks, myVotes, myForkedProjects, myPublishedProjects, cap);
 
-        int from = Math.min(page * size, all.size());
+        int from = (int) Math.min(requested.getOffset(), all.size());
         int to = Math.min(from + size, all.size());
         return new PageResponseDTO<>(all.subList(from, to), to < all.size());
     }
@@ -138,7 +139,7 @@ public class ProfileFeedService {
     public PageResponseDTO<ProjectFeedItemDTO> getPublishedPageForUser(String username, User requester, int page, int size) {
         User target = accessGuard.publicProfileTarget(username, requester);
         Page<Project> result = projectRepository.findByOwnerIdAndVisibilityOrderByCreationDateDescPaged(
-                target.getId(), ProjectVisibility.PUBLISHED, PageRequest.of(page, size));
+                target.getId(), ProjectVisibility.PUBLISHED, Pagination.page(page, size));
         return new PageResponseDTO<>(feedMapper.toPublishedFeedItems(result.getContent(), requester), result.hasNext());
     }
 

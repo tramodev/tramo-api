@@ -70,6 +70,7 @@ public class PasswordService {
 
         User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);
         passwordResetTokenRepository.delete(resetToken);
 
@@ -84,6 +85,7 @@ public class PasswordService {
             throw new RequestValidationException(RequestErrorCode.CURRENT_PASSWORD_INCORRECT);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);
         refreshTokenRepository.deleteByUserId(user.getId());
     }

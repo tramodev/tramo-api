@@ -57,7 +57,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Authentication unavailable");
                     return;
                 }
-                if (principal == null || !principal.isEnabled() || !principal.isAccountNonLocked()) {
+                if (principal == null || !principal.isEnabled() || !principal.isAccountNonLocked()
+                        || !jwtService.isSessionValid(token, principal)) {
                     SecurityContextHolder.clearContext();
                     authEntryPoint.commence(request, response, new BadCredentialsException("Invalid access token"));
                     return;

@@ -39,7 +39,7 @@ public class PrivateImageStorage {
                         .contentType(image.contentType()).contentLength(image.bytes()).build()).build()).url().toString();
     }
 
-    public record ValidatedImage(String etag, String hash, boolean finalObject) {}
+    public record ValidatedImage(String etag, String hash, boolean finalObject, byte[] bytes) {}
 
     public ValidatedImage validate(EditorImage image) {
         if (!VALIDATIONS.tryAcquire()) throw new RequestValidationException(RequestErrorCode.IMAGE_VALIDATION_BUSY);
@@ -50,6 +50,16 @@ public class PrivateImageStorage {
                 if (missing.statusCode() != 404) throw missing;
                 return validateObject(image, image.temporaryKey(), false);
             }
+        } finally {
+            VALIDATIONS.release();
+        }
+    }
+
+    public ValidatedImage validateTemporary(UUID id, String type, long bytes, String hash) {
+        if (!VALIDATIONS.tryAcquire()) throw new RequestValidationException(RequestErrorCode.IMAGE_VALIDATION_BUSY);
+        try {
+            EditorImage image = new EditorImage(id, id, null, type, bytes, "PENDING", hash);
+            return validateObject(image, image.temporaryKey(), false);
         } finally {
             VALIDATIONS.release();
         }
@@ -67,7 +77,7 @@ public class PrivateImageStorage {
             if (image.contentHash() != null && !image.contentHash().equals(hash))
                 throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_HASH_MISMATCH);
             ImageFileValidator.validate(bytes, image.contentType());
-            return new ValidatedImage(head.eTag(), hash, finalObject);
+            return new ValidatedImage(head.eTag(), hash, finalObject, bytes);
         } catch (java.io.IOException failure) {
             throw new RequestValidationException(RequestErrorCode.IMAGE_UPLOAD_UNREADABLE, failure);
         } catch (java.security.NoSuchAlgorithmException impossible) {

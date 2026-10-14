@@ -19,6 +19,10 @@ import com.tramo.backend.tag.entity.Tag;
 import com.tramo.backend.tag.repository.TagRepository;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.upload.entity.PublicUpload;
+import com.tramo.backend.upload.entity.UploadRecord;
+import com.tramo.backend.upload.repository.PublicUploadRepository;
+import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -71,7 +75,6 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.r2.secret-key", () -> "test-secret-key");
         registry.add("app.r2.bucket", () -> "test-bucket");
         registry.add("app.r2.private-bucket", () -> "test-private-bucket");
-        registry.add("app.uploads.public-editor-images-enabled", () -> "true");
         registry.add("app.r2.public-base-url", () -> "https://test-bucket.example.com");
         registry.add("spring.jpa.show-sql", () -> "false");
         registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
@@ -118,6 +121,25 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected EntityManagerFactory entityManagerFactory;
+
+    @Autowired
+    private UploadRecordRepository fixtureUploadRecords;
+
+    @Autowired
+    private PublicUploadRepository fixturePublicUploads;
+
+    protected void confirmPublicUpload(User user, String url) {
+        String key = java.net.URI.create(url).getPath().substring(1);
+        UploadRecord record = new UploadRecord();
+        record.setUserId(user.getId()); record.setObjectKey(key); record.setBytes(1); record.setCreatedDate(new Date());
+        fixtureUploadRecords.saveAndFlush(record);
+        java.util.UUID id = java.util.UUID.randomUUID();
+        PublicUpload upload = new PublicUpload();
+        upload.setId(id); upload.setOwnerId(user.getId()); upload.setUploadRecordId(record.getId());
+        upload.setKind(key.split("/")[0]); upload.setContentType("image/jpeg");
+        upload.setContentHash(id.toString().replace("-", "").repeat(2)); upload.setState("READY"); upload.setRequestedAt(new Date());
+        fixturePublicUploads.saveAndFlush(upload);
+    }
 
     @FunctionalInterface
     protected interface HttpCall {

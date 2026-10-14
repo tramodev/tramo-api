@@ -16,7 +16,7 @@ public class UploadPresignRequestDTO {
     private String contentType;
 
     @NotBlank
-    @Pattern(regexp = "avatar|thumbnail|editor-image|banner", message = "UPLOAD_KIND_INVALID")
+    @Pattern(regexp = "avatar|thumbnail|banner", message = "UPLOAD_KIND_INVALID")
     private String kind;
 
     @NotBlank

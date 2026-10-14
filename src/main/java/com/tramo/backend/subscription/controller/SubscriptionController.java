@@ -32,11 +32,6 @@ public class SubscriptionController {
         return ResponseEntity.ok(patreonMembershipService.sync(user));
     }
 
-    @PostMapping("/mock-upgrade")
-    public ResponseEntity<SubscriptionStatusDTO> mockUpgrade(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(subscriptionService.mockUpgrade(user));
-    }
-
     @DeleteMapping
     public ResponseEntity<SubscriptionStatusDTO> cancel(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(subscriptionService.cancel(user));

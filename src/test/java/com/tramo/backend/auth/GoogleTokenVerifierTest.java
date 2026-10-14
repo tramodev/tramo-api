@@ -34,6 +34,7 @@ class GoogleTokenVerifierTest {
 
     private GoogleIdToken tokenWith(Boolean emailVerified, String email, String name) {
         GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
+        payload.setSubject("google-subject");
         payload.setEmailVerified(emailVerified);
         payload.setEmail(email);
         if (name != null) {
@@ -50,6 +51,7 @@ class GoogleTokenVerifierTest {
         GoogleTokenVerifier.GoogleTokenPayload payload = googleTokenVerifier.verify("id-token");
 
         assertThat(payload.email()).isEqualTo("someone@example.com");
+        assertThat(payload.sub()).isEqualTo("google-subject");
         assertThat(payload.name()).isEqualTo("Someone");
     }
 
@@ -58,6 +60,19 @@ class GoogleTokenVerifierTest {
         when(delegate.verify(anyString())).thenReturn(tokenWith(true, "someone@example.com", null));
 
         assertThat(googleTokenVerifier.verify("id-token").name()).isNull();
+    }
+
+    @Test
+    void rejectsMissingSubjectOrEmail() throws Exception {
+        GoogleIdToken token = tokenWith(true, "someone@example.com", "Someone");
+        token.getPayload().setSubject(null);
+        when(delegate.verify(anyString())).thenReturn(token);
+        assertThatThrownBy(() -> googleTokenVerifier.verify("id-token"))
+                .isInstanceOf(InvalidTokenException.class);
+
+        when(delegate.verify(anyString())).thenReturn(tokenWith(true, null, "Someone"));
+        assertThatThrownBy(() -> googleTokenVerifier.verify("id-token"))
+                .isInstanceOf(InvalidTokenException.class);
     }
 
     @Test

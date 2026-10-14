@@ -4,6 +4,7 @@ package com.tramo.backend.subscription;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.subscription.controller.SubscriptionController;
 import com.tramo.backend.subscription.entity.Plan;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.subscription.patreon.PatreonClient;
@@ -18,6 +19,7 @@ import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,10 +35,11 @@ class SubscriptionTest extends AbstractIntegrationTest {
     @Autowired
     private SubscriptionService subscriptionService;
 
-    private void upgrade(User user) throws Exception {
-        mockMvc.perform(post("/api/subscription/mock-upgrade").header("Authorization", bearer(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.supporter").value(true));
+    @Autowired
+    private SubscriptionController subscriptionController;
+
+    private void upgrade(User user) {
+        subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
     }
 
     private void publishViaApi(User owner, Project project) throws Exception {
@@ -77,7 +80,18 @@ class SubscriptionTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void mockUpgradeFlipsSupporterAndIsIdempotent() throws Exception {
+    void mockUpgradeIsNotAvailable() throws Exception {
+        User user = createUser("mocksubscriber");
+
+        standaloneSetup(subscriptionController).build()
+                .perform(post("/api/subscription/mock-upgrade"))
+                .andExpect(status().isNotFound());
+
+        assertThat(subscriptionService.isSupporter(user)).isFalse();
+    }
+
+    @Test
+    void activationFlipsSupporterAndIsIdempotent() throws Exception {
         User user = createUser("subscriber");
 
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
@@ -87,7 +101,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.publishesPerWeek").value(-1));
 
         upgrade(user);
-        upgrade(user); 
+        upgrade(user);
 
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
                 .andExpect(status().isOk())
@@ -135,7 +149,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
         uploadRecordRepository.save(existing);
 
         String body = """
-                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH);
+                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH);
 
         mockMvc.perform(post("/api/uploads/presign")
                         .header("Authorization", bearer(user))
@@ -158,12 +172,12 @@ class SubscriptionTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":27000000}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":27000000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void gifAvatarIsSupporterOnlyButEditorGifsStayFree() throws Exception {
+    void gifAvatarIsSupporterOnlyButThumbnailGifsStayFree() throws Exception {
         User user = createUser("giffan");
         String gifAvatar = """
                 {"contentType":"image/gif","kind":"avatar","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH);
@@ -178,7 +192,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(user))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/gif","kind":"editor-image","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
+                                {"contentType":"image/gif","kind":"thumbnail","contentHash":"%s","contentBytes":1000}""".formatted(FAKE_HASH)))
                 .andExpect(status().isOk());
 
         upgrade(user);
@@ -224,7 +238,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "Mine", "private", "A description", null);
 
         String body = """
-                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
+                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
                 .formatted(FAKE_HASH, pid(project));
 
         mockMvc.perform(post("/api/uploads/presign")
@@ -241,7 +255,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
         Project projectB = createProject(user, "Project B", "private", "A description", null);
 
         String body = """
-                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
+                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
                 .formatted(FAKE_HASH, pid(projectA));
 
         mockMvc.perform(post("/api/uploads/presign")

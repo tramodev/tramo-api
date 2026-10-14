@@ -87,7 +87,7 @@ public class ProfileService {
         }
         if (request.getImageUrl() != null) {
             String newImageUrl = request.getImageUrl().isBlank() ? null : request.getImageUrl();
-            if (newImageUrl != null && !r2Client.isOwnedUrl(newImageUrl, "avatar", user.getId())) {
+            if (newImageUrl != null && !newImageUrl.equals(previousImageUrl) && !r2Client.isOwnedUrl(newImageUrl, "avatar", user.getId())) {
                 throw new RequestValidationException(RequestErrorCode.IMAGE_URL_INVALID);
             }
             user.setImageUrl(newImageUrl);
@@ -95,7 +95,7 @@ public class ProfileService {
         if (request.getBannerUrl() != null) {
             String newBannerUrl = request.getBannerUrl().isBlank() ? null : request.getBannerUrl();
             if (newBannerUrl != null) {
-                if (!r2Client.isOwnedUrl(newBannerUrl, "banner", user.getId())) {
+                if (!newBannerUrl.equals(previousBannerUrl) && !r2Client.isOwnedUrl(newBannerUrl, "banner", user.getId())) {
                     throw new RequestValidationException(RequestErrorCode.BANNER_URL_INVALID);
                 }
                 if (!subscriptionService.isSupporter(user)) {

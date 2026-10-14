@@ -435,6 +435,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Test
     void thumbnailOnlyUpdateDoesNotBumpModifiedDate() throws Exception {
         User owner = createUser("thumbnailupdater");
+        confirmPublicUpload(owner, "https://test-bucket.example.com/thumbnail/" + owner.getId() + "/a.png");
         Project project = createProject(owner, "ThumbnailProject", "private");
         java.util.Date staleDate = new java.util.Date(System.currentTimeMillis() - 60_000);
         project.setModifiedDate(staleDate);
@@ -466,6 +467,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     void updateProfileChangesBioAndImage() throws Exception {
         User user = createUser("profileupdater");
         String imageUrl = "https://test-bucket.example.com/avatar/" + user.getId() + "/a.png";
+        confirmPublicUpload(user, imageUrl);
 
         mockMvc.perform(put("/api/profile/me")
                         .header("Authorization", bearer(user))
@@ -534,6 +536,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         User owner = createUser("thumbowner5");
         Project project = createProject(owner, "Imaged", "private", "A description", null);
         String url = "https://test-bucket.example.com/thumbnail/" + owner.getId() + "/hash.jpg";
+        confirmPublicUpload(owner, url);
 
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail")
                         .header("Authorization", bearer(owner))

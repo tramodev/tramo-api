@@ -11,11 +11,9 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.core.sync.RequestBody;
 
-import java.time.Duration;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -25,43 +23,34 @@ import java.util.regex.Pattern;
 public class R2Client {
     private static final Logger log = LoggerFactory.getLogger(R2Client.class);
 
-    private final S3Presigner presigner;
     private final S3Client client;
     private final String bucket;
+    private final String privateBucket;
     private final String publicBaseUrl;
     private final Pattern editorImageUrlPattern;
     private final UploadRecordRepository uploadRecordRepository;
 
     public R2Client(
-            S3Presigner presigner,
             S3Client client,
             @Value("${app.r2.bucket}") String bucket,
+            @Value("${app.r2.private-bucket}") String privateBucket,
             @Value("${app.r2.public-base-url}") String publicBaseUrl,
             UploadRecordRepository uploadRecordRepository
     ) {
         this.uploadRecordRepository = uploadRecordRepository;
         this.bucket = bucket;
+        this.privateBucket = privateBucket;
         this.publicBaseUrl = publicBaseUrl.endsWith("/") ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1) : publicBaseUrl;
-        this.presigner = presigner;
         this.client = client;
         this.editorImageUrlPattern = Pattern.compile(
                 Pattern.quote(this.publicBaseUrl + "/editor-image/") + "[\\w\\-/]+\\.(?:jpg|jpeg|png|webp|gif)"
         );
     }
 
-    public String presignPut(String key, String contentType, long contentLength) {
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucket)
-                .key(key)
-                .contentType(contentType)
-                .contentLength(contentLength)
-                .build();
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofMinutes(10))
-                .putObjectRequest(putObjectRequest)
-                .build();
-        PresignedPutObjectRequest presigned = presigner.presignPutObject(presignRequest);
-        return presigned.url().toString();
+    public void publishValidated(String key, String contentType, PrivateImageStorage.ValidatedImage validated) {
+        client.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType)
+                .contentLength((long) validated.bytes().length).metadata(Map.of("sha256", validated.hash()))
+                .cacheControl("public, max-age=31536000, immutable").build(), RequestBody.fromBytes(validated.bytes()));
     }
 
     public String publicUrlFor(String key) {
@@ -74,7 +63,8 @@ public class R2Client {
         }
         String key = url.substring(publicBaseUrl.length() + 1);
         String[] parts = key.split("/", 3);
-        return parts.length == 3 && parts[0].equals(expectedKind) && parts[1].equals(String.valueOf(ownerId));
+        return parts.length == 3 && parts[0].equals(expectedKind) && parts[1].equals(String.valueOf(ownerId))
+                && uploadRecordRepository.isConfirmedPublicKey(key, ownerId);
     }
 
     public boolean isFromOurDomain(String url) {
@@ -104,17 +94,26 @@ public class R2Client {
                 .bucket(bucket).key(url.substring(publicBaseUrl.length() + 1)).build());
     }
 
-    public void deleteByPublicUrl(String url) {
-        if (url == null || !url.startsWith(publicBaseUrl + "/")) {
-            return;
+    public boolean isOwnedPublicUrl(String url, Long ownerId) {
+        return ownerId != null && isFromOurDomain(url) && url.substring(publicBaseUrl.length() + 1)
+                .matches("(?:editor-image|avatar|banner|thumbnail)/" + ownerId + "/[\\w-]+\\.(?:jpg|jpeg|png|webp|gif)");
+    }
+
+    public boolean deleteByPublicUrl(String url, Long ownerId) {
+        if (!isOwnedPublicUrl(url, ownerId)) {
+            return false;
         }
         String key = url.substring(publicBaseUrl.length() + 1);
         try {
+            uploadRecordRepository.findPublicUploadIdByObjectKey(key).ifPresent(id -> client.deleteObject(
+                    DeleteObjectRequest.builder().bucket(privateBucket).key("temporary/" + id).build()));
             client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
             
             uploadRecordRepository.deleteByObjectKey(key);
+            return true;
         } catch (Exception e) {
             SafeLog.failure(log, "r2_orphan_delete_failed", "STORAGE_DELETE_FAILED", e);
+            return false;
         }
     }
 }

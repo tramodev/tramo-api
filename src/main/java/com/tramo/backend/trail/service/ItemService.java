@@ -25,6 +25,8 @@ import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.upload.ImageDeletionQueue;
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.upload.entity.PendingImageDeletion;
@@ -67,13 +69,15 @@ public class ItemService {
     private final ImageDeletionQueue imageDeletionQueue;
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
+    private final SubscriptionService subscriptions;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         TrailService trailService,
                         TrailRepository trailRepository, ProjectRepository projectRepository,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
-                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages) {
+                        ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages,
+                        SubscriptionService subscriptions) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.trailService = trailService;
@@ -85,6 +89,7 @@ public class ItemService {
         this.imageDeletionQueue = imageDeletionQueue;
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
+        this.subscriptions = subscriptions;
     }
 
     @Transactional
@@ -350,6 +355,8 @@ public class ItemService {
 
     @Transactional
     public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
+        ContentLimits.assertNote(content);
+        subscriptions.lockStorage(requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);
         ItemContent itemContent = item.getContent();
@@ -357,6 +364,8 @@ public class ItemService {
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note was extracted in another session. Your changes were kept locally; reload the note before saving.");
         String previousContent = itemContent != null ? itemContent.getContent() : null;
+        long growth = (long) ContentLimits.bytes(content) - ContentLimits.bytes(previousContent);
+        if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
         if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note changed in another session. Your changes were kept locally; reload before saving.");
         if (itemContent == null) {
@@ -368,27 +377,11 @@ public class ItemService {
         itemRepository.save(item);
         bumpOwningProjectLastEditedDate(item);
         editorImages.syncItem(item, content);
-        resyncImageReferences(item, deleteOrphanedEditorImages(item, id, requester, previousContent, content));
-    }
-
-    private Set<String> deleteOrphanedEditorImages(Item item, Long itemId, User requester, String previousContent, String newContent) {
-        Set<String> oldUrls = r2Client.extractReferencedUrls(previousContent);
-        Set<String> newUrls = r2Client.extractReferencedUrls(newContent);
-        for (String url : oldUrls) {
-            if (newUrls.contains(url)) {
-                continue;
-            }
-            if (!itemImageReferenceRepository.existsOtherItemReferencingUrl(requester.getId(), url, itemId)
-                    && !pendingImageDeletionRepository.existsByUrl(url)) {
-                log.info("event=orphan_image_deletion_queued");
-                PendingImageDeletion pending = new PendingImageDeletion();
-                pending.setUrl(url);
-                pending.setOwnerId(requester.getId());
-                pending.setRequestedAt(new Date());
-                pendingImageDeletionRepository.save(pending);
-            }
+        Set<String> newUrls = r2Client.extractReferencedUrls(content);
+        resyncImageReferences(item, newUrls);
+        for (String url : r2Client.extractReferencedUrls(previousContent)) {
+            if (!newUrls.contains(url)) imageDeletionQueue.queue(url, requester.getId());
         }
-        return newUrls;
     }
 
     
@@ -414,11 +407,15 @@ public class ItemService {
     public void purgePendingImageDeletions() {
         Date cutoff = new Date(System.currentTimeMillis() - IMAGE_DELETION_GRACE_MS);
         for (PendingImageDeletion pending : pendingImageDeletionRepository.findByRequestedAtBefore(cutoff)) {
-            if (!itemImageReferenceRepository.existsOtherItemReferencingUrl(pending.getOwnerId(), pending.getUrl(), -1L)) {
-                log.info("event=pending_image_deletion_started");
-                r2Client.deleteByPublicUrl(pending.getUrl());
+            if (!r2Client.isOwnedPublicUrl(pending.getUrl(), pending.getOwnerId())) {
+                pendingImageDeletionRepository.delete(pending);
+                continue;
             }
-            pendingImageDeletionRepository.delete(pending);
+            if (pendingImageDeletionRepository.isReferencedGlobally(pending.getUrl())) continue;
+            log.info("event=pending_image_deletion_started");
+            if (r2Client.deleteByPublicUrl(pending.getUrl(), pending.getOwnerId())) {
+                pendingImageDeletionRepository.delete(pending);
+            }
         }
     }
 

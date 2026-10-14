@@ -3,6 +3,7 @@
 package com.tramo.backend.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,4 +13,7 @@ public class GoogleAuthRequestDTO {
 
     @NotBlank(message = "ID_TOKEN_REQUIRED")
     private String idToken;
+
+    @Size(max = 40, message = "PASSWORD_SIZE_INVALID")
+    private String password;
 }

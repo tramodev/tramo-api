@@ -3,10 +3,14 @@
 package com.tramo.backend.exception;
 
 public enum RequestErrorCode {
+    PAGINATION_INVALID("page must be non-negative and size must be between 1 and 100, within the supported offset range"),
     TITLE_REQUIRED("Title is required"),
     PROJECT_DESCRIPTION_REQUIRED("Add a description before publishing"),
     PROJECT_PUBLISH_AFTER_CREATE("Publish the project after creating it"),
     CURRENT_PASSWORD_INCORRECT("Current password is incorrect"),
+    GOOGLE_LINK_REQUIRED("Enter your existing account password to link Google. If you previously used only Google, reset your password first."),
+    GOOGLE_LINK_VERIFICATION_REQUIRED("Verify your existing account email and reset its password before linking Google."),
+    GOOGLE_ALREADY_LINKED("This account is already linked to a different Google account."),
     THUMBNAIL_TRAIL_REQUIRED("trailId is required for GRAPH thumbnail"),
     PRIVATE_THUMBNAIL_FORBIDDEN("Note images cannot be used as public thumbnails"),
     THUMBNAIL_URL_REQUIRED("imageUrl is required for this thumbnail type"),
@@ -59,7 +63,7 @@ public enum RequestErrorCode {
     PROFILE_VISIBILITY_INVALID("profileVisibility must be 'public' or 'private'"),
     EMAIL_DIGEST_FREQUENCY_INVALID("emailDigestFrequency must be 'off', 'daily', or 'weekly'"),
     COMMENTS_POLICY_INVALID("commentsPolicy must be 'everyone', 'following', or 'noone'"),
-    UPLOAD_KIND_INVALID("kind must be avatar, thumbnail, editor-image, or banner"),
+    UPLOAD_KIND_INVALID("kind must be avatar, thumbnail, or banner"),
     CONTENT_HASH_INVALID("contentHash must be a 64-char lowercase hex SHA-256 digest"),
     INVALID_REQUEST("Invalid request"),
     INVALID_VALUE("Invalid value"),

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.subscription.service;
 
-import com.tramo.backend.exception.LimitExceededException;
+import com.tramo.backend.exception.StorageQuotaExceededException;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.subscription.dto.SubscriptionStatusDTO;
 import com.tramo.backend.subscription.entity.Plan;
@@ -13,6 +13,8 @@ import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.entity.UserBadge;
 import com.tramo.backend.user.repository.UserBadgeRepository;
+import com.tramo.backend.user.repository.UserRepository;
+import com.tramo.backend.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class SubscriptionService {
     private final UserBadgeRepository userBadgeRepository;
     private final NotificationService notificationService;
     private final PlanRepository planRepository;
+    private final UserRepository userRepository;
     private final long freeStorageBytes;
     private final long supporterStorageBytes;
 
@@ -40,7 +43,8 @@ public class SubscriptionService {
                                UploadRecordRepository uploadRecordRepository,
                                UserBadgeRepository userBadgeRepository,
                                NotificationService notificationService,
-                               PlanRepository planRepository,
+                                PlanRepository planRepository,
+                                UserRepository userRepository,
                                @Value("${app.limits.free.storage-bytes}") long freeStorageBytes,
                                @Value("${app.limits.supporter.storage-bytes}") long supporterStorageBytes) {
         this.subscriptionRepository = subscriptionRepository;
@@ -48,6 +52,7 @@ public class SubscriptionService {
         this.userBadgeRepository = userBadgeRepository;
         this.notificationService = notificationService;
         this.planRepository = planRepository;
+        this.userRepository = userRepository;
         this.freeStorageBytes = freeStorageBytes;
         this.supporterStorageBytes = supporterStorageBytes;
     }
@@ -63,17 +68,20 @@ public class SubscriptionService {
     }
 
     public void assertUploadAllowed(User user, long contentBytes, boolean supporter) {
-        long used = uploadRecordRepository.sumBytesByUserId(user.getId());
+        long used = uploadRecordRepository.sumStorageBytesByUserId(user.getId());
         long quota = supporter ? supporterStorageBytes : freeStorageBytes;
-        if (used + contentBytes > quota) {
-            throw new LimitExceededException(
-                    "Storage limit reached (%dMB). Free up space or upgrade for more.".formatted(quota / (1024 * 1024)));
+        if (contentBytes > quota - used) {
+            throw new StorageQuotaExceededException();
         }
+    }
+
+    public void lockStorage(User user) {
+        userRepository.lockStorageById(user.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     public SubscriptionStatusDTO getStatus(User user) {
         boolean supporter = isSupporter(user);
-        long used = uploadRecordRepository.sumBytesByUserId(user.getId());
+        long used = uploadRecordRepository.sumStorageBytesByUserId(user.getId());
         return new SubscriptionStatusDTO(
                 supporter,
                 used,
@@ -118,13 +126,6 @@ public class SubscriptionService {
                     subscription.setEndDate(new Date());
                     subscriptionRepository.save(subscription);
                 });
-    }
-
-    
-    @Transactional
-    public SubscriptionStatusDTO mockUpgrade(User user) {
-        activateSupporterSubscription(user, null);
-        return getStatus(user);
     }
 
     @Transactional

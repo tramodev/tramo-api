@@ -3,6 +3,10 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.common.SafeLog;
+import com.tramo.backend.exception.StorageQuotaExceededException;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.upload.service.EditorImageService;
@@ -26,6 +30,7 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.FollowRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -50,6 +55,7 @@ public class ProjectPublishService {
     private final ProjectResponseMapper responseMapper;
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
+    private final SubscriptionService subscriptions;
 
     public ProjectPublishService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                   TrailRepository trailRepository, TrailItemRepository trailItemRepository,
@@ -57,7 +63,7 @@ public class ProjectPublishService {
                                   ProjectSnapshotRepository projectSnapshotRepository,
                                   FollowRepository followRepository, NotificationService notificationService,
                                   BadgeService badgeService, ProjectResponseMapper responseMapper,
-                                  ObjectMapper objectMapper, EditorImageService editorImages) {
+                                   ObjectMapper objectMapper, EditorImageService editorImages, SubscriptionService subscriptions) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
@@ -70,10 +76,12 @@ public class ProjectPublishService {
         this.responseMapper = responseMapper;
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
+        this.subscriptions = subscriptions;
     }
 
     @Transactional
     public ProjectResponseDTO publish(Long id, User requester) {
+        subscriptions.lockStorage(requester);
         Project project = accessGuard.getOwnedProject(id, requester);
         if (project.getDescription() == null || project.getDescription().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
@@ -134,6 +142,7 @@ public class ProjectPublishService {
     }
 
     void createSnapshot(Project project, String trigger) {
+        subscriptions.lockStorage(project.getOwner());
         List<Trail> projectTrails = trailRepository.findByProjectId(project.getId());
         List<Long> trailIds = projectTrails.stream().map(Trail::getId).toList();
 
@@ -177,6 +186,8 @@ public class ProjectPublishService {
             snapshot.setVersion(projectSnapshotRepository.findMaxVersion(project.getId()).orElse(0) + 1);
         }
         snapshot.setContent(objectMapper.writeValueAsString(data));
+        subscriptions.assertUploadAllowed(project.getOwner(), ContentLimits.bytes(snapshot.getContent()),
+                subscriptions.isSupporter(project.getOwner()));
         snapshot.setCreatedDate(new Date());
         projectSnapshotRepository.save(snapshot);
         editorImages.retainSnapshot(snapshot);
@@ -187,7 +198,12 @@ public class ProjectPublishService {
         Set<Long> alreadySnapshotted = Set.copyOf(projectSnapshotRepository.findProjectIdsWithPublishSnapshot());
         for (Project project : projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED)) {
             if (!alreadySnapshotted.contains(project.getId())) {
-                createSnapshot(project, "PUBLISH");
+                try {
+                    createSnapshot(project, "PUBLISH");
+                } catch (StorageQuotaExceededException overQuota) {
+                    SafeLog.failure(LoggerFactory.getLogger(ProjectPublishService.class),
+                            "snapshot_backfill_skipped", "STORAGE_QUOTA_EXCEEDED", overQuota);
+                }
             }
         }
     }

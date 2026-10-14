@@ -9,7 +9,7 @@ import com.tramo.backend.comment.dto.CommentRequestDTO;
 import com.tramo.backend.comment.entity.Comment;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import com.tramo.backend.common.Pagination;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.service.NotificationService;
@@ -90,7 +90,7 @@ public class CommentService {
         if (!isOwner) {
             assertViewable(project, requester);
         }
-        Page<Comment> roots = commentRepository.findRootsByProjectId(projectId, PageRequest.of(page, size));
+        Page<Comment> roots = commentRepository.findRootsByProjectId(projectId, Pagination.page(page, size));
         List<Long> rootIds = roots.getContent().stream().map(Comment::getId).toList();
         List<Comment> replies = rootIds.isEmpty() ? List.of() : commentRepository.findRepliesByParentIdIn(rootIds);
 

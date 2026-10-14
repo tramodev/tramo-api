@@ -2,136 +2,36 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.upload;
 
-import com.tramo.backend.exception.RequestErrorCode;
-import com.tramo.backend.exception.RequestValidationException;
-import com.tramo.backend.common.ProjectIdCodec;
-import com.tramo.backend.exception.LimitExceededException;
-import com.tramo.backend.project.repository.ProjectRepository;
-import com.tramo.backend.security.ratelimit.RateLimiterService;
-import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.dto.UploadPresignRequestDTO;
 import com.tramo.backend.upload.dto.UploadPresignResponseDTO;
-import com.tramo.backend.upload.entity.UploadRecord;
-import com.tramo.backend.upload.repository.UploadRecordRepository;
+import com.tramo.backend.upload.dto.UploadCompleteResponseDTO;
+import com.tramo.backend.upload.service.PublicUploadService;
 import com.tramo.backend.user.entity.User;
-import io.github.bucket4j.Bucket;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.time.Duration;
-import java.util.Date;
-import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/uploads")
 public class UploadController {
-    private static final Map<String, String> ALLOWED_CONTENT_TYPES = Map.of(
-            "image/jpeg", "jpg",
-            "image/png", "png",
-            "image/webp", "webp",
-            "image/gif", "gif"
-    );
+    private final PublicUploadService uploads;
 
-    private final R2Client r2Client;
-    private final SubscriptionService subscriptionService;
-    private final UploadRecordRepository uploadRecordRepository;
-    private final ProjectRepository projectRepository;
-    private final ProjectIdCodec projectIdCodec;
-    private final RateLimiterService rateLimiterService;
-    private final boolean publicEditorImagesEnabled;
-    private final long maxUploadBytes;
-    private final int maxUploadBytesPerHour;
-
-    public UploadController(R2Client r2Client,
-                            SubscriptionService subscriptionService,
-                            UploadRecordRepository uploadRecordRepository,
-                            ProjectRepository projectRepository,
-                            ProjectIdCodec projectIdCodec,
-                            RateLimiterService rateLimiterService,
-                            @Value("${app.uploads.public-editor-images-enabled}") boolean publicEditorImagesEnabled,
-                            @Value("${app.limits.max-upload-bytes}") long maxUploadBytes,
-                            @Value("${app.limits.max-upload-bytes-per-hour}") int maxUploadBytesPerHour) {
-        this.publicEditorImagesEnabled = publicEditorImagesEnabled;
-        this.r2Client = r2Client;
-        this.subscriptionService = subscriptionService;
-        this.uploadRecordRepository = uploadRecordRepository;
-        this.projectRepository = projectRepository;
-        this.projectIdCodec = projectIdCodec;
-        this.rateLimiterService = rateLimiterService;
-        this.maxUploadBytes = maxUploadBytes;
-        this.maxUploadBytesPerHour = maxUploadBytesPerHour;
-    }
+    public UploadController(PublicUploadService uploads) { this.uploads = uploads; }
 
     @PostMapping("/presign")
     public ResponseEntity<UploadPresignResponseDTO> presign(@Valid @RequestBody UploadPresignRequestDTO request,
                                                               @AuthenticationPrincipal User user) {
-        if ("editor-image".equals(request.getKind()) && !publicEditorImagesEnabled) {
-            throw new AccessDeniedException("Public editor image uploads are disabled. Use private attachments.");
-        }
-        String extension = ALLOWED_CONTENT_TYPES.get(request.getContentType());
-        if (extension == null) {
-            throw new RequestValidationException(RequestErrorCode.CONTENT_TYPE_UNSUPPORTED);
-        }
-        if (request.getContentBytes() > maxUploadBytes) {
-            throw new RequestValidationException(RequestErrorCode.UPLOAD_SIZE_LIMIT_EXCEEDED);
-        }
-        boolean supporter = subscriptionService.isSupporter(user);
-        if ("avatar".equals(request.getKind()) && "image/gif".equals(request.getContentType()) && !supporter) {
-            throw new LimitExceededException("Animated GIF avatars are a supporter perk. Upgrade to use one.");
-        }
-        if ("banner".equals(request.getKind()) && "image/gif".equals(request.getContentType())) {
-            throw new RequestValidationException(RequestErrorCode.ANIMATED_BANNER_UNSUPPORTED);
-        }
-        if ("banner".equals(request.getKind()) && !supporter) {
-            throw new LimitExceededException("Profile banners are a supporter perk. Upgrade to use one.");
-        }
-        subscriptionService.assertUploadAllowed(user, request.getContentBytes(), supporter);
-
-        Bucket byteBucket = rateLimiterService.resolveBucket(
-                "upload-bytes:" + user.getId(), maxUploadBytesPerHour, maxUploadBytesPerHour, Duration.ofHours(1));
-        if (!byteBucket.tryConsume(request.getContentBytes())) {
-            throw new LimitExceededException("Upload throughput limit reached. Try again later.");
-        }
-
-        Long projectId = null;
-        if (request.getProjectId() != null) {
-            projectId = projectIdCodec.decode(request.getProjectId());
-            if (!projectRepository.existsByIdAndOwnerId(projectId, user.getId())) {
-                throw new AccessDeniedException("Not allowed to upload to this project");
-            }
-        }
-
-        String key = "%s/%d/%s.%s".formatted(request.getKind(), user.getId(), request.getContentHash(), extension);
-        recordUpload(user, projectId, key, request.getContentBytes());
-        String uploadUrl = r2Client.presignPut(key, request.getContentType(), request.getContentBytes());
-        String publicUrl = r2Client.publicUrlFor(key);
-
-        return ResponseEntity.ok(new UploadPresignResponseDTO(uploadUrl, publicUrl));
+        return ResponseEntity.ok(uploads.presign(request, user));
     }
 
-    
-    private void recordUpload(User user, Long projectId, String key, long bytes) {
-        if (uploadRecordRepository.updateByObjectKey(key, projectId, bytes) > 0) {
-            return;
-        }
-        UploadRecord fresh = new UploadRecord();
-        fresh.setUserId(user.getId());
-        fresh.setObjectKey(key);
-        fresh.setCreatedDate(new Date());
-        fresh.setBytes(bytes);
-        fresh.setProjectId(projectId);
-        try {
-            uploadRecordRepository.save(fresh);
-        } catch (DataIntegrityViolationException concurrentInsert) {
-            uploadRecordRepository.updateByObjectKey(key, projectId, bytes);
-        }
+    @PostMapping("/{uploadId}/complete")
+    public ResponseEntity<UploadCompleteResponseDTO> complete(@PathVariable UUID uploadId, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(uploads.complete(uploadId, user));
     }
 }

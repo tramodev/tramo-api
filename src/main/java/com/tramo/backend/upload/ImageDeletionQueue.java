@@ -13,11 +13,13 @@ import java.util.Date;
 public class ImageDeletionQueue {
     private final PendingImageDeletionRepository pendingImageDeletionRepository;
     private final ItemImageReferenceRepository itemImageReferenceRepository;
+    private final R2Client r2Client;
 
     public ImageDeletionQueue(PendingImageDeletionRepository pendingImageDeletionRepository,
-                              ItemImageReferenceRepository itemImageReferenceRepository) {
+                              ItemImageReferenceRepository itemImageReferenceRepository, R2Client r2Client) {
         this.pendingImageDeletionRepository = pendingImageDeletionRepository;
         this.itemImageReferenceRepository = itemImageReferenceRepository;
+        this.r2Client = r2Client;
     }
 
     public void queueItemImages(Long itemId, Long ownerId) {
@@ -27,7 +29,7 @@ public class ImageDeletionQueue {
     }
 
     public void queue(String url, Long ownerId) {
-        if (url == null || url.isBlank() || pendingImageDeletionRepository.existsByUrl(url)) {
+        if (!r2Client.isOwnedPublicUrl(url, ownerId) || pendingImageDeletionRepository.existsByUrl(url)) {
             return;
         }
         PendingImageDeletion pending = new PendingImageDeletion();

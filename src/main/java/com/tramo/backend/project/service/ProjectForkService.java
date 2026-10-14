@@ -3,6 +3,8 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
@@ -56,6 +58,7 @@ public class ProjectForkService {
     private final ProjectResponseMapper responseMapper;
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
+    private final SubscriptionService subscriptions;
 
     public ProjectForkService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
@@ -63,7 +66,8 @@ public class ProjectForkService {
                                BlockedUserRepository blockedUserRepository,
                                PrivacyPolicy privacyPolicy, TagService tagService,
                                NotificationService notificationService, BadgeService badgeService,
-                               ProjectResponseMapper responseMapper, ObjectMapper objectMapper, EditorImageService editorImages) {
+                                ProjectResponseMapper responseMapper, ObjectMapper objectMapper, EditorImageService editorImages,
+                                SubscriptionService subscriptions) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
@@ -78,10 +82,12 @@ public class ProjectForkService {
         this.responseMapper = responseMapper;
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
+        this.subscriptions = subscriptions;
     }
 
     @Transactional
     public ProjectResponseDTO fork(Long sourceProjectId, User requester) {
+        subscriptions.lockStorage(requester);
         Project source = projectRepository.findById(sourceProjectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         accessGuard.assertViewable(source, requester);
@@ -114,6 +120,8 @@ public class ProjectForkService {
             forkFromLiveTables(fork, sourceProjectId);
         }
 
+        itemRepository.flush();
+        subscriptions.assertUploadAllowed(requester, 0, subscriptions.isSupporter(requester));
         editorImages.copyForkImages(fork);
         notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
         badgeService.checkAndAwardBadges(source.getOwner());
@@ -161,6 +169,7 @@ public class ProjectForkService {
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (source.getContent() != null) {
+            ContentLimits.assertNote(source.getContent().getContent());
             ItemContent contentCopy = new ItemContent();
             contentCopy.setContent(source.getContent().getContent());
             contentCopy.setUpdatedDate(new Date());
@@ -213,7 +222,11 @@ public class ProjectForkService {
             JsonNode root;
             try { root = objectMapper.readTree(content.getContent()); }
             catch (RuntimeException invalid) { continue; }
-            if (retargetMentions(root, itemCopies)) content.setContent(objectMapper.writeValueAsString(root));
+            if (retargetMentions(root, itemCopies)) {
+                String rewritten = objectMapper.writeValueAsString(root);
+                ContentLimits.assertNote(rewritten);
+                content.setContent(rewritten);
+            }
         }
     }
 
@@ -245,6 +258,7 @@ public class ProjectForkService {
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (itemData.content() != null) {
+            ContentLimits.assertNote(itemData.content());
             ItemContent contentCopy = new ItemContent();
             contentCopy.setContent(itemData.content());
             contentCopy.setUpdatedDate(new Date());

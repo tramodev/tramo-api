@@ -11,7 +11,7 @@ import com.tramo.backend.tag.repository.TagRepository;
 import io.github.bucket4j.Bucket;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
+import com.tramo.backend.common.Pagination;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,14 +52,14 @@ public class TagService {
     
     public List<TagDTO> autocomplete(String query, int limit) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        return tagRepository.findVisibleMatching(q, visibilityThreshold, PageRequest.of(0, limit)).stream()
+        return tagRepository.findVisibleMatching(q, visibilityThreshold, Pagination.page(0, limit)).stream()
                 .map(tag -> new TagDTO(tag.getName(), tag.isOfficial(), tag.getUsageCount()))
                 .toList();
     }
 
     
     public List<TagDTO> hotTopics(int limit) {
-        return tagRepository.findVisibleByUsage(visibilityThreshold, PageRequest.of(0, limit)).stream()
+        return tagRepository.findVisibleByUsage(visibilityThreshold, Pagination.page(0, limit)).stream()
                 .map(tag -> new TagDTO(tag.getName(), tag.isOfficial(), tag.getUsageCount()))
                 .toList();
     }

@@ -33,6 +33,9 @@ public class User implements UserDetails {
     private Long id;
     private String username;
     private String password;
+    private UUID sessionVersion;
+    @Column(unique = true)
+    private String googleSub;
     private String email;
     private String firstName;
     private String lastName;

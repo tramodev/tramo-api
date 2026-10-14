@@ -4,7 +4,6 @@ package com.tramo.backend.trail;
 
 import com.jayway.jsonpath.JsonPath;
 import com.tramo.backend.AbstractIntegrationTest;
-import com.tramo.backend.trail.repository.ItemImageReferenceRepository;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
@@ -43,9 +42,6 @@ class TrailItemTest extends AbstractIntegrationTest {
 
     @Autowired
     PendingImageDeletionRepository pendingImageDeletionRepository;
-
-    @Autowired
-    ItemImageReferenceRepository itemImageReferenceRepository;
 
     @Autowired
     ItemService itemService;
@@ -261,7 +257,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"contentType":"image/jpeg","kind":"editor-image","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
+                                {"contentType":"image/jpeg","kind":"thumbnail","contentHash":"%s","contentBytes":1000,"projectId":"%s"}"""
                                 .formatted(fakeHash, pid(project))))
                 .andExpect(status().isOk());
 
@@ -536,7 +532,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void removingEditorImageFromContentDoesNotBreakSave() throws Exception {
+    void removingForeignPublicImageDoesNotEnqueueDeletion() throws Exception {
         User owner = createUser("imagecleaner1");
         Project project = createProject(owner, "ImageCleanupProject", "private");
         long trailId = createTrail(owner, project, "Trail");
@@ -557,7 +553,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                                 {"content":"image removed now"}"""))
                 .andExpect(status().isNoContent());
 
-        assertThat(pendingImageDeletionRepository.existsByUrl(imageUrl)).isTrue();
+        assertThat(pendingImageDeletionRepository.existsByUrl(imageUrl)).isFalse();
     }
 
     @Test
@@ -622,9 +618,9 @@ class TrailItemTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "PurgeProject", "private");
         long trailId = createTrail(owner, project, "Trail");
         long itemId = createItem(owner, trailId, "Item");
-        String staleUrl = r2PublicBaseUrl + "/editor-image/999999/stalehash.jpg";
-        String restoredUrl = r2PublicBaseUrl + "/editor-image/999999/restoredhash.jpg";
-        String freshUrl = r2PublicBaseUrl + "/editor-image/999999/freshhash.jpg";
+        String staleUrl = r2PublicBaseUrl + "/editor-image/" + owner.getId() + "/stalehash.jpg";
+        String restoredUrl = r2PublicBaseUrl + "/editor-image/" + owner.getId() + "/restoredhash.jpg";
+        String freshUrl = r2PublicBaseUrl + "/editor-image/" + owner.getId() + "/freshhash.jpg";
 
         for (String url : new String[]{staleUrl, restoredUrl, freshUrl}) {
             mockMvc.perform(put("/api/item/" + itemId + "/content")
@@ -656,13 +652,13 @@ class TrailItemTest extends AbstractIntegrationTest {
         itemService.purgePendingImageDeletions();
 
         assertThat(pendingImageDeletionRepository.existsByUrl(staleUrl)).isFalse();
-        assertThat(pendingImageDeletionRepository.existsByUrl(restoredUrl)).isFalse();
+        assertThat(pendingImageDeletionRepository.existsByUrl(restoredUrl)).isTrue();
         assertThat(pendingImageDeletionRepository.existsByUrl(freshUrl)).isTrue();
-        assertThat(itemImageReferenceRepository.existsOtherItemReferencingUrl(owner.getId(), restoredUrl, -1L)).isTrue();
+        assertThat(pendingImageDeletionRepository.isReferencedGlobally(restoredUrl)).isTrue();
     }
 
     @Test
-    void existsOtherItemReferencingUrlDetectsSharedImageCorrectly() throws Exception {
+    void globalReferencesDetectSharedImagesCorrectly() throws Exception {
         User owner = createUser("imagecleaner2");
         Project project = createProject(owner, "SharedImageProject", "private");
         long trailId = createTrail(owner, project, "Trail");
@@ -683,7 +679,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .content(contentWithImage))
                 .andExpect(status().isNoContent());
 
-        assertThat(itemImageReferenceRepository.existsOtherItemReferencingUrl(owner.getId(), sharedUrl, itemAId)).isTrue();
+        assertThat(pendingImageDeletionRepository.isReferencedGlobally(sharedUrl)).isTrue();
 
         mockMvc.perform(put("/api/item/" + itemAId + "/content")
                         .header("Authorization", bearer(owner))
@@ -692,8 +688,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                                 {"content":"image removed from A"}"""))
                 .andExpect(status().isNoContent());
 
-        assertThat(itemImageReferenceRepository.existsOtherItemReferencingUrl(owner.getId(), sharedUrl, itemAId)).isTrue();
-        assertThat(itemImageReferenceRepository.existsOtherItemReferencingUrl(owner.getId(), sharedUrl, itemBId)).isFalse();
+        assertThat(pendingImageDeletionRepository.isReferencedGlobally(sharedUrl)).isTrue();
         assertThat(pendingImageDeletionRepository.existsByUrl(sharedUrl)).isFalse();
     }
 }

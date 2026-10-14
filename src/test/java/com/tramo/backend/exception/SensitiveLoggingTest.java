@@ -140,9 +140,9 @@ class SensitiveLoggingTest {
         S3Client client = mock(S3Client.class);
         doThrow(S3Exception.builder().message(SECRET).statusCode(403).build())
                 .when(client).deleteObject(any(DeleteObjectRequest.class));
-        R2Client r2 = new R2Client(null, client, "bucket", "https://private.test",
+        R2Client r2 = new R2Client(client, "bucket", "private-bucket", "https://private.test",
                 mock(UploadRecordRepository.class));
-        r2.deleteByPublicUrl("https://private.test/PRIVATE_NAME?X-Amz-Signature=SIGNED_SECRET");
+        r2.deleteByPublicUrl("https://private.test/editor-image/1/PRIVATE_NAME.jpg", 1L);
         assertThat(logText()).contains("r2_orphan_delete_failed", "STORAGE_DELETE_FAILED", "upstreamStatus=403",
                 "software.amazon.awssdk.services.s3.model.S3Exception", "trackingId=");
         assertSafe(logText());

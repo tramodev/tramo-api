@@ -13,7 +13,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.test.util.ReflectionTestUtils;
 import software.amazon.awssdk.services.s3.model.*;
 
 import java.util.List;
@@ -47,7 +46,6 @@ class EditorImageTest extends AbstractIntegrationTest {
 
     @Autowired EditorImageService images;
     @Autowired ProjectPublishService publish;
-    @Autowired UploadController publicUploads;
     @MockitoSpyBean EditorImageRepository imageRepository;
 
     @BeforeEach
@@ -70,16 +68,11 @@ class EditorImageTest extends AbstractIntegrationTest {
     @Test
     void publicEditorUploadIsBlockedBeforeQuotaAndRecording() throws Exception {
         User owner = createUser("guard");
-        ReflectionTestUtils.setField(publicUploads, "publicEditorImagesEnabled", false);
-        try {
-            mockMvc.perform(post("/api/uploads/presign").header("Authorization", bearer(owner))
-                    .contentType("application/json").content("""
-                    {"kind":"editor-image","contentType":"image/jpeg","contentBytes":1000,"contentHash":"%s"}
-                    """.formatted("a".repeat(64)))).andExpect(status().isForbidden());
-            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record", Integer.class)).isZero();
-        } finally {
-            ReflectionTestUtils.setField(publicUploads, "publicEditorImagesEnabled", true);
-        }
+        mockMvc.perform(post("/api/uploads/presign").header("Authorization", bearer(owner))
+                .contentType("application/json").content("""
+                {"kind":"editor-image","contentType":"image/jpeg","contentBytes":1000,"contentHash":"%s"}
+                """.formatted("a".repeat(64)))).andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record", Integer.class)).isZero();
     }
 
     @Test
@@ -124,6 +117,9 @@ class EditorImageTest extends AbstractIntegrationTest {
         Long snapshotId = jdbcTemplate.queryForObject("SELECT id FROM project_snapshot WHERE project_id = ?", Long.class, project.getId());
         UUID draft = upload(project, owner);
         updateContent(itemId, owner, content(draft), 204);
+        jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+        jdbcTemplate.update("UPDATE editor_image_object SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+        images.purge();
         resolve(project, null, published, true, null, 200);
         resolve(project, null, draft, true, null, 404);
         resolve(project, null, published, true, snapshotId, 200);
