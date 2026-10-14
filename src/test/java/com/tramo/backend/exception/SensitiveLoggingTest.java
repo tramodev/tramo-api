@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
+import com.tramo.backend.upload.repository.PublicUploadRepository;
+import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.validation.BeanPropertyBindingResult;
@@ -141,7 +143,8 @@ class SensitiveLoggingTest {
         doThrow(S3Exception.builder().message(SECRET).statusCode(403).build())
                 .when(client).deleteObject(any(DeleteObjectRequest.class));
         R2Client r2 = new R2Client(client, "bucket", "private-bucket", "https://private.test",
-                mock(UploadRecordRepository.class));
+                mock(UploadRecordRepository.class), mock(PublicUploadRepository.class),
+                mock(PendingImageDeletionRepository.class), mock(PlatformTransactionManager.class));
         r2.deleteByPublicUrl("https://private.test/editor-image/1/PRIVATE_NAME.jpg", 1L);
         assertThat(logText()).contains("r2_orphan_delete_failed", "STORAGE_DELETE_FAILED", "upstreamStatus=403",
                 "software.amazon.awssdk.services.s3.model.S3Exception", "trackingId=");

@@ -6,6 +6,8 @@ import com.tramo.backend.upload.entity.UploadRecord;
 import com.tramo.backend.upload.repository.PublicUploadRepository;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.upload.service.PublicUploadService;
+import com.tramo.backend.trail.service.ItemService;
+import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,9 @@ class PublicUploadTest extends AbstractIntegrationTest {
     @Autowired UploadRecordRepository records;
     @Autowired PublicUploadService service;
     @Autowired R2Client publicStorage;
+    @Autowired ItemService items;
+    @Autowired PendingImageDeletionRepository pending;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private static byte[] image() {
         try {
@@ -115,6 +120,12 @@ class PublicUploadTest extends AbstractIntegrationTest {
 
     private UploadRecord record(UUID id) { return records.findById(uploads.findById(id).orElseThrow().getUploadRecordId()).orElseThrow(); }
     private void expire(UUID id) { jdbcTemplate.update("UPDATE public_upload SET requested_at = ? WHERE id = ?", new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), id); }
+
+    private String publicUrl(UUID id) { return publicStorage.publicUrlFor(record(id).getObjectKey()); }
+    private void expireDeletion(String url) {
+        jdbcTemplate.update("UPDATE pending_image_deletion SET requested_at = ? WHERE url = ?",
+                new Date(System.currentTimeMillis() - Duration.ofDays(2).toMillis()), url);
+    }
 
     @Test
     void onlyValidatedFilesBecomeAssignablePublicUrlsAndConfirmationIsIdempotent() throws Exception {
@@ -259,7 +270,9 @@ class PublicUploadTest extends AbstractIntegrationTest {
     void readyUploadsLoseOnlyTheirExpiredTemporaryObject() throws Exception {
         User owner = createUser("publictemporary");
         UUID id = begin(owner, "avatar"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk()); expire(id);
+        pending.deleteAll();
         service.purge();
+        assertThat(pending.existsByUrl(publicUrl(id))).isTrue();
         assertThat(uploads.findById(id).orElseThrow().isTemporaryCleaned()).isTrue();
         assertThat(stored).doesNotContainKey(PRIVATE + ":temporary/" + id);
         assertThat(object(PUBLIC, record(id).getObjectKey()).bytes()).isEqualTo(PNG);
@@ -270,9 +283,158 @@ class PublicUploadTest extends AbstractIntegrationTest {
     void publicDeletionAlsoRemovesItsTemporaryObjectBeforeDroppingTheReservation() throws Exception {
         User owner = createUser("publicdelete");
         UUID id = begin(owner, "avatar"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        expireDeletion(publicUrl(id));
         assertThat(publicStorage.deleteByPublicUrl(publicStorage.publicUrlFor(record(id).getObjectKey()), owner.getId())).isTrue();
         assertThat(stored).isEmpty();
         assertThat(uploads.existsById(id)).isFalse();
+    }
+
+    @Test
+    void confirmedButUnassignedThumbnailsAreReclaimedAfterGrace() throws Exception {
+        User owner = createUser("unusedthumbnail");
+        UUID id = begin(owner, "thumbnail"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        assertThat(pending.existsByUrl(url)).isTrue();
+        assertThat(publicStorage.deleteByPublicUrl(url, owner.getId())).isFalse();
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isTrue();
+        expireDeletion(url);
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isFalse();
+        assertThat(pending.existsByUrl(url)).isFalse();
+        assertThat(records.sumBytesByUserId(owner.getId())).isZero();
+        assertThat(stored).isEmpty();
+    }
+
+    @Test
+    void reusingAConfirmedUploadRenewsItsGraceWithoutDuplicateQueueEntries() throws Exception {
+        User owner = createUser("reusedthumbnail");
+        UUID id = begin(owner, "thumbnail"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        expireDeletion(url);
+        complete(owner, id).andExpect(status().isOk());
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isTrue();
+        assertThat(pending.count()).isEqualTo(1);
+        expireDeletion(url);
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isFalse();
+    }
+
+    @Test
+    void databaseDeletionFailureRetainsTheQueueAndReconcilesTheMissingObjectOnRetry() throws Exception {
+        User owner = createUser("ghostretry");
+        UUID id = begin(owner, "thumbnail"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        expireDeletion(url);
+        jdbcTemplate.execute("CREATE TABLE upload_record_deletion_blocker (upload_id bigint REFERENCES upload_record(id))");
+        try {
+            jdbcTemplate.update("INSERT INTO upload_record_deletion_blocker VALUES (?)", record(id).getId());
+            items.purgePendingImageDeletions();
+            assertThat(stored).isEmpty();
+            assertThat(pending.existsByUrl(url)).isTrue();
+            assertThat(records.sumBytesByUserId(owner.getId())).isEqualTo(PNG.length);
+            jdbcTemplate.update("DELETE FROM upload_record_deletion_blocker");
+            items.purgePendingImageDeletions();
+            assertThat(uploads.existsById(id)).isFalse();
+            assertThat(pending.existsByUrl(url)).isFalse();
+            assertThat(records.sumBytesByUserId(owner.getId())).isZero();
+        } finally { jdbcTemplate.execute("DROP TABLE upload_record_deletion_blocker"); }
+    }
+
+    @Test
+    void assignedImagesSurviveAndRemovalStartsANewGracePeriod() throws Exception {
+        User owner = createUser("keptavatar");
+        UUID id = begin(owner, "avatar"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        mockMvc.perform(put("/api/profile/me").header("Authorization", bearer(owner)).contentType("application/json")
+                .content("{\"imageUrl\":\"" + url + "\"}")).andExpect(status().isOk());
+        expireDeletion(url);
+        items.purgePendingImageDeletions();
+        assertThat(uploads.findById(id).orElseThrow().getState()).isEqualTo("READY");
+        mockMvc.perform(put("/api/profile/me").header("Authorization", bearer(owner)).contentType("application/json")
+                .content("{\"imageUrl\":\"\"}")).andExpect(status().isOk());
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isTrue();
+        expireDeletion(url);
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isFalse();
+    }
+
+    @Test
+    void confirmedThumbnailsInPublishedSnapshotsAreNeverReclaimed() throws Exception {
+        User owner = createUser("snapshotthumbnail");
+        UUID id = begin(owner, "thumbnail"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        var project = createProject(owner, "Published", "private", "Description", "");
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"type\":\"DEDICATED\",\"imageUrl\":\"" + url + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"type\":\"NONE\"}"))
+                .andExpect(status().isOk());
+        expireDeletion(url);
+        items.purgePendingImageDeletions();
+        assertThat(uploads.findById(id).orElseThrow().getState()).isEqualTo("READY");
+        assertThat(stored).containsKey(PUBLIC + ":" + record(id).getObjectKey());
+    }
+
+    @Test
+    void failedConfirmedImageDeletionRemainsQueuedAndCannotBeReassignedUntilRetry() throws Exception {
+        User owner = createUser("retryconfirmed");
+        UUID id = begin(owner, "avatar"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        expireDeletion(url);
+        doThrow(new IllegalStateException("R2 unavailable")).doAnswer(call -> delete(call.getArgument(0)))
+                .when(s3Client).deleteObject(any(DeleteObjectRequest.class));
+        items.purgePendingImageDeletions();
+        assertThat(pending.existsByUrl(url)).isTrue();
+        assertThat(uploads.findById(id).orElseThrow().getState()).isEqualTo("DELETING");
+        assertThat(records.sumBytesByUserId(owner.getId())).isEqualTo(PNG.length);
+        mockMvc.perform(put("/api/profile/me").header("Authorization", bearer(owner)).contentType("application/json")
+                .content("{\"imageUrl\":\"" + url + "\"}")).andExpect(status().isBadRequest());
+        items.purgePendingImageDeletions();
+        assertThat(uploads.existsById(id)).isFalse();
+        assertThat(pending.existsByUrl(url)).isFalse();
+        assertThat(records.sumBytesByUserId(owner.getId())).isZero();
+    }
+
+    @Test
+    void cleanupWaitsForAnAssignmentAndKeepsItsNewReference() throws Exception {
+        User owner = createUser("assignwhilepurging");
+        UUID id = begin(owner, "avatar"); stage(id, PNG, "image/png"); complete(owner, id).andExpect(status().isOk());
+        String url = publicUrl(id);
+        expireDeletion(url);
+        var checked = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var deleting = new java.util.concurrent.CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var assignment = executor.submit(() -> new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        assertThat(publicStorage.isOwnedUrl(url, "avatar", owner.getId())).isTrue();
+                        checked.countDown();
+                        try {
+                            if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("timeout");
+                        } catch (InterruptedException failure) { throw new IllegalStateException(failure); }
+                        jdbcTemplate.update("UPDATE users SET image_url = ? WHERE id = ?", url, owner.getId());
+                    }));
+            assertThat(checked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var deletion = executor.submit(() -> {
+                deleting.countDown();
+                return publicStorage.deleteByPublicUrl(url, owner.getId());
+            });
+            assertThat(deleting.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> deletion.get(100, java.util.concurrent.TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            release.countDown();
+            assignment.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(deletion.get(10, java.util.concurrent.TimeUnit.SECONDS)).isFalse();
+            assertThat(uploads.findById(id).orElseThrow().getState()).isEqualTo("READY");
+            assertThat(stored).containsKey(PUBLIC + ":" + record(id).getObjectKey());
+        } finally { release.countDown(); executor.shutdownNow(); }
     }
 
     @Test

@@ -17,9 +17,10 @@ import org.springframework.data.jpa.repository.Modifying;
 public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long> {
     Optional<UploadRecord> findByObjectKey(String objectKey);
 
-    @Query(value = "SELECT EXISTS (SELECT 1 FROM public_upload u JOIN upload_record r ON r.id = u.upload_record_id " +
-            "WHERE u.owner_id = :ownerId AND r.user_id = :ownerId AND r.object_key = :key AND u.state = 'READY')", nativeQuery = true)
-    boolean isConfirmedPublicKey(@Param("key") String key, @Param("ownerId") Long ownerId);
+    @Transactional
+    @Query(value = "SELECT u.id FROM public_upload u JOIN upload_record r ON r.id = u.upload_record_id " +
+            "WHERE u.owner_id = :ownerId AND r.user_id = :ownerId AND r.object_key = :key AND u.state = 'READY' FOR UPDATE OF u", nativeQuery = true)
+    Optional<UUID> findConfirmedPublicKey(@Param("key") String key, @Param("ownerId") Long ownerId);
 
     @Query(value = "SELECT u.id FROM public_upload u JOIN upload_record r ON r.id = u.upload_record_id WHERE r.object_key = :key", nativeQuery = true)
     Optional<UUID> findPublicUploadIdByObjectKey(@Param("key") String key);

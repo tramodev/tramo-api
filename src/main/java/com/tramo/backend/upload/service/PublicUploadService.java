@@ -7,6 +7,7 @@ import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.security.ratelimit.RateLimiterService;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.PrivateImageStorage;
+import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.upload.dto.*;
 import com.tramo.backend.upload.entity.EditorImage;
@@ -38,6 +39,7 @@ public class PublicUploadService {
     private final UploadRecordRepository records;
     private final PrivateImageStorage privateStorage;
     private final R2Client publicStorage;
+    private final ImageDeletionQueue deletions;
     private final EditorImageRepository operations;
     private final SubscriptionService subscriptions;
     private final AccessGuard access;
@@ -49,11 +51,12 @@ public class PublicUploadService {
 
     public PublicUploadService(PublicUploadRepository uploads, UploadRecordRepository records, PrivateImageStorage privateStorage,
             R2Client publicStorage, EditorImageRepository operations, SubscriptionService subscriptions, AccessGuard access,
-            ProjectIdCodec codec, RateLimiterService limiter, PlatformTransactionManager transactionManager,
+            ProjectIdCodec codec, RateLimiterService limiter, ImageDeletionQueue deletions, PlatformTransactionManager transactionManager,
             @Value("${app.limits.max-upload-bytes}") long maxBytes, @Value("${app.limits.max-upload-bytes-per-hour}") int bytesPerHour) {
         this.uploads = uploads; this.records = records; this.privateStorage = privateStorage; this.publicStorage = publicStorage;
         this.operations = operations; this.subscriptions = subscriptions; this.access = access; this.codec = codec; this.limiter = limiter;
         this.transactions = new TransactionTemplate(transactionManager); this.maxBytes = maxBytes; this.bytesPerHour = bytesPerHour;
+        this.deletions = deletions;
     }
 
     public UploadPresignResponseDTO presign(UploadPresignRequestDTO request, User user) {
@@ -94,7 +97,14 @@ public class PublicUploadService {
         return operations.withObjectLock(id, () -> {
             PublicUpload upload = owned(id, user);
             UploadRecord record = record(upload);
-            if ("READY".equals(upload.getState())) return new UploadCompleteResponseDTO(publicStorage.publicUrlFor(record.getObjectKey()));
+            if ("READY".equals(upload.getState())) {
+                transactions.executeWithoutResult(status -> {
+                    PublicUpload current = uploads.findForUpdate(id).orElseThrow(this::missing);
+                    if (!"READY".equals(current.getState())) throw new RequestValidationException(RequestErrorCode.UPLOAD_ATTEMPT_EXPIRED);
+                    deletions.queue(publicStorage.publicUrlFor(record.getObjectKey()), user.getId());
+                });
+                return new UploadCompleteResponseDTO(publicStorage.publicUrlFor(record.getObjectKey()));
+            }
             if (!"PENDING".equals(upload.getState())) throw new RequestValidationException(RequestErrorCode.UPLOAD_ATTEMPT_EXPIRED);
             checkPerks(upload.getKind(), upload.getContentType(), user);
             if (record.getProjectId() != null) access.getOwnedProject(record.getProjectId(), user);
@@ -109,6 +119,7 @@ public class PublicUploadService {
             transactions.executeWithoutResult(status -> {
                 PublicUpload current = uploads.findForUpdate(id).orElseThrow(this::missing);
                 current.setState("READY");
+                deletions.queue(publicStorage.publicUrlFor(record.getObjectKey()), user.getId());
             });
             return new UploadCompleteResponseDTO(publicStorage.publicUrlFor(record.getObjectKey()));
         });
@@ -150,7 +161,10 @@ public class PublicUploadService {
                     if (upload == null) return null;
                     if ("READY".equals(upload.getState())) {
                         privateStorage.deleteTemporary(id);
-                        transactions.executeWithoutResult(status -> uploads.findForUpdate(id).ifPresent(current -> current.setTemporaryCleaned(true)));
+                        transactions.executeWithoutResult(status -> {
+                            uploads.findForUpdate(id).ifPresent(current -> current.setTemporaryCleaned(true));
+                            deletions.queue(publicStorage.publicUrlFor(record(upload).getObjectKey()), upload.getOwnerId());
+                        });
                     } else {
                         UploadRecord record = record(upload);
                         publicStorage.deleteByPublicUrl(publicStorage.publicUrlFor(record.getObjectKey()), upload.getOwnerId());

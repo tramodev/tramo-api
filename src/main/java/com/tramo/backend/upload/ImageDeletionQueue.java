@@ -29,13 +29,15 @@ public class ImageDeletionQueue {
     }
 
     public void queue(String url, Long ownerId) {
-        if (!r2Client.isOwnedPublicUrl(url, ownerId) || pendingImageDeletionRepository.existsByUrl(url)) {
+        if (!r2Client.isOwnedPublicUrl(url, ownerId)) {
             return;
         }
+        Date now = new Date();
+        if (pendingImageDeletionRepository.postpone(url, now) > 0) return;
         PendingImageDeletion pending = new PendingImageDeletion();
         pending.setUrl(url);
         pending.setOwnerId(ownerId);
-        pending.setRequestedAt(new Date());
+        pending.setRequestedAt(now);
         pendingImageDeletionRepository.save(pending);
     }
 }

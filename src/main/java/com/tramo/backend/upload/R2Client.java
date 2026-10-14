@@ -4,16 +4,22 @@ package com.tramo.backend.upload;
 
 import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
+import com.tramo.backend.upload.repository.PublicUploadRepository;
+import com.tramo.backend.upload.repository.PendingImageDeletionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.core.sync.RequestBody;
 
 import java.util.Map;
+import java.util.Date;
+import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -29,15 +35,24 @@ public class R2Client {
     private final String publicBaseUrl;
     private final Pattern editorImageUrlPattern;
     private final UploadRecordRepository uploadRecordRepository;
+    private final PublicUploadRepository publicUploads;
+    private final PendingImageDeletionRepository references;
+    private final TransactionTemplate transactions;
 
     public R2Client(
             S3Client client,
             @Value("${app.r2.bucket}") String bucket,
             @Value("${app.r2.private-bucket}") String privateBucket,
             @Value("${app.r2.public-base-url}") String publicBaseUrl,
-            UploadRecordRepository uploadRecordRepository
+            UploadRecordRepository uploadRecordRepository,
+            PublicUploadRepository publicUploads,
+            PendingImageDeletionRepository references,
+            PlatformTransactionManager transactionManager
     ) {
         this.uploadRecordRepository = uploadRecordRepository;
+        this.publicUploads = publicUploads;
+        this.references = references;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.bucket = bucket;
         this.privateBucket = privateBucket;
         this.publicBaseUrl = publicBaseUrl.endsWith("/") ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1) : publicBaseUrl;
@@ -64,7 +79,7 @@ public class R2Client {
         String key = url.substring(publicBaseUrl.length() + 1);
         String[] parts = key.split("/", 3);
         return parts.length == 3 && parts[0].equals(expectedKind) && parts[1].equals(String.valueOf(ownerId))
-                && uploadRecordRepository.isConfirmedPublicKey(key, ownerId);
+                && uploadRecordRepository.findConfirmedPublicKey(key, ownerId).isPresent();
     }
 
     public boolean isFromOurDomain(String url) {
@@ -105,7 +120,19 @@ public class R2Client {
         }
         String key = url.substring(publicBaseUrl.length() + 1);
         try {
-            uploadRecordRepository.findPublicUploadIdByObjectKey(key).ifPresent(id -> client.deleteObject(
+            var uploadId = uploadRecordRepository.findPublicUploadIdByObjectKey(key);
+            boolean claimed = Boolean.TRUE.equals(transactions.execute(status -> {
+                var upload = uploadId.flatMap(publicUploads::findForUpdate).orElse(null);
+                if (uploadId.isPresent() && (upload == null || !upload.getOwnerId().equals(ownerId))) return false;
+                var pending = references.findByUrl(url);
+                Date cutoff = new Date(System.currentTimeMillis() - Duration.ofDays(1).toMillis());
+                if (pending.isPresent() && pending.get().getRequestedAt().after(cutoff)) return false;
+                if (references.isReferencedGlobally(url)) return false;
+                if (upload != null) upload.setState("DELETING");
+                return true;
+            }));
+            if (!claimed) return false;
+            uploadId.ifPresent(id -> client.deleteObject(
                     DeleteObjectRequest.builder().bucket(privateBucket).key("temporary/" + id).build()));
             client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
             
