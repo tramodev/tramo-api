@@ -24,6 +24,7 @@ import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
+import com.tramo.backend.project.dto.ProjectStorageDTO;
 import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
@@ -148,6 +149,13 @@ public class ProjectService {
 
     public ProjectResponseDTO getById(Long id, User requester) {
         return responseMapper.toResponse(accessGuard.getOwnedProject(id, requester));
+    }
+
+    public ProjectStorageDTO getStorage(Long id, User requester) {
+        Project project = accessGuard.getOwnedProject(id, requester);
+        long images = uploadRecordRepository.sumBytesByProjectId(project.getId());
+        long text = itemRepository.sumContentBytesByProjectId(project.getId());
+        return new ProjectStorageDTO(images + text, images, text);
     }
 
     @Transactional

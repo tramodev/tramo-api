@@ -78,6 +78,22 @@ class QueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void projectStorageQueryCountDoesNotScaleWithNotes() throws Exception {
+        User owner = createUser("qcprojectstorage");
+        Project project = createProject(owner, "Storage", "private");
+        String path = "/api/project/" + pid(project) + "/storage";
+        long small = queryCount(() -> mockMvc.perform(get(path).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\"}");
+        for (int i = 0; i < 5; i++) {
+            postForId(owner, "/api/trail/" + trailId + "/item", "{\"title\":\"Note\"}");
+        }
+        long large = queryCount(() -> mockMvc.perform(get(path).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void projectListGraphThumbnailQueryCountDoesNotScaleWithProjects() throws Exception {
         User owner = createUser("qcgraphowner");
         for (int i = 0; i < 2; i++) {

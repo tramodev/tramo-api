@@ -265,6 +265,29 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.storageBytes").value(1000 + contentBytes));
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/storage").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageUsedBytes").value(1000 + contentBytes))
+                .andExpect(jsonPath("$.storageImageBytes").value(1000))
+                .andExpect(jsonPath("$.storageTextBytes").value(contentBytes));
+    }
+
+    @Test
+    void projectStorageIsEmptyAndOnlyAvailableToOwner() throws Exception {
+        User owner = createUser("storageowner");
+        User intruder = createUser("storageintruder");
+        Project project = createProject(owner, "Storage", "published");
+
+        mockMvc.perform(get("/api/project/" + pid(project) + "/storage").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageUsedBytes").value(0))
+                .andExpect(jsonPath("$.storageImageBytes").value(0))
+                .andExpect(jsonPath("$.storageTextBytes").value(0));
+        mockMvc.perform(get("/api/project/" + pid(project) + "/storage").header("Authorization", bearer(intruder)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/project/" + pid(project) + "/storage"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

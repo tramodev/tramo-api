@@ -12,6 +12,7 @@ import com.tramo.backend.project.service.ProjectStartService;
 import com.tramo.backend.project.dto.ProjectImageDTO;
 import com.tramo.backend.project.dto.ProjectRequestDTO;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
+import com.tramo.backend.project.dto.ProjectStorageDTO;
 import com.tramo.backend.project.dto.EditorBootstrapDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
@@ -96,6 +97,11 @@ public class ProjectController {
             @RequestParam(required = false) Long noteId, @RequestParam(required = false) Long trailId,
             @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectEditorService.get(projectIdCodec.decode(id), noteId, trailId, user));
+    }
+
+    @GetMapping("/{id}/storage")
+    public ResponseEntity<ProjectStorageDTO> getStorage(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(projectService.getStorage(projectIdCodec.decode(id), user));
     }
 
     @PutMapping("/{id}")
