@@ -19,12 +19,16 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 
 @Service
 public class SessionService {
+    private static final Duration REFRESH_RETRY_WINDOW = Duration.ofSeconds(5);
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
     private final UserRepository userRepository;
@@ -32,32 +36,37 @@ public class SessionService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenRepository refreshTokenRepository;
     private final IdentityRateLimiter identityRateLimiter;
+    private final byte[] refreshDerivationKey;
 
     public SessionService(UserRepository userRepository, JwtService jwtService,
                           AuthenticationManager authenticationManager,
                           RefreshTokenRepository refreshTokenRepository,
-                          IdentityRateLimiter identityRateLimiter) {
+                          IdentityRateLimiter identityRateLimiter,
+                          @Value("${app.jwt.secret}") String secret) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
         this.refreshTokenRepository = refreshTokenRepository;
         this.identityRateLimiter = identityRateLimiter;
+        this.refreshDerivationKey = Base64.getDecoder().decode(secret);
     }
 
     public AuthResponse issueSession(User user) {
-        String accessToken = jwtService.getToken(user);
-        String refreshToken = createRefreshToken(user);
-        return new AuthResponse(accessToken, refreshToken, user.getUsername(), user.getBirthDate() == null);
+        String refreshToken = OpaqueToken.generate();
+        createRefreshToken(user, refreshToken);
+        return issueSession(user, refreshToken);
     }
 
-    private String createRefreshToken(User user) {
-        String token = OpaqueToken.generate();
+    private AuthResponse issueSession(User user, String refreshToken) {
+        return new AuthResponse(jwtService.getToken(user), refreshToken, user.getUsername(), user.getBirthDate() == null);
+    }
+
+    private void createRefreshToken(User user, String token) {
         RefreshToken rt = new RefreshToken();
         rt.setUser(user);
         rt.setTokenHash(OpaqueToken.hash(token));
         rt.setExpiresAt(Instant.now().plus(30, ChronoUnit.DAYS));
         refreshTokenRepository.save(rt);
-        return token;
     }
 
     public AuthResponse login(LoginRequestDTO request) {
@@ -95,11 +104,22 @@ public class SessionService {
         }
 
         if (refreshToken.isRevoked()) {
+            if (refreshToken.getRevokedAt() != null
+                    && now.isBefore(refreshToken.getRevokedAt().plus(REFRESH_RETRY_WINDOW))) {
+                String replacement = OpaqueToken.replacement(request.getRefreshToken(), refreshDerivationKey);
+                refreshTokenRepository.findByTokenHashForUpdate(OpaqueToken.hash(replacement))
+                        .filter(token -> !token.isRevoked() && token.getExpiresAt().isAfter(Instant.now()))
+                        .filter(token -> token.getUser().getId().equals(user.getId()))
+                        .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
+                return issueSession(user, replacement);
+            }
             refreshTokenRepository.deleteByUserId(user.getId());
             throw new InvalidTokenException("Invalid refresh token");
         }
 
-        AuthResponse response = issueSession(user);
+        String replacement = OpaqueToken.replacement(request.getRefreshToken(), refreshDerivationKey);
+        createRefreshToken(user, replacement);
+        AuthResponse response = issueSession(user, replacement);
         refreshToken.setRevoked(true);
         refreshToken.setRevokedAt(now);
         refreshTokenRepository.save(refreshToken);

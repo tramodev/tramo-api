@@ -9,7 +9,6 @@ import com.tramo.backend.auth.dto.RefreshTokenRequestDTO;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.auth.service.SessionService;
 import com.tramo.backend.auth.service.OpaqueToken;
-import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -88,13 +87,16 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString()
                 .replaceAll(".*\"refreshToken\":\"([^\"]+)\".*", "$1");
 
+        RefreshToken rotated = refreshTokenRepository.findByTokenHash(OpaqueToken.hash(token)).orElseThrow();
+        rotated.setRevokedAt(Instant.now().minusSeconds(6));
+        refreshTokenRepository.save(rotated);
         refresh(token).andExpect(status().isUnauthorized());
 
         refresh(newToken).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void concurrentRefreshesRejectReuseAndRevokeAllTokens() throws Exception {
+    void concurrentRefreshesReturnTheSameReplacement() throws Exception {
         User user = createUser("concurrent");
         String token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
         var executor = Executors.newFixedThreadPool(2);
@@ -105,11 +107,7 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
             if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
             RefreshTokenRequestDTO request = new RefreshTokenRequestDTO();
             request.setRefreshToken(token);
-            try {
-                return sessionService.refresh(request);
-            } catch (InvalidTokenException ex) {
-                return null;
-            }
+            return sessionService.refresh(request);
         };
         try {
             var first = executor.submit(call);
@@ -118,9 +116,9 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
             start.countDown();
             AuthResponse a = first.get(10, TimeUnit.SECONDS);
             AuthResponse b = second.get(10, TimeUnit.SECONDS);
-            assertThat(new AuthResponse[]{a, b}).filteredOn(response -> response != null).hasSize(1);
-            assertThat(refreshTokenRepository.findAll()).isEmpty();
-            refresh((a != null ? a : b).getRefreshToken()).andExpect(status().isUnauthorized());
+            assertThat(a.getRefreshToken()).isEqualTo(b.getRefreshToken()).isNotEqualTo(token);
+            assertThat(refreshTokenRepository.findAll()).hasSize(2);
+            refresh(a.getRefreshToken()).andExpect(status().isOk());
         } finally {
             start.countDown();
             executor.shutdownNow();
@@ -167,7 +165,7 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void duplicateRefreshRevokesAnAlreadyRotatedReplacement() throws Exception {
+    void duplicateRefreshDoesNotRevokeAnAlreadyRotatedReplacement() throws Exception {
         User user = createUser("duplicateAdvanced");
         String token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
         String response = refresh(token).andExpect(status().isOk())
@@ -177,7 +175,21 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         String next = com.jayway.jsonpath.JsonPath.read(nextResponse, "$.refreshToken");
         refresh(token).andExpect(status().isUnauthorized());
-        refresh(next).andExpect(status().isUnauthorized());
+        refresh(next).andExpect(status().isOk());
+    }
+
+    @Test
+    void retryReturnsTheReplacementWithoutExtendingTheWindowOrSavingPlaintext() throws Exception {
+        User user = createUser("refreshretry");
+        String token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        String body = refresh(token).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String replacement = com.jayway.jsonpath.JsonPath.read(body, "$.refreshToken");
+        Instant revokedAt = refreshTokenRepository.findByTokenHash(OpaqueToken.hash(token)).orElseThrow().getRevokedAt();
+        refresh(token).andExpect(status().isOk()).andExpect(jsonPath("$.refreshToken").value(replacement));
+        assertThat(refreshTokenRepository.findByTokenHash(OpaqueToken.hash(token)).orElseThrow().getRevokedAt())
+                .isEqualTo(revokedAt);
+        assertThat(refreshTokenRepository.findAll()).extracting(RefreshToken::getTokenHash)
+                .containsExactlyInAnyOrder(OpaqueToken.hash(token), OpaqueToken.hash(replacement));
     }
 
     @Test

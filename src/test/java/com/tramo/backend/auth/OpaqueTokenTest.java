@@ -21,4 +21,17 @@ class OpaqueTokenTest {
                 .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         assertThat(OpaqueToken.hash("ABC")).isNotEqualTo(OpaqueToken.hash("abc"));
     }
+
+    @Test
+    void replacementIsStableAcrossInstancesAndBoundToTheTokenAndSecret() {
+        byte[] key = Base64.getDecoder().decode("dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=");
+        String token = OpaqueToken.generate();
+        String replacement = OpaqueToken.replacement(token, key);
+        assertThat(replacement).matches("[A-Za-z0-9_-]{43}")
+                .isEqualTo(OpaqueToken.replacement(token, key.clone()))
+                .isNotEqualTo(token)
+                .isNotEqualTo(OpaqueToken.replacement(OpaqueToken.generate(), key));
+        key[0] ^= 1;
+        assertThat(OpaqueToken.replacement(token, key)).isNotEqualTo(replacement);
+    }
 }
