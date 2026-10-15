@@ -106,15 +106,19 @@ public class PatreonController {
             return rejected("OAUTH_STATE_EXPIRED", null);
         }
 
-        User user;
+        Long userId = connectToken.getUser().getId();
         boolean activePatron;
         try {
             final PatreonClient.PatreonTokens tokens = patreonClient.exchangeCode(code);
             final PatreonClient.PatreonIdentity identity = patreonClient.fetchIdentity(tokens.accessToken());
             activePatron = identity.activePatron();
 
-            user = connectToken.getUser();
             transactionTemplate.executeWithoutResult(status -> {
+                User user = userRepository.findByIdForUpdate(userId)
+                        .orElseThrow(() -> new InvalidTokenException("Invalid account"));
+                if (!user.isEnabled() || user.isBanned()) {
+                    throw new InvalidTokenException("Invalid account");
+                }
                 user.setPatreonUserId(identity.patreonUserId());
                 user.setPatreonAccessToken(tokens.accessToken());
                 user.setPatreonRefreshToken(tokens.refreshToken());

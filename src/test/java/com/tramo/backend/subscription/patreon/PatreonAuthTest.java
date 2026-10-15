@@ -6,9 +6,15 @@ import com.jayway.jsonpath.JsonPath;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -89,6 +95,61 @@ class PatreonAuthTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/auth/patreon/callback").param("code", "auth-code").param("state", "not-a-real-token"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("patreon=error")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"password", "ban", "delete"})
+    void callbackPreservesSecurityChangesMadeWhilePatreonResponds(String change) throws Exception {
+        User user = createUser("concurrentpatron");
+        String accessToken = bearer(user);
+        String state = startConnectFlow(user);
+        String newPassword = passwordEncoder.encode("Str0ngerPass!99");
+        UUID sessionVersion = UUID.randomUUID();
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(patreonClient.exchangeCode("auth-code"))
+                .thenReturn(new PatreonClient.PatreonTokens("access-tok", "refresh-tok"));
+        when(patreonClient.fetchIdentity("access-tok")).thenAnswer(call -> {
+            started.countDown();
+            if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Patreon response timed out");
+            return new PatreonClient.PatreonIdentity("patreon-123", true);
+        });
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var callback = executor.submit(() -> mockMvc.perform(get("/api/auth/patreon/callback")
+                    .param("code", "auth-code").param("state", state)));
+            assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+            if ("delete".equals(change)) {
+                userRepository.deleteById(user.getId());
+            } else {
+                User current = userRepository.findById(user.getId()).orElseThrow();
+                current.setPassword(newPassword);
+                current.setSessionVersion(sessionVersion);
+                current.setBanned("ban".equals(change));
+                userRepository.saveAndFlush(current);
+            }
+            release.countDown();
+            callback.get(10, TimeUnit.SECONDS)
+                    .andExpect(status().is3xxRedirection())
+                    .andExpect(header().string("Location", containsString(
+                            "password".equals(change) ? "patreon=connected" : "patreon=error")));
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+        if ("delete".equals(change)) {
+            assertThat(userRepository.findById(user.getId())).isEmpty();
+        } else {
+            User current = userRepository.findById(user.getId()).orElseThrow();
+            assertThat(current.getPassword()).isEqualTo(newPassword);
+            assertThat(current.getSessionVersion()).isEqualTo(sessionVersion);
+            assertThat(current.isBanned()).isEqualTo("ban".equals(change));
+            assertThat(current.getPatreonUserId()).isEqualTo("password".equals(change) ? "patreon-123" : null);
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM subscription WHERE user_id = ?", Long.class, user.getId()))
+                .isEqualTo("password".equals(change) ? 1L : 0L);
+        mockMvc.perform(get("/api/profile/me").header("Authorization", accessToken))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -185,6 +185,9 @@ class PatreonFlowTest {
     }
 
     private PatreonController callbackController(boolean active) {
+        user.setId(1L);
+        user.setEmailVerified(true);
+        when(users.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         var tokens = mock(PatreonConnectTokenRepository.class);
         var client = mock(PatreonClient.class);
         var transactions = mock(PlatformTransactionManager.class);
