@@ -6,6 +6,7 @@ import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.auth.repository.PasswordResetTokenRepository;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.comment.repository.CommentRepository;
+import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
@@ -15,6 +16,8 @@ import com.tramo.backend.project.repository.ProjectBookmarkRepository;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.subscription.patreon.PatreonConnectTokenRepository;
+import com.tramo.backend.subscription.repository.SubscriptionRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.FollowRepository;
@@ -42,6 +45,8 @@ public class UserAccountService {
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final CommentRepository commentRepository;
     private final CommentReportRepository commentReportRepository;
+    private final SubscriptionRepository subscriptionRepository;
+    private final PatreonConnectTokenRepository patreonConnectTokenRepository;
     private final TransactionTemplate transactionTemplate;
 
     public UserAccountService(UserRepository userRepository, ProjectRepository projectRepository,
@@ -55,6 +60,8 @@ public class UserAccountService {
                                EmailVerificationTokenRepository emailVerificationTokenRepository,
                                CommentRepository commentRepository,
                                CommentReportRepository commentReportRepository,
+                               SubscriptionRepository subscriptionRepository,
+                               PatreonConnectTokenRepository patreonConnectTokenRepository,
                                PlatformTransactionManager transactionManager) {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.userRepository = userRepository;
@@ -73,19 +80,26 @@ public class UserAccountService {
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
         this.commentRepository = commentRepository;
         this.commentReportRepository = commentReportRepository;
+        this.subscriptionRepository = subscriptionRepository;
+        this.patreonConnectTokenRepository = patreonConnectTokenRepository;
     }
 
     public void deleteAccount(User user) {
         Long userId = user.getId();
 
-        for (Project project : projectRepository.findByOwnerId(userId)) {
-            projectService.delete(project.getId(), user);
-        }
-
-        transactionTemplate.executeWithoutResult(status -> deleteAccountRecords(userId));
+        transactionTemplate.executeWithoutResult(status -> {
+            userRepository.findByIdForUpdate(userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+            for (Project project : projectRepository.findByOwnerId(userId)) {
+                projectService.delete(project.getId(), user);
+            }
+            deleteAccountRecords(userId);
+        });
     }
 
     private void deleteAccountRecords(Long userId) {
+        subscriptionRepository.deleteByUserId(userId);
+        patreonConnectTokenRepository.deleteByUserId(userId);
         projectVoteRepository.deleteByUserId(userId);
         projectBookmarkRepository.deleteByUserId(userId);
         userBadgeRepository.deleteByUserId(userId);

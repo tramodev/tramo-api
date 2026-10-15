@@ -9,4 +9,5 @@ import java.util.Optional;
 
 public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
     Optional<Subscription> findFirstByUserIdAndStatus(Long userId, String status);
+    void deleteByUserId(Long userId);
 }

@@ -3,18 +3,27 @@
 package com.tramo.backend.user;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.comment.repository.CommentRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
+import com.tramo.backend.subscription.patreon.PatreonConnectToken;
+import com.tramo.backend.subscription.patreon.PatreonConnectTokenRepository;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.BlockedUserRepository;
 import com.tramo.backend.user.repository.FollowRepository;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+
+import java.time.Instant;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,6 +45,12 @@ class AccountDeletionTest extends AbstractIntegrationTest {
     private BlockedUserRepository blockedUserRepository;
     @Autowired
     private CommentRepository commentRepository;
+    @Autowired
+    private SubscriptionService subscriptionService;
+    @Autowired
+    private PatreonConnectTokenRepository patreonConnectTokenRepository;
+    @MockitoSpyBean
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
 
     private Project published(User owner, String title) {
         return createProject(owner, title, "published", "A description", null);
@@ -48,6 +63,81 @@ class AccountDeletionTest extends AbstractIntegrationTest {
     private void deleteAccount(User user) throws Exception {
         mockMvc.perform(delete("/user/me").header("Authorization", bearer(user)))
                 .andExpect(status().isNoContent());
+    }
+
+    private PatreonConnectToken pendingConnection(User user) {
+        PatreonConnectToken token = new PatreonConnectToken();
+        token.setUser(user);
+        token.setToken(UUID.randomUUID().toString());
+        token.setExpiresAt(Instant.now().plusSeconds(900));
+        return patreonConnectTokenRepository.saveAndFlush(token);
+    }
+
+    @Test
+    void deletingAccountRemovesSubscriptionHistoryAndPaymentLinks() throws Exception {
+        User me = createUser("delsubscriber");
+        User other = createUser("keepsubscriber");
+        Project mine = published(me, "Subscriber project");
+        var plan = subscriptionService.findOrCreateSupporterPlan();
+        subscriptionService.activateSupporterSubscription(me, plan);
+        subscriptionService.cancel(me);
+        subscriptionService.activateSupporterSubscription(me, plan);
+        subscriptionService.activateSupporterSubscription(other, plan);
+        Long paymentId = jdbcTemplate.queryForObject("INSERT INTO payment (id, amount, currency) "
+                + "VALUES (nextval('payment_seq'), 5, 'USD') RETURNING id", Long.class);
+        jdbcTemplate.update("INSERT INTO subscription_payment (subscription_id, payment_id) "
+                + "SELECT id, ? FROM subscription WHERE user_id = ? AND status = 'CANCELED'", paymentId, me.getId());
+
+        deleteAccount(me);
+
+        assertThat(userRepository.findById(me.getId())).isEmpty();
+        assertThat(projectRepository.findById(mine.getId())).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM subscription WHERE user_id = ?", Long.class, me.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM subscription_payment WHERE payment_id = ?", Long.class, paymentId)).isZero();
+        assertThat(subscriptionService.isSupporter(other)).isTrue();
+    }
+
+    @Test
+    void deletingAccountRemovesPendingPatreonConnections() throws Exception {
+        User me = createUser("delpendingpatreon");
+        User other = createUser("keeppendingpatreon");
+        published(me, "Pending connection project");
+        PatreonConnectToken mine = pendingConnection(me);
+        PatreonConnectToken theirs = pendingConnection(other);
+
+        deleteAccount(me);
+
+        assertThat(userRepository.findById(me.getId())).isEmpty();
+        assertThat(patreonConnectTokenRepository.findById(mine.getId())).isEmpty();
+        assertThat(patreonConnectTokenRepository.findById(theirs.getId())).isPresent();
+    }
+
+    @Test
+    void failedAccountDeletionRollsBackProjectsAndRelatedRecords() throws Exception {
+        User me = createUser("delrollback");
+        Project first = published(me, "Keep first");
+        Project second = published(me, "Keep second");
+        String imageUrl = "https://test-bucket.example.com/thumbnail/" + me.getId() + "/rollback.jpg";
+        first.setThumbnailImageUrl(imageUrl);
+        projectRepository.saveAndFlush(first);
+        long trailId = postForId(me, "/api/project/" + pid(first) + "/trail", "{\"title\":\"Keep trail\"}");
+        long itemId = postForId(me, "/api/trail/" + trailId + "/item", "{\"title\":\"Keep note\"}");
+        subscriptionService.activateSupporterSubscription(me, subscriptionService.findOrCreateSupporterPlan());
+        PatreonConnectToken token = pendingConnection(me);
+        doThrow(new IllegalStateException("injected failure")).when(emailVerificationTokenRepository).deleteByUserId(me.getId());
+
+        mockMvc.perform(delete("/user/me").header("Authorization", bearer(me)))
+                .andExpect(status().isInternalServerError());
+
+        assertThat(userRepository.findById(me.getId())).isPresent();
+        assertThat(projectRepository.findByOwnerId(me.getId())).extracting(Project::getId)
+                .containsExactlyInAnyOrder(first.getId(), second.getId());
+        assertThat(subscriptionService.isSupporter(me)).isTrue();
+        assertThat(patreonConnectTokenRepository.findById(token.getId())).isPresent();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM pending_image_deletion WHERE url = ?", Long.class, imageUrl)).isZero();
+        mockMvc.perform(get("/api/trail/" + trailId + "/item").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(itemId));
     }
 
     @Test
