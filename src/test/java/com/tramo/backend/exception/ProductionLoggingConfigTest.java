@@ -23,6 +23,8 @@ class ProductionLoggingConfigTest {
                     assertThat(context).hasNotFailed();
                     ConfigurableEnvironment env = context.getEnvironment();
                     assertThat(env.getActiveProfiles()).contains("prod");
+                    assertThat(env.getProperty("spring.mail.properties.mail.smtp.starttls.required")).isEqualTo("true");
+                    assertThat(env.getProperty("spring.mail.properties.mail.smtp.ssl.checkserveridentity")).isEqualTo("true");
                     for (String key : new String[]{"spring.jpa.show-sql", "spring.jpa.properties.hibernate.format_sql",
                             "spring.mvc.log-request-details", "spring.mail.properties.mail.debug",
                             "spring.mail.properties.mail.debug.auth"}) {
