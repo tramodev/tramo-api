@@ -55,6 +55,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
     }
 
+    @ExceptionHandler(ContentConflictException.class)
+    public ResponseEntity<ErrorResponse> handleContentConflict(ContentConflictException ex) {
+        ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());
+        error.setCode("CONTENT_CONFLICT");
+        return handled(ex, error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(ExtractionConflictException.class)
     public ResponseEntity<ErrorResponse> handleExtractionConflict(ExtractionConflictException ex) {
         ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());

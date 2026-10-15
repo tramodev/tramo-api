@@ -25,6 +25,27 @@ class QueryCountTest extends AbstractIntegrationTest {
     @Autowired NotificationService notifications;
 
     @Test
+    void publicSiteContentUsesOneQueryPerSectionRegardlessOfEntryCount() throws Exception {
+        long small = queryCount(() -> {
+            mockMvc.perform(get("/api/public/content/blog")).andExpect(status().isOk());
+            mockMvc.perform(get("/api/public/content/changelog")).andExpect(status().isOk());
+            mockMvc.perform(get("/api/public/content/roadmap")).andExpect(status().isOk());
+        });
+        for (int i = 0; i < 10; i++) {
+            jdbcTemplate.update("INSERT INTO blog_post (slug, title, summary, category, content, published, published_date) VALUES (?, 'Title', 'Summary', 'Ideas', 'Body', true, CURRENT_DATE)", "post-" + i);
+            jdbcTemplate.update("INSERT INTO changelog_entry (title, content, published, published_date) VALUES ('Update', 'Changes', true, CURRENT_DATE)");
+            jdbcTemplate.update("INSERT INTO roadmap_item (title, description, status, position, published) VALUES ('Plan', 'More', 'PLANNED', ?, true)", i);
+        }
+        long large = queryCount(() -> {
+            mockMvc.perform(get("/api/public/content/blog")).andExpect(status().isOk());
+            mockMvc.perform(get("/api/public/content/changelog")).andExpect(status().isOk());
+            mockMvc.perform(get("/api/public/content/roadmap")).andExpect(status().isOk());
+        });
+        assertThat(small).isEqualTo(3);
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void heartbeatSessionValidationUsesOneQueryRegardlessOfConnectedUsers() throws Exception {
         var users = new ArrayList<User>();
         try {
