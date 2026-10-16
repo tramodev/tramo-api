@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -34,11 +36,13 @@ public class PasswordService {
     private final EmailService emailService;
     private final IdentityRateLimiter identityRateLimiter;
     private final NotificationService notifications;
+    private final TransactionTemplate transactionTemplate;
 
     public PasswordService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                            PasswordResetTokenRepository passwordResetTokenRepository,
                            RefreshTokenRepository refreshTokenRepository, EmailService emailService,
-                           IdentityRateLimiter identityRateLimiter, NotificationService notifications) {
+                            IdentityRateLimiter identityRateLimiter, NotificationService notifications,
+                            PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -46,17 +50,19 @@ public class PasswordService {
         this.emailService = emailService;
         this.identityRateLimiter = identityRateLimiter;
         this.notifications = notifications;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public void forgotPassword(String email) {
         if (email != null && !email.isBlank()) {
             identityRateLimiter.check("forgot-password", email, 3, 3);
         }
 
         userRepository.findByEmail(email).ifPresent(user -> {
-            passwordResetTokenRepository.deleteByUserId(user.getId());
-            String token = createPasswordResetToken(user);
+            String token = transactionTemplate.execute(status -> {
+                passwordResetTokenRepository.deleteByUserId(user.getId());
+                return createPasswordResetToken(user);
+            });
             emailService.sendPasswordResetEmail(user, token);
         });
     }

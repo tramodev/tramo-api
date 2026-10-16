@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -20,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -152,6 +154,13 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     void resendVerificationReplacesTokenForUnverifiedUser() throws Exception {
         User user = createUser("resendme", "resendme@example.com", false, false, Role.USER);
         EmailVerificationToken old = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(TransactionSynchronizationManager.hasResource(entityManagerFactory)).isFalse();
+            assertThat(emailVerificationTokenRepository.findByToken(invocation.getArgument(1))).isPresent();
+            assertThat(emailVerificationTokenRepository.findByToken(old.getToken())).isEmpty();
+            return null;
+        }).when(emailService).sendVerificationEmail(any(User.class), anyString());
 
         mockMvc.perform(post("/api/auth/resend-verification")
                         .contentType(MediaType.APPLICATION_JSON)

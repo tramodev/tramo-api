@@ -14,6 +14,8 @@ import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,6 +46,9 @@ class PasswordResetTest extends AbstractIntegrationTest {
 
     @Autowired
     PasswordService passwordService;
+
+    @Autowired
+    JavaMailSenderImpl mailSender;
 
     private String issueResetToken(User user, Instant expiresAt) {
         String rawToken = OpaqueToken.generate();
@@ -72,6 +78,12 @@ class PasswordResetTest extends AbstractIntegrationTest {
     @Test
     void forgotPasswordCreatesTokenAndSendsEmail() throws Exception {
         User user = createUser("forgetful");
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(TransactionSynchronizationManager.hasResource(entityManagerFactory)).isFalse();
+            assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(invocation.getArgument(1)))).isPresent();
+            return null;
+        }).when(emailService).sendPasswordResetEmail(any(User.class), anyString());
 
         mockMvc.perform(post("/api/auth/forgot-password")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -89,6 +101,14 @@ class PasswordResetTest extends AbstractIntegrationTest {
                 .isNotEqualTo(token.getValue());
         resetPassword(stored.getTokenHash(), "NewPassw0rd!").andExpect(status().isUnauthorized());
         resetPassword(token.getValue(), "NewPassw0rd!").andExpect(status().isNoContent());
+    }
+
+    @Test
+    void smtpOperationsHaveFiniteTimeouts() {
+        assertThat(mailSender.getJavaMailProperties())
+                .containsEntry("mail.smtp.connectiontimeout", "5000")
+                .containsEntry("mail.smtp.timeout", "5000")
+                .containsEntry("mail.smtp.writetimeout", "5000");
     }
 
     @Test

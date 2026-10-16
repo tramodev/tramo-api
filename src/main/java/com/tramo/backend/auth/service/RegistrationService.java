@@ -128,7 +128,6 @@ public class RegistrationService {
         return sessionService.issueSession(user);
     }
 
-    @Transactional
     public void resendVerification(String username, String email) {
         String identifier = (username != null && !username.isBlank()) ? username : email;
         if (identifier != null && !identifier.isBlank()) {
@@ -144,8 +143,10 @@ public class RegistrationService {
 
         userOpt.ifPresent(user -> {
             if (!user.isEmailVerified()) {
-                emailVerificationTokenRepository.deleteByUserId(user.getId());
-                EmailVerificationToken token = createVerificationToken(user);
+                EmailVerificationToken token = transactionTemplate.execute(status -> {
+                    emailVerificationTokenRepository.deleteByUserId(user.getId());
+                    return createVerificationToken(user);
+                });
                 emailService.sendVerificationEmail(user, token.getToken());
             }
         });
