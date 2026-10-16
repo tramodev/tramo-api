@@ -28,6 +28,9 @@ public class Trail {
     private Date creationDate;
     private Date modifiedDate;
 
+    @Column(nullable = false)
+    private int orderIndex;
+
     
     @Column(nullable = false)
     private int version = 1;

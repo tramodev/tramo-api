@@ -25,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +79,7 @@ public class ProjectStartService {
         var existing = projects.findExampleByOwnerId(user.getId());
         if (existing.isPresent()) {
             var project = entityManager.find(Project.class, existing.get().getId(), LockModeType.PESSIMISTIC_WRITE);
-            var firstTrail = trails.findFirstByProjectIdOrderByIdAsc(project.getId());
+            var firstTrail = trails.findFirstByProjectIdOrderByOrderIndexAscIdAsc(project.getId());
             Long trailId = firstTrail.isPresent() ? firstTrail.get().getId() : trail(project.getId(), "My first trail", "", user);
             var firstStep = steps.findFirstByTrailIdOrderByOrderIndexAscIdAsc(trailId);
             Long itemId = firstStep.isPresent() ? firstStep.get().getItem().getId() : note(trailId, "Untitled note", null, user);
@@ -102,7 +101,7 @@ public class ProjectStartService {
     public StartedProjectDTO start(Long projectId, Long preferredTrailId, User user) {
         access.getOwnedProject(projectId, user);
         var project = entityManager.find(Project.class, projectId, LockModeType.PESSIMISTIC_WRITE);
-        var existingTrails = trails.findByProjectId(projectId).stream().filter(t -> preferredTrailId == null || t.getId().equals(preferredTrailId)).sorted(Comparator.comparing(t -> t.getId())).toList();
+        var existingTrails = trails.findByProjectId(projectId).stream().filter(t -> preferredTrailId == null || t.getId().equals(preferredTrailId)).toList();
         if (preferredTrailId != null && existingTrails.isEmpty()) throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_INVALID);
         for (var trail : existingTrails) {
             var trailSteps = steps.findByTrailIdOrderByOrderIndexAsc(trail.getId());

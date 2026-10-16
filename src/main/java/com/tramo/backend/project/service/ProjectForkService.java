@@ -145,6 +145,7 @@ public class ProjectForkService {
             trailCopy.setModifiedDate(new Date());
             trailCopy.setProject(fork);
             trailCopy.setForkedFrom(sourceTrail);
+            trailCopy.setOrderIndex(sourceTrail.getOrderIndex());
             trailCopy = trailRepository.save(trailCopy);
 
             for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
@@ -186,11 +187,13 @@ public class ProjectForkService {
 
     private void forkFromSnapshot(Project fork, ProjectSnapshotData data) {
         Map<Long, Item> itemCopies = new HashMap<>();
+        int trailOrder = 0;
 
         for (ProjectSnapshotData.TrailData trailData : data.trails()) {
             ContentLimits.assertTrailDescription(trailData.description());
             Trail trailCopy = new Trail();
             trailCopy.setTitle(trailData.title());
+            trailCopy.setOrderIndex(trailOrder++);
             trailCopy.setDescription(trailData.description());
             trailCopy.setVisibility(trailData.visibility());
             trailCopy.setCreationDate(new Date());

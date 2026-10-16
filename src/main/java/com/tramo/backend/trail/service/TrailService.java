@@ -22,11 +22,15 @@ import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.HashSet;
+import java.util.stream.Collectors;
 
 @Service
 public class TrailService {
@@ -37,11 +41,12 @@ public class TrailService {
     private final ProjectIdCodec projectIdCodec;
     private final ImageDeletionQueue imageDeletionQueue;
     private final SubscriptionService subscriptions;
+    private final EntityManager entityManager;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
                         ItemRepository itemRepository,
                         AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
-                        ImageDeletionQueue imageDeletionQueue, SubscriptionService subscriptions) {
+                        ImageDeletionQueue imageDeletionQueue, SubscriptionService subscriptions, EntityManager entityManager) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
@@ -49,6 +54,7 @@ public class TrailService {
         this.projectIdCodec = projectIdCodec;
         this.imageDeletionQueue = imageDeletionQueue;
         this.subscriptions = subscriptions;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -66,6 +72,7 @@ public class TrailService {
         trail.setDescription(request.getDescription());
         trail.setVisibility(request.getVisibility());
         trail.setProject(project);
+        trail.setOrderIndex(trailRepository.nextOrderIndex(projectId));
         trail.setCreationDate(new Date());
         trail.setModifiedDate(new Date());
         return toResponse(trailRepository.save(trail));
@@ -80,6 +87,19 @@ public class TrailService {
 
     public TrailResponseDTO getById(Long id, User requester) {
         return toResponse(getOwnedTrail(id, requester));
+    }
+
+    @Transactional
+    public void reorder(Long projectId, List<Long> trailIds, User requester) {
+        Project project = accessGuard.getOwnedProject(projectId, requester);
+        entityManager.lock(project, LockModeType.PESSIMISTIC_WRITE);
+        List<Trail> trails = trailRepository.findByProjectId(projectId);
+        var byId = trails.stream().collect(Collectors.toMap(Trail::getId, trail -> trail));
+        if (trailIds.size() != byId.size() || !byId.keySet().equals(new HashSet<>(trailIds))) {
+            throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_ORDER_INVALID);
+        }
+        for (int index = 0; index < trailIds.size(); index++) byId.get(trailIds.get(index)).setOrderIndex(index);
+        trailRepository.saveAll(trails);
     }
 
     @Transactional

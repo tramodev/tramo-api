@@ -17,17 +17,20 @@ import java.util.Optional;
 public interface TrailRepository extends JpaRepository<Trail, Long> {
     long countByProjectId(Long projectId);
 
-    Optional<Trail> findFirstByProjectIdOrderByIdAsc(Long projectId);
+    Optional<Trail> findFirstByProjectIdOrderByOrderIndexAscIdAsc(Long projectId);
+
+    @Query("SELECT COALESCE(MAX(t.orderIndex), -1) + 1 FROM Trail t WHERE t.project.id = :projectId")
+    int nextOrderIndex(@Param("projectId") Long projectId);
     @Query(value = "SELECT id FROM trail WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Long> lockById(@Param("id") Long id);
 
     
     
     
-    @Query("select t from Trail t join fetch t.project where t.project.id = :projectId order by t.id asc")
+    @Query("select t from Trail t join fetch t.project where t.project.id = :projectId order by t.orderIndex asc, t.id asc")
     List<Trail> findByProjectId(@Param("projectId") Long projectId);
 
-    @Query("select t from Trail t where t.project.id in :projectIds order by t.project.id asc, t.id asc")
+    @Query("select t from Trail t where t.project.id in :projectIds order by t.project.id asc, t.orderIndex asc, t.id asc")
     List<Trail> findByProjectIdIn(@Param("projectIds") Collection<Long> projectIds);
 
     

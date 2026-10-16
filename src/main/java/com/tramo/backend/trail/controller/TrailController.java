@@ -5,6 +5,7 @@ package com.tramo.backend.trail.controller;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.trail.dto.TrailRequestDTO;
 import com.tramo.backend.trail.dto.TrailResponseDTO;
+import com.tramo.backend.trail.dto.ProjectTrailOrderRequestDTO;
 import com.tramo.backend.trail.service.TrailService;
 import com.tramo.backend.user.entity.User;
 import jakarta.validation.Valid;
@@ -39,6 +40,13 @@ public class TrailController {
     @GetMapping("/trail/{id}")
     public ResponseEntity<TrailResponseDTO> getById(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(trailService.getById(id, user));
+    }
+
+    @PutMapping("/project/{projectId}/trail/order")
+    public ResponseEntity<Void> reorder(@PathVariable String projectId, @Valid @RequestBody ProjectTrailOrderRequestDTO request,
+                                       @AuthenticationPrincipal User user) {
+        trailService.reorder(projectIdCodec.decode(projectId), request.trailIds(), user);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/trail/{id}")
