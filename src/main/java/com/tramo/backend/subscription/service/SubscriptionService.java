@@ -108,9 +108,15 @@ public class SubscriptionService {
     
     @Transactional
     public void activateSupporterSubscription(User user, Plan plan) {
+        userRepository.findByIdForUpdate(user.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (isSupporter(user)) {
             return;
         }
+        subscriptionRepository.findFirstByUserIdAndStatus(user.getId(), STATUS_ACTIVE)
+                .ifPresent(expired -> {
+                    expired.setStatus(STATUS_CANCELED);
+                    subscriptionRepository.saveAndFlush(expired);
+                });
         Subscription subscription = new Subscription();
         subscription.setUser(user);
         subscription.setStatus(STATUS_ACTIVE);
@@ -122,6 +128,7 @@ public class SubscriptionService {
 
     @Transactional
     public void deactivateSupporterSubscription(User user) {
+        userRepository.findByIdForUpdate(user.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         subscriptionRepository.findFirstByUserIdAndStatus(user.getId(), STATUS_ACTIVE)
                 .ifPresent(subscription -> {
                     subscription.setStatus(STATUS_CANCELED);
