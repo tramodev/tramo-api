@@ -84,7 +84,7 @@ public class ExtractSelectionService {
         validateSelection(extracted.path("root"), 0);
         JsonNode replacement = document(request.sourceContent());
         String marker = "tramo-extraction:" + request.operationId();
-        if (countMarker(replacement.path("root"), marker, request.title().trim(), null, 0) != 1)
+        if (countMarker(replacement.path("root"), marker, request.title().trim(), null, 0) != (Boolean.FALSE.equals(request.leaveLink()) ? 0 : 1))
             throw conflict("The replacement link is invalid. Select again.");
         ItemRequestDTO create = new ItemRequestDTO(); create.setTitle(request.title().trim()); create.setType(source.getType());
         Long newId = itemService.createLoose(projectId, create, user).getId();
