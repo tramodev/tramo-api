@@ -8,6 +8,8 @@ import com.tramo.backend.project.repository.ProjectBookmarkRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
@@ -296,6 +298,40 @@ class ProjectCrudTest extends AbstractIntegrationTest {
 
         Project fork = projectRepository.findById(projectIdCodec.decode(forkId)).orElseThrow();
         assertThat(fork.getForkedFrom()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void deletePreservesNotesOwnedByAnotherProjectWithLegacyMemberships(boolean hasOtherMembership) throws Exception {
+        User owner = createUser("legacycrossproject");
+        Project source = createProject(owner, "Keep source", "private");
+        Project target = createProject(owner, "Delete target", "private");
+        long itemId = postForId(owner, "/api/project/" + pid(source) + "/item", "{\"title\":\"Keep note\"}");
+        mockMvc.perform(put("/api/item/" + itemId + "/content").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"Keep this content\"}"))
+                .andExpect(status().isNoContent());
+        if (hasOtherMembership) {
+            long sourceTrail = postForId(owner, "/api/project/" + pid(source) + "/trail", "{\"title\":\"Keep trail\"}");
+            mockMvc.perform(post("/api/trail/" + sourceTrail + "/item/" + itemId).header("Authorization", bearer(owner)))
+                    .andExpect(status().isNoContent());
+        }
+        for (int index = 0; index < 2; index++) {
+            long trailId = postForId(owner, "/api/project/" + pid(target) + "/trail", "{\"title\":\"Legacy trail\"}");
+            jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) "
+                    + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", trailId, itemId);
+        }
+
+        mockMvc.perform(delete("/api/project/" + pid(target)).header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        assertThat(projectRepository.findById(target.getId())).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT project_id FROM item WHERE id = ?", Long.class, itemId)).isEqualTo(source.getId());
+        mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("Keep this content"));
+        if (!hasOtherMembership) {
+            assertThat(jdbcTemplate.queryForObject("SELECT unfiled FROM item WHERE id = ?", Boolean.class, itemId)).isTrue();
+        }
     }
 
     @Test

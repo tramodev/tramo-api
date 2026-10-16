@@ -268,10 +268,16 @@ public class ProjectService {
         for (Trail trail : trailRepository.findByProjectId(id)) {
             List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trail.getId());
             for (TrailItem membership : memberships) {
-                Long itemId = membership.getItem().getId();
+                Item item = membership.getItem();
+                Long itemId = item.getId();
                 trailItemRepository.delete(membership);
                 if (trailItemRepository.findByItemId(itemId).isEmpty()) {
-                    itemRepository.deleteById(itemId);
+                    if (item.getProject() == null || item.getProject().getId().equals(id)) {
+                        itemRepository.deleteById(itemId);
+                    } else {
+                        item.setUnfiled(true);
+                        itemRepository.save(item);
+                    }
                 }
             }
             trailRepository.delete(trail);

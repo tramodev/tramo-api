@@ -135,12 +135,14 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM note_extraction", Long.class)).isZero();
     }
     @Test
-    void reportsSharedUsageAcrossProjectsWithoutExposingTheirNames() throws Exception {
+    void rejectsAttachingSharedNotesToAnotherProject() throws Exception {
         Fixture f = fixture(); Project elsewhere = createProject(f.user, "Private other project", "PRIVATE");
         long third = postForId(f.user, "/api/project/" + pid(elsewhere) + "/trail", "{\"title\":\"Third trail\"}");
-        items.attachToTrail(third, f.source, f.user);
+        mockMvc.perform(post("/api/trail/" + third + "/item/" + f.source).header("Authorization", bearer(f.user)))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PROJECT_ITEM_INVALID"));
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.trailCount").value(3));
+            .andExpect(status().isOk()).andExpect(jsonPath("$.trailCount").value(2));
+        assertThat(items.getAllForTrail(third, f.user)).isEmpty();
     }
 
     @Test

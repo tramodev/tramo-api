@@ -194,6 +194,22 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void rejectsAttachingLooseNotesToAnotherProject() throws Exception {
+        User owner = createUser("crossprojectowner");
+        Project source = createProject(owner, "Source", "private");
+        Project target = createProject(owner, "Target", "private");
+        long trailId = createTrail(owner, target, "Target trail");
+        long itemId = postForId(owner, "/api/project/" + pid(source) + "/item", "{\"title\":\"Source note\"}");
+
+        mockMvc.perform(post("/api/trail/" + trailId + "/item/" + itemId).header("Authorization", bearer(owner)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PROJECT_ITEM_INVALID"));
+
+        assertThat(trailItemRepository.findByItemId(itemId)).isEmpty();
+        assertThat(itemRepository.findByProjectId(source.getId())).extracting(item -> item.getId()).containsExactly(itemId);
+    }
+
+    @Test
     void itemContentRoundtrip() throws Exception {
         User owner = createUser("writer");
         Project project = createProject(owner, "Writing", "private");

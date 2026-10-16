@@ -433,6 +433,9 @@ public class ItemService {
     public void attachToTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
+        if (item.getProject() == null || !item.getProject().getId().equals(trail.getProject().getId())) {
+            throw new RequestValidationException(RequestErrorCode.PROJECT_ITEM_INVALID);
+        }
         if (trailItemRepository.existsByTrailIdAndItemId(trail.getId(), item.getId())) {
             return;
         }
