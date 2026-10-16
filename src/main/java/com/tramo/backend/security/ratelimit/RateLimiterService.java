@@ -13,7 +13,7 @@ import java.time.Duration;
 public class RateLimiterService {
 
     private final Cache<String, Bucket> cache = Caffeine.newBuilder()
-            .expireAfterAccess(Duration.ofMinutes(10))
+            .expireAfterAccess(Duration.ofHours(1))
             .build();
 
     public Bucket resolveBucket(String key, int capacity, int refillTokens, Duration refillDuration) {
