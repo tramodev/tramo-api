@@ -9,11 +9,14 @@ import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.List;
+
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,6 +32,42 @@ class ExploreFilteringTest extends AbstractIntegrationTest {
     private void block(User blocker, String target) throws Exception {
         mockMvc.perform(post("/api/users/" + target + "/block").header("Authorization", bearer(blocker)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void searchMatchesOnlyLatestPublishedMetadataInEverySort() throws Exception {
+        User owner = createUser("searchowner");
+        User viewer = createUser("searchviewer");
+        Project project = createProject(owner, "Oldtitle", "private", "Olddescription", "oldtag");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        for (String state : List.of("Published", "Draft")) {
+            mockMvc.perform(put("/api/project/" + pid(project))
+                            .header("Authorization", bearer(owner))
+                            .contentType("application/json")
+                            .content("""
+                                    {"title":"%1$stitle","description":"%1$sdescription","tags":["%1$stag"]}
+                                    """.formatted(state)))
+                    .andExpect(status().isOk());
+            if (state.equals("Published")) {
+                mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                        .andExpect(status().isOk());
+            }
+        }
+        mockMvc.perform(post("/api/users/searchowner/follow").header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk());
+
+        for (String sort : List.of("recent", "hot", "following")) {
+            for (String field : List.of("title", "description", "tag")) {
+                for (String state : List.of("Old", "Published", "Draft")) {
+                    mockMvc.perform(get("/api/public/explore").param("sort", sort).param("q", state + field).param("size", "1")
+                                    .header("Authorization", bearer(viewer)))
+                            .andExpect(status().isOk())
+                            .andExpect(jsonPath("$.feed.length()").value(state.equals("Published") ? 1 : 0))
+                            .andExpect(jsonPath("$.hasMore").value(false));
+                }
+            }
+        }
     }
 
     @Test

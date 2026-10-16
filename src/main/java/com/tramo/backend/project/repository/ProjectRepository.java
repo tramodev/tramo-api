@@ -31,45 +31,40 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "SELECT 1 FROM BlockedUser b WHERE (b.blocker.id = :viewerId AND b.blocked.id = p.owner.id) "
             + "OR (b.blocker.id = p.owner.id AND b.blocked.id = :viewerId))) ";
 
+    String PUBLISHED_SEARCH = "AND (:query = '' OR EXISTS (SELECT 1 FROM ProjectSnapshot s "
+            + "WHERE s.project = p AND s.trigger = 'PUBLISH' AND s.id = "
+            + "(SELECT MAX(s2.id) FROM ProjectSnapshot s2 WHERE s2.project = p AND s2.trigger = 'PUBLISH') "
+            + "AND (LOWER(CAST(sql('json_extract_path_text(cast(? as json), ''title'')', s.content) AS String)) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(CAST(sql('json_extract_path_text(cast(? as json), ''description'')', s.content) AS String)) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(CAST(sql('json_extract_path_text(cast(? as json), ''tags'')', s.content) AS String)) LIKE LOWER(CONCAT('%', :query, '%'))))) ";
+
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
+            + PUBLISHED_SEARCH
             + "ORDER BY p.lastPublishedDate DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
+            + PUBLISHED_SEARCH)
     Page<Project> findPublishedRecent(@Param("visibility") ProjectVisibility visibility, @Param("query") String query,
                                         @Param("viewerId") Long viewerId, Pageable pageable);
 
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
+            + PUBLISHED_SEARCH
             + "ORDER BY p.lastPublishedDate DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
+            + PUBLISHED_SEARCH)
     Page<Project> findPublishedRecentByOwners(@Param("visibility") ProjectVisibility visibility, @Param("ownerIds") List<Long> ownerIds,
                                                 @Param("query") String query, @Param("viewerId") Long viewerId, Pageable pageable);
 
     @Query(value = "SELECT p.id FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%')))) "
+            + PUBLISHED_SEARCH
             + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.lastPublishedDate) DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
-            + "AND (:query = '' OR LOWER(p.title) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :query, '%')) "
-            + "OR EXISTS (SELECT 1 FROM p.projectTags t WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :query, '%'))))")
+            + PUBLISHED_SEARCH)
     Page<Long> findPublishedHotIds(@Param("visibility") ProjectVisibility visibility, @Param("query") String query,
                                      @Param("viewerId") Long viewerId, Pageable pageable);
 

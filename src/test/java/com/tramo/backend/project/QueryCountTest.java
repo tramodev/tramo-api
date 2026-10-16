@@ -147,6 +147,26 @@ class QueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void exploreSearchQueryCountDoesNotScaleWithPublishedProjects() throws Exception {
+        User owner = createUser("qcsearchowner");
+        for (int i = 0; i < 2; i++) {
+            Project project = createProject(owner, "Search " + i, "private", "Description", "java");
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/explore?q=search"))
+                .andExpect(status().isOk()));
+        for (int i = 2; i < 8; i++) {
+            Project project = createProject(owner, "Search " + i, "private", "Description", "java");
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/explore?q=search"))
+                .andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void exploreBundleQueryCountDoesNotScaleWithFeedSize() throws Exception {
         User author1 = createUser("qcauthor1");
         User fan = createUser("qcfan");

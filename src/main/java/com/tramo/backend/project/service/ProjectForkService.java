@@ -9,7 +9,6 @@ import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
@@ -38,7 +37,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -101,21 +99,25 @@ public class ProjectForkService {
             throw new AccessDeniedException("Forking is disabled for this project");
         }
 
+        ProjectSnapshotData published = projectSnapshotRepository
+                .findLatestPublishByProjectIdIn(List.of(sourceProjectId)).stream().findFirst()
+                .map(snapshot -> objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class))
+                .orElse(null);
         Project fork = new Project();
-        fork.setTitle(source.getTitle());
-        fork.setDescription(source.getDescription());
+        fork.setTitle(published != null ? published.title() : source.getTitle());
+        fork.setDescription(published != null ? published.description() : source.getDescription());
         fork.setVisibility(ProjectVisibility.PRIVATE);
         fork.setOwner(requester);
         fork.setForkedFrom(source);
         fork.setCreationDate(new Date());
         fork.setModifiedDate(new Date());
-        tagService.applyProjectTags(fork, responseMapper.liveTagNames(source), requester.getId());
+        List<String> tags = published == null ? responseMapper.liveTagNames(source)
+                : published.tags() == null ? List.of() : List.of(published.tags().split(","));
+        tagService.applyProjectTags(fork, tags, requester.getId());
         fork = projectRepository.save(fork);
 
-        Optional<ProjectSnapshot> latestPublish = projectSnapshotRepository
-                .findLatestPublishByProjectIdIn(List.of(sourceProjectId)).stream().findFirst();
-        if (latestPublish.isPresent()) {
-            forkFromSnapshot(fork, latestPublish.get());
+        if (published != null) {
+            forkFromSnapshot(fork, published);
         } else {
             forkFromLiveTables(fork, sourceProjectId);
         }
@@ -125,7 +127,9 @@ public class ProjectForkService {
         editorImages.copyForkImages(fork);
         notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
         badgeService.checkAndAwardBadges(source.getOwner());
-        return responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));
+        ProjectResponseDTO response = responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));
+        response.setForkedFromTitle(fork.getTitle());
+        return response;
     }
 
     private void forkFromLiveTables(Project fork, Long sourceProjectId) {
@@ -180,9 +184,7 @@ public class ProjectForkService {
         return itemRepository.save(copy);
     }
 
-    private void forkFromSnapshot(Project fork, ProjectSnapshot snapshot) {
-        ProjectSnapshotData data = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
-
+    private void forkFromSnapshot(Project fork, ProjectSnapshotData data) {
         Map<Long, Item> itemCopies = new HashMap<>();
 
         for (ProjectSnapshotData.TrailData trailData : data.trails()) {

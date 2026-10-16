@@ -243,8 +243,11 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Test
     void exploreSearchIgnoresTermsShorterThanThreeChars() throws Exception {
         User owner = createUser("shortsearchowner");
-        createProject(owner, "Zebra crossing", "published", "A description", null);
-        createProject(owner, "Another thing entirely", "published", "A description", null);
+        for (String title : java.util.List.of("Zebra crossing", "Another thing entirely")) {
+            Project project = createProject(owner, title, "private", "A description", null);
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
 
         mockMvc.perform(get("/api/public/explore?q=z"))
                 .andExpect(status().isOk())

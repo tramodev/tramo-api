@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 class ForkContentTest extends AbstractIntegrationTest {
 
@@ -89,6 +90,37 @@ class ForkContentTest extends AbstractIntegrationTest {
         assertThat(copies).hasSize(1);
         assertThat(copies.get(0).getTitle()).isEqualTo("Only item");
         assertThat(copies.get(0).getContent().getContent()).isEqualTo("live body");
+    }
+
+    @Test
+    void forkUsesLatestPublishedMetadataInsteadOfDrafts() throws Exception {
+        User owner = createUser("metadataowner");
+        User forker = createUser("metadataforker");
+        Project source = createProject(owner, "Old title", "private", "Old description", "oldtag");
+        publish(owner, source);
+        mockMvc.perform(put("/api/project/" + pid(source))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Published title","description":"Published description","tags":["publishedtag"]}
+                                """))
+                .andExpect(status().isOk());
+        publish(owner, source);
+        mockMvc.perform(put("/api/project/" + pid(source))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Draft title","description":"Draft description","tags":["drafttag"]}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/project/" + pid(source) + "/fork")
+                        .header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Published title"))
+                .andExpect(jsonPath("$.description").value("Published description"))
+                .andExpect(jsonPath("$.tags[0]").value("publishedtag"))
+                .andExpect(jsonPath("$.forkedFromTitle").value("Published title"));
     }
 
     @Test
