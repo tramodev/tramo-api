@@ -11,7 +11,11 @@ import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface ProjectViewRepository extends JpaRepository<ProjectView, Long> {
-    boolean existsByProjectIdAndViewerKey(Long projectId, String viewerKey);
+    @Modifying
+    @Query(value = "INSERT INTO project_view (id, project_id, viewer_key, created_date) "
+            + "VALUES (nextval('project_view_seq'), :projectId, :viewerKey, CURRENT_TIMESTAMP) "
+            + "ON CONFLICT (project_id, viewer_key) DO NOTHING", nativeQuery = true)
+    int insertIfAbsent(@Param("projectId") Long projectId, @Param("viewerKey") String viewerKey);
     @Modifying(flushAutomatically = true)
     @Query("delete from ProjectView v where v.project.id = :projectId")
     void deleteByProjectId(@Param("projectId") Long projectId);

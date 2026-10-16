@@ -13,7 +13,6 @@ import com.tramo.backend.project.dto.SitemapUserDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectVisibility;
-import com.tramo.backend.project.entity.ProjectView;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
@@ -99,12 +98,7 @@ public class PublicProjectService {
                 : anonId != null && !anonId.isBlank() ? "anon:" + anonId
                 : null;
         long viewCount = project.getViewCount();
-        if (viewerKey != null && !projectViewRepository.existsByProjectIdAndViewerKey(id, viewerKey)) {
-            ProjectView view = new ProjectView();
-            view.setProject(project);
-            view.setViewerKey(viewerKey);
-            view.setCreatedDate(new Date());
-            projectViewRepository.save(view);
+        if (viewerKey != null && projectViewRepository.insertIfAbsent(id, viewerKey) == 1) {
             projectRepository.incrementViewCount(id);
             viewCount++;
 

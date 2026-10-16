@@ -4,10 +4,24 @@ package com.tramo.backend.project;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.service.PublicProjectService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -15,6 +29,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class PublicSnapshotViewTest extends AbstractIntegrationTest {
+    @Autowired
+    private PublicProjectService publicProjects;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private long createTrail(User owner, Project project, String title) throws Exception {
         return postForId(owner, "/api/project/" + pid(project) + "/trail", """
@@ -97,6 +116,57 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project)).header("X-Anon-Id", "anon-2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewCount").value(2));
+    }
+
+    @Test
+    void authenticatedViewsAreCountedOncePerUser() throws Exception {
+        User owner = createUser("authenticatedviewowner");
+        User viewer = createUser("authenticatedviewer");
+        Project project = publishedProjectWithContent(owner, "Counted");
+
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(get("/api/public/project/" + pid(project)).header("Authorization", bearer(viewer)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.viewCount").value(1));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void concurrentViewsFromTheSameVisitorSucceedAndAreCountedOnce(boolean authenticated) throws Exception {
+        User owner = createUser("concurrentviewowner");
+        User viewer = authenticated ? createUser("concurrentviewer") : null;
+        Project project = publishedProjectWithContent(owner, "Concurrent views");
+        var inserted = new CountDownLatch(1);
+        var secondStarted = new CountDownLatch(1);
+        var release = new CompletableFuture<Void>();
+        var request = get("/api/public/project/" + pid(project)).header("X-Anon-Id", "same-visitor");
+        if (authenticated) request.header("Authorization", bearer(viewer));
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                publicProjects.getPublicProject(project.getId(), viewer, "same-visitor");
+                inserted.countDown();
+                release.orTimeout(10, TimeUnit.SECONDS).join();
+            }));
+            assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
+            var second = executor.submit(() -> {
+                secondStarted.countDown();
+                return mockMvc.perform(request);
+            });
+            assertThat(secondStarted.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> second.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+            release.complete(null);
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS).andExpect(status().isOk());
+        } finally {
+            release.complete(null);
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM project_view WHERE project_id = ?",
+                Long.class, project.getId())).isEqualTo(1L);
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getViewCount()).isEqualTo(1L);
     }
 
     @Test
