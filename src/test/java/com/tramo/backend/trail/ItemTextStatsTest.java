@@ -20,7 +20,7 @@ class ItemTextStatsTest extends AbstractIntegrationTest {
     private ItemTextStatsBackfillRunner backfill;
 
     @Test
-    void countsSavedContentOnceAcrossTrailsAndProjectsAndTracksDeletion() throws Exception {
+    void countsLegacySharedContentOnceAcrossTrailsAndProjectsAndTracksDeletion() throws Exception {
         var owner = createUser("statsowner");
         var project = createProject(owner, "Stats", "private");
         var other = createProject(owner, "Other", "private");
@@ -29,10 +29,10 @@ class ItemTextStatsTest extends AbstractIntegrationTest {
         long foreign = postForId(owner, "/api/project/" + pid(other) + "/trail", "{\"title\":\"Foreign\"}");
         long shared = postForId(owner, "/api/trail/" + first + "/item", "{\"title\":\"Shared\"}");
         long loose = postForId(owner, "/api/project/" + pid(project) + "/item", "{\"title\":\"Loose\"}");
-        for (long trail : new long[]{second, foreign}) {
-            mockMvc.perform(post("/api/trail/" + trail + "/item/" + shared).header("Authorization", bearer(owner)))
-                    .andExpect(status().isNoContent());
-        }
+        mockMvc.perform(post("/api/trail/" + second + "/item/" + shared).header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) "
+                + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", foreign, shared);
         String content = "{\"root\":{\"children\":[{\"text\":\"hello world\"}]}}";
         mockMvc.perform(put("/api/item/" + shared + "/content").header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of("content", content))))

@@ -217,15 +217,15 @@ class EditorImageTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void aSharedItemAndItsImagesSurviveDeletingTheirOriginalProject() throws Exception {
+    void legacySharedItemAndItsImagesSurviveDeletingTheirOriginalProject() throws Exception {
         User owner = createUser("transcluder");
         Project original = createProject(owner, "Original", "PRIVATE");
         Project target = createProject(owner, "Target", "UNLISTED");
         UUID image = upload(original, owner);
         long item = saveImage(original, owner, image);
         long trail = postForId(owner, "/api/project/" + pid(target) + "/trail", "{\"title\":\"Shared trail\"}");
-        mockMvc.perform(post("/api/trail/" + trail + "/item/" + item).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
+        jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) "
+                + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", trail, item);
         resolve(target, null, image, true, null, 200);
         mockMvc.perform(delete("/api/project/" + pid(original)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
