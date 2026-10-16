@@ -8,6 +8,7 @@ import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -62,6 +63,26 @@ class TrailReorderTest extends AbstractIntegrationTest {
 
         reorder(owner, trailId, """
                 {"itemIds":[%d]}""".formatted(first), 400);
+    }
+
+    @Test
+    void rejectsRepeatedIdsWithoutChangingTheOrder() throws Exception {
+        User owner = createUser("reorderduplicates");
+        Project project = createProject(owner, "Reorder", "private");
+        long trailId = createTrail(owner, project, "T");
+        long first = createItem(owner, trailId, "First");
+        long second = createItem(owner, trailId, "Second");
+        long third = createItem(owner, trailId, "Third");
+
+        reorder(owner, trailId, """
+                {"itemIds":[%d,%d,%d]}""".formatted(first, first, third), 400);
+
+        mockMvc.perform(get("/api/trail/" + trailId + "/item")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id", contains((int) first, (int) second, (int) third)));
+        assertThat(jdbcTemplate.queryForList("SELECT order_index FROM trail_item WHERE trail_id = ? ORDER BY order_index",
+                Integer.class, trailId)).containsExactly(0, 1, 2);
     }
 
     @Test

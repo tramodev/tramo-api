@@ -42,6 +42,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -274,7 +275,7 @@ public class ItemService {
         List<TrailItem> steps = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId);
         Map<Long, TrailItem> byItemId = steps.stream()
                 .collect(Collectors.toMap(step -> step.getItem().getId(), step -> step));
-        if (itemIds.size() != byItemId.size() || !byItemId.keySet().containsAll(itemIds)) {
+        if (itemIds.size() != byItemId.size() || !byItemId.keySet().equals(new HashSet<>(itemIds))) {
             throw new RequestValidationException(RequestErrorCode.TRAIL_ORDER_INVALID);
         }
         for (int index = 0; index < itemIds.size(); index++) {
