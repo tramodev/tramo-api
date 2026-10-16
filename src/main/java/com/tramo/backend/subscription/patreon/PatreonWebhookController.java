@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -44,17 +46,20 @@ public class PatreonWebhookController {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final PatreonWebhookSignatureRepository webhookSignatureRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public PatreonWebhookController(@Value("${app.patreon.webhook-secret}") String webhookSecret,
                                      UserRepository userRepository,
                                      SubscriptionService subscriptionService,
                                      ObjectMapper objectMapper,
-                                     PatreonWebhookSignatureRepository webhookSignatureRepository) {
+                                      PatreonWebhookSignatureRepository webhookSignatureRepository,
+                                      PlatformTransactionManager transactionManager) {
         this.webhookSecret = webhookSecret;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.webhookSignatureRepository = webhookSignatureRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @PostMapping
@@ -70,12 +75,18 @@ public class PatreonWebhookController {
         }
 
         try {
-            webhookSignatureRepository.save(new PatreonWebhookSignature(signature));
+            return transactionTemplate.execute(status -> process(rawBody, signature, eventType));
         } catch (DataIntegrityViolationException ex) {
+            if (!webhookSignatureRepository.existsBySignature(signature)) {
+                throw ex;
+            }
             log.info("Patreon webhook replay detected, ignoring");
             return ResponseEntity.ok().build();
         }
+    }
 
+    private ResponseEntity<Void> process(String rawBody, String signature, String eventType) {
+        webhookSignatureRepository.saveAndFlush(new PatreonWebhookSignature(signature));
         JsonNode member = extractMember(rawBody);
         if (member == null) {
             log.warn("event=patreon_webhook_ignored code=INVALID_MEMBER");

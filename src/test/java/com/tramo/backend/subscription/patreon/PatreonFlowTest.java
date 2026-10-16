@@ -203,8 +203,10 @@ class PatreonFlowTest {
     }
 
     private PatreonWebhookController webhookController() {
+        var transactions = mock(PlatformTransactionManager.class);
+        when(transactions.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         var controller = new PatreonWebhookController("secret", users, subscriptions, new ObjectMapper(),
-                mock(PatreonWebhookSignatureRepository.class));
+                mock(PatreonWebhookSignatureRepository.class), transactions);
         ReflectionTestUtils.setField(controller, "campaignId", "tramo-campaign");
         when(users.findByPatreonUserId("patreon-user")).thenReturn(Optional.of(user));
         return controller;

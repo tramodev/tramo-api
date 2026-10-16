@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public interface PatreonWebhookSignatureRepository extends JpaRepository<PatreonWebhookSignature, UUID> {
+    boolean existsBySignature(String signature);
 
     @Modifying(flushAutomatically = true)
     @Query("delete from PatreonWebhookSignature s where s.processedAt < :cutoff")

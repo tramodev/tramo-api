@@ -4,9 +4,15 @@ package com.tramo.backend.subscription.patreon;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.subscription.service.SubscriptionService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.mockito.stubbing.Answer;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -16,6 +22,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,6 +38,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
 
     @Autowired
     PatreonWebhookSignatureService patreonWebhookSignatureService;
+
+    @MockitoSpyBean
+    SubscriptionService subscriptionService;
 
     private String sign(String body) throws Exception {
         Mac mac = Mac.getInstance("HmacMD5");
@@ -47,6 +58,46 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                 "relationships":{"user":{"data":{"id":"%s","type":"user"}},
                 "campaign":{"data":{"id":"tramo-campaign","type":"campaign"}}}}}"""
                 .formatted(memberId, patreonUserId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedSubscriptionUpdateRollsBackSignatureAndCanBeRetried(boolean cancellation) throws Exception {
+        User user = createUser("retryactivation");
+        user.setPatreonUserId("patreon-retry");
+        userRepository.save(user);
+        String body = pledgePayload("patreon-retry");
+        String event = cancellation ? "members:pledge:delete" : "members:pledge:create";
+        Answer<Object> failAfterUpdate = invocation -> {
+            invocation.callRealMethod();
+            throw new DataIntegrityViolationException("Simulated subscription failure");
+        };
+        if (cancellation) {
+            subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
+            doAnswer(failAfterUpdate).doCallRealMethod().when(subscriptionService).deactivateSupporterSubscription(any());
+        } else {
+            doAnswer(failAfterUpdate).doCallRealMethod().when(subscriptionService).activateSupporterSubscription(any(), any());
+        }
+
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", event)
+                        .header("X-Patreon-Signature", sign(body))
+                        .content(body))
+                .andExpect(status().isInternalServerError());
+
+        assertThat(patreonWebhookSignatureRepository.existsBySignature(sign(body))).isFalse();
+        assertThat(subscriptionService.isSupporter(user)).isEqualTo(cancellation);
+
+        mockMvc.perform(post("/api/webhooks/patreon")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", event)
+                        .header("X-Patreon-Signature", sign(body))
+                        .content(body))
+                .andExpect(status().isOk());
+
+        assertThat(patreonWebhookSignatureRepository.existsBySignature(sign(body))).isTrue();
+        assertThat(subscriptionService.isSupporter(user)).isEqualTo(!cancellation);
     }
 
     @Test
