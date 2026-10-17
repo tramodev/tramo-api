@@ -7,13 +7,10 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.project.dto.ForkFeedItemDTO;
 import com.tramo.backend.project.dto.ProjectFeedItemDTO;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
 import com.tramo.backend.project.repository.ProjectRepository;
-import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
-import com.tramo.backend.project.snapshot.ProjectSnapshotData;
-import com.tramo.backend.project.snapshot.SnapshotLimits;
+import com.tramo.backend.project.snapshot.SnapshotProcessing;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.user.entity.User;
@@ -34,26 +31,23 @@ public class ProjectFeedMapper {
     private final ProjectVoteRepository projectVoteRepository;
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final CommentRepository commentRepository;
-    private final ProjectSnapshotRepository projectSnapshotRepository;
     private final ProjectThumbnailResolver thumbnailResolver;
     private final ProjectIdCodec projectIdCodec;
     private final PrivacyPolicy privacyPolicy;
-    private final SnapshotLimits snapshotLimits;
+    private final SnapshotProcessing snapshotProcessing;
 
     public ProjectFeedMapper(ProjectRepository projectRepository, ProjectVoteRepository projectVoteRepository,
                               ProjectBookmarkRepository projectBookmarkRepository, CommentRepository commentRepository,
-                              ProjectSnapshotRepository projectSnapshotRepository,
-                              ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
-                               PrivacyPolicy privacyPolicy, SnapshotLimits snapshotLimits) {
+                               ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
+                                PrivacyPolicy privacyPolicy, SnapshotProcessing snapshotProcessing) {
         this.projectRepository = projectRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
         this.commentRepository = commentRepository;
-        this.projectSnapshotRepository = projectSnapshotRepository;
         this.thumbnailResolver = thumbnailResolver;
         this.projectIdCodec = projectIdCodec;
         this.privacyPolicy = privacyPolicy;
-        this.snapshotLimits = snapshotLimits;
+        this.snapshotProcessing = snapshotProcessing;
     }
 
     FeedContext contextFor(List<Project> projects, User requester) {
@@ -65,13 +59,12 @@ public class ProjectFeedMapper {
         FeedContext base = withComments(baseContext(projects, requester), projects);
         List<Long> ids = projects.stream().map(Project::getId).toList();
         if (!ids.isEmpty()) {
-            Map<Long, ProjectSnapshotData> latestPublish = new HashMap<>();
+            Map<Long, PublishedProjectPreview> latestPublish = new HashMap<>();
             Map<Long, ThumbnailResolution> thumbnails = new HashMap<>();
-            for (ProjectSnapshot snapshot : projectSnapshotRepository.findLatestPublishByProjectIdIn(ids)) {
-                ProjectSnapshotData data = snapshotLimits.read(snapshot.getContent());
-                latestPublish.put(snapshot.getProject().getId(), data);
-                thumbnails.put(snapshot.getProject().getId(), thumbnailResolver.resolvePublished(data));
-            }
+            snapshotProcessing.forEachLatestPublish(ids, (id, data) -> {
+                latestPublish.put(id, new PublishedProjectPreview(data.title(), data.description(), data.tags()));
+                thumbnails.put(id, thumbnailResolver.resolvePublished(data));
+            });
             base = base.withLatestPublish(latestPublish).withThumbnails(thumbnails);
         }
         return base;
@@ -151,7 +144,7 @@ public class ProjectFeedMapper {
     }
 
     ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx, Set<String> blockRelated) {
-        ProjectSnapshotData snapshot = ctx.latestPublishByProjectId().get(project.getId());
+        PublishedProjectPreview snapshot = ctx.latestPublishByProjectId().get(project.getId());
         if (snapshot == null && project.getVisibility() == ProjectVisibility.PUBLISHED) {
             throw new ResourceNotFoundException("Published version unavailable");
         }

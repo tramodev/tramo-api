@@ -107,7 +107,7 @@ public class ProjectForkService {
         }
 
         ProjectSnapshotData published = projectSnapshotRepository
-                .findLatestPublishByProjectIdIn(List.of(sourceProjectId)).stream().findFirst()
+                .findLatestPublishByProjectId(sourceProjectId)
                 .map(snapshot -> snapshotLimits.read(snapshot.getContent()))
                 .orElse(null);
         if (published == null && (source.getFirstPublishedDate() != null || source.getVisibility() == ProjectVisibility.PUBLISHED)) {

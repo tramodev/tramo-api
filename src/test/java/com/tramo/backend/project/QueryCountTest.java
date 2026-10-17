@@ -26,6 +26,17 @@ class QueryCountTest extends AbstractIntegrationTest {
     @Autowired com.tramo.backend.project.service.ProjectPublishService publishService;
 
     @Test
+    void publicPreviewCursorQueryCountDoesNotScaleWithPageSize() throws Exception {
+        User owner = createUser("qccursorpage");
+        for (int i = 0; i < 10; i++) seedPublishedProject(owner, "Cursor " + i, 1, 1, null);
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/users/qccursorpage/published").param("size", "1"))
+                .andExpect(status().isOk()));
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/users/qccursorpage/published").param("size", "10"))
+                .andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void publicSnapshotThumbnailsDoNotAddQueriesPerTrailOrNote() throws Exception {
         User owner = createUser("qcsnapshotthumb");
         Project project = seedPublishedProject(owner, "Thumbnail", 1, 1, null);

@@ -5,11 +5,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.core.JsonToken;
+import tools.jackson.core.JacksonException;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Optional;
 
 @Component
 public class SnapshotLimits {
@@ -52,6 +54,15 @@ public class SnapshotLimits {
         ProjectSnapshotData data = mapper.readValue(content, ProjectSnapshotData.class);
         validate(data);
         return data;
+    }
+
+    public Optional<ProjectSnapshotData> readPreview(String content) {
+        if (content == null) return Optional.empty();
+        try {
+            return Optional.of(read(content));
+        } catch (PayloadTooLargeException | JacksonException | IllegalArgumentException | NullPointerException invalid) {
+            return Optional.empty();
+        }
     }
 
     public void validate(ProjectSnapshotData data) {

@@ -36,10 +36,10 @@ public interface ProjectSnapshotRepository extends JpaRepository<ProjectSnapshot
     
     
     @Query(value = "SELECT s.id, s.project_id, s.trigger, s.version, s.created_date, " +
-            "CASE WHEN sum(octet_length(s.content)) OVER () <= :#{@snapshotLimits.maxBytes()} THEN s.content END AS content " +
-            "FROM project_snapshot s WHERE s.trigger = 'PUBLISH' AND s.id IN " +
-            "(SELECT MAX(s2.id) FROM project_snapshot s2 WHERE s2.trigger = 'PUBLISH' AND s2.project_id IN :projectIds GROUP BY s2.project_id)", nativeQuery = true)
-    List<ProjectSnapshot> findLatestPublishByProjectIdIn(@Param("projectIds") List<Long> projectIds);
+            "CASE WHEN octet_length(s.content) <= :#{@snapshotLimits.maxBytes()} THEN s.content END AS content " +
+            "FROM project_snapshot s WHERE s.trigger = 'PUBLISH' AND s.project_id = :projectId " +
+            "ORDER BY s.id DESC LIMIT 1", nativeQuery = true)
+    Optional<ProjectSnapshot> findLatestPublishByProjectId(@Param("projectId") Long projectId);
 
     @Query("SELECT DISTINCT s.project.id FROM ProjectSnapshot s WHERE s.trigger = 'PUBLISH'")
     List<Long> findProjectIdsWithPublishSnapshot();

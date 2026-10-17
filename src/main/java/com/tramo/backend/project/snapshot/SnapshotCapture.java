@@ -4,22 +4,22 @@ import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.exception.StorageQuotaExceededException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.util.Map;
 import java.util.List;
-import java.util.HashMap;
+import java.util.function.BiConsumer;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class SnapshotCapture {
-    private final NamedParameterJdbcTemplate jdbc;
+    private final SnapshotProcessing processing;
     private final SnapshotLimits limits;
     @PersistenceContext
     private EntityManager entityManager;
 
-    public SnapshotCapture(NamedParameterJdbcTemplate jdbc, SnapshotLimits limits) {
-        this.jdbc = jdbc;
+    public SnapshotCapture(SnapshotProcessing processing, SnapshotLimits limits) {
+        this.processing = processing;
         this.limits = limits;
     }
 
@@ -28,32 +28,37 @@ public class SnapshotCapture {
     }
 
     public ProjectSnapshotData capture(Long projectId, long storageBytes) {
-        ProjectSnapshotData data = captureMany(List.of(projectId), storageBytes, false).get(projectId);
+        AtomicReference<ProjectSnapshotData> captured = new AtomicReference<>();
+        captureMany(List.of(projectId), storageBytes, false, (id, data) -> captured.set(data));
+        ProjectSnapshotData data = captured.get();
         if (data == null) throw new ResourceNotFoundException("Project not found");
         return data;
     }
 
-    public Map<Long, ProjectSnapshotData> capturePreviews(List<Long> projectIds) {
-        return captureMany(projectIds, Long.MAX_VALUE, true);
+    public void capturePreviews(List<Long> projectIds, BiConsumer<Long, ProjectSnapshotData> consumer) {
+        captureMany(projectIds, Long.MAX_VALUE, true, consumer);
     }
 
-    private Map<Long, ProjectSnapshotData> captureMany(List<Long> projectIds, long storageBytes, boolean omitOversized) {
-        if (projectIds.isEmpty()) return Map.of();
+    private void captureMany(List<Long> projectIds, long storageBytes, boolean omitOversized,
+                             BiConsumer<Long, ProjectSnapshotData> consumer) {
+        if (projectIds.isEmpty()) return;
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             entityManager.flush();
         }
-        Map<Long, ProjectSnapshotData> result = new HashMap<>();
-        jdbc.query("SELECT id, raw_bytes, CASE WHEN sum(octet_length(content)) OVER () <= :bytes THEN content END AS content FROM (" +
-                "SELECT outer_project.id, captured.raw_bytes, captured.content FROM project outer_project CROSS JOIN LATERAL (" +
-                SQL.replace(":id", "outer_project.id") + ") captured WHERE outer_project.id IN (:ids)) bounded",
+        processing.read("SELECT outer_project.id, captured.raw_bytes, captured.content FROM project outer_project CROSS JOIN LATERAL (" +
+                SQL.replace(":id", "outer_project.id") + ") captured WHERE outer_project.id IN (:ids)",
                 Map.of("ids", projectIds, "bytes", limits.maxBytes(), "trails", limits.maxTrails(),
                         "items", limits.maxItems(), "refs", limits.maxReferences(), "storage", storageBytes,
                         "schema", ProjectSnapshotData.CURRENT_SCHEMA_VERSION), rs -> {
                     if (rs.getLong("raw_bytes") > storageBytes) throw new StorageQuotaExceededException();
                     String content = rs.getString("content");
-                    if (content != null || !omitOversized) result.put(rs.getLong("id"), limits.read(content));
+                    Long id = rs.getLong("id");
+                    if (omitOversized) {
+                        limits.readPreview(content).ifPresent(data -> consumer.accept(id, data));
+                    } else {
+                        consumer.accept(id, limits.read(content));
+                    }
                 });
-        return result;
     }
 
     private static final String SQL = """

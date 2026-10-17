@@ -121,8 +121,8 @@ public class EditorImageService {
             if (!snapshot.getProject().getId().equals(projectId) || (publicRead && (!"PUBLISH".equals(snapshot.getTrigger())
                     || project.getFirstPublishedDate() == null))) throw missing();
         } else if (publicRead && project.getVisibility() == ProjectVisibility.PUBLISHED) {
-            snapshotId = snapshots.findLatestPublishByProjectIdIn(List.of(projectId)).stream()
-                    .map(ProjectSnapshot::getId).findFirst().orElseThrow(this::missing);
+            snapshotId = snapshots.findLatestPublishByProjectId(projectId)
+                    .map(ProjectSnapshot::getId).orElseThrow(this::missing);
         }
         Set<UUID> requested = new LinkedHashSet<>(request.imageIds());
         if (!new HashSet<>(images.visibleImageIds(projectId, snapshotId)).containsAll(requested)) throw missing();

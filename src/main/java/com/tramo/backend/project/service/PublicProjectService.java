@@ -100,7 +100,7 @@ public class PublicProjectService {
         }
 
         Optional<ProjectSnapshot> snapshotOpt = project.getVisibility() == ProjectVisibility.PUBLISHED
-                ? projectSnapshotRepository.findLatestPublishByProjectIdIn(List.of(id)).stream().findFirst()
+                ? projectSnapshotRepository.findLatestPublishByProjectId(id)
                 : Optional.empty();
 
         if (project.getVisibility() == ProjectVisibility.PUBLISHED && snapshotOpt.isEmpty()) {

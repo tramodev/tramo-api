@@ -24,9 +24,8 @@ public class ProjectThumbnailResolver {
 
     Map<Long, ThumbnailResolution> resolveThumbnails(List<Project> projects) {
         Map<Long, ThumbnailResolution> result = new HashMap<>();
-        for (var entry : capture.capturePreviews(projects.stream().map(Project::getId).toList()).entrySet()) {
-            result.put(entry.getKey(), resolvePublished(entry.getValue()));
-        }
+        capture.capturePreviews(projects.stream().map(Project::getId).toList(),
+                (id, data) -> result.put(id, resolvePublished(data)));
         return result;
     }
 
