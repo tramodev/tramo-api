@@ -124,6 +124,18 @@ public class EditorImageRepository {
         for (UUID id : ids) jdbc.update("INSERT INTO editor_image_snapshot_reference(snapshot_id, image_id) VALUES (?, ?)", snapshotId, id);
     }
 
+    public void addVersionReferences(Long versionId, Collection<UUID> ids) {
+        for (UUID id : ids) jdbc.update("INSERT INTO editor_image_version_reference(version_id, image_id) VALUES (?, ?)", versionId, id);
+    }
+
+    public List<UUID> versionImageIds(Long versionId) {
+        return jdbc.queryForList("SELECT image_id FROM editor_image_version_reference WHERE version_id = ?", UUID.class, versionId);
+    }
+
+    public boolean versionBelongsTo(Long versionId, Long projectId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM project_version WHERE id = ? AND project_id = ?)", Boolean.class, versionId, projectId));
+    }
+
     public List<UUID> visibleImageIds(Long projectId, Long snapshotId) {
         if (snapshotId != null) return jdbc.queryForList(
                 "SELECT image_id FROM editor_image_snapshot_reference WHERE snapshot_id = ?", UUID.class, snapshotId);
@@ -136,7 +148,7 @@ public class EditorImageRepository {
         if (ids.isEmpty()) return List.of();
         return named.queryForList("SELECT i.id FROM editor_image i WHERE i.id IN (:ids) AND (i.project_id = :projectId " +
                 "OR EXISTS (SELECT 1 FROM editor_image_item_reference r WHERE r.image_id = i.id AND r.item_id = :itemId))",
-                Map.of("ids", ids, "projectId", projectId, "itemId", itemId), UUID.class);
+                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource().addValue("ids", ids).addValue("projectId", projectId, java.sql.Types.BIGINT).addValue("itemId", itemId), UUID.class);
     }
 
     public List<UUID> cleanupCandidates() {
@@ -146,6 +158,7 @@ public class EditorImageRepository {
                 "EXISTS (SELECT 1 FROM editor_image i WHERE i.object_id = editor_image_object.id " +
                 "AND i.last_used_at < CURRENT_TIMESTAMP - INTERVAL '24 hours' " +
                 "AND NOT EXISTS (SELECT 1 FROM editor_image_item_reference r WHERE r.image_id = i.id) " +
+                "AND NOT EXISTS (SELECT 1 FROM editor_image_version_reference r WHERE r.image_id = i.id) " +
                 "AND NOT EXISTS (SELECT 1 FROM editor_image_snapshot_reference r WHERE r.image_id = i.id)) " +
                 "ORDER BY id LIMIT 500", UUID.class);
     }
@@ -158,6 +171,7 @@ public class EditorImageRepository {
         jdbc.update("DELETE FROM editor_image i WHERE object_id = ? " +
                 "AND last_used_at < CURRENT_TIMESTAMP - INTERVAL '24 hours' " +
                 "AND NOT EXISTS (SELECT 1 FROM editor_image_item_reference r WHERE r.image_id = i.id) " +
+                "AND NOT EXISTS (SELECT 1 FROM editor_image_version_reference r WHERE r.image_id = i.id) " +
                 "AND NOT EXISTS (SELECT 1 FROM editor_image_snapshot_reference r WHERE r.image_id = i.id)", objectId);
         int images = jdbc.queryForObject("SELECT COUNT(*) FROM editor_image WHERE object_id = ?", Integer.class, objectId);
         if (images != 0) return false;

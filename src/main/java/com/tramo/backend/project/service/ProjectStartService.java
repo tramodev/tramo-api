@@ -37,21 +37,21 @@ public class ProjectStartService {
     private final ItemRepository items;
     private final TrailService trailService;
     private final ItemService itemService;
-    private final AccessGuard access;
+    private final ProjectVersionCapture history;
     private final ProjectIdCodec codec;
     private final EntityManager entityManager;
     private final ObjectMapper mapper;
 
     public ProjectStartService(ProjectRepository projects, TrailRepository trails, TrailItemRepository steps,
                                ItemRepository items, TrailService trailService, ItemService itemService,
-                               AccessGuard access, ProjectIdCodec codec, EntityManager entityManager, ObjectMapper mapper) {
+                               ProjectIdCodec codec, EntityManager entityManager, ObjectMapper mapper, ProjectVersionCapture history) {
         this.projects = projects;
         this.trails = trails;
         this.steps = steps;
         this.items = items;
         this.trailService = trailService;
         this.itemService = itemService;
-        this.access = access;
+        this.history = history;
         this.codec = codec;
         this.entityManager = entityManager;
         this.mapper = mapper;
@@ -99,8 +99,7 @@ public class ProjectStartService {
 
     @Transactional
     public StartedProjectDTO start(Long projectId, Long preferredTrailId, User user) {
-        access.getOwnedProject(projectId, user);
-        var project = entityManager.find(Project.class, projectId, LockModeType.PESSIMISTIC_WRITE);
+        var project = history.lock(projectId, user);
         var existingTrails = trails.findByProjectId(projectId).stream().filter(t -> preferredTrailId == null || t.getId().equals(preferredTrailId)).toList();
         if (preferredTrailId != null && existingTrails.isEmpty()) throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_INVALID);
         for (var trail : existingTrails) {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -22,8 +23,6 @@ import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -41,12 +40,12 @@ public class TrailService {
     private final ProjectIdCodec projectIdCodec;
     private final ImageDeletionQueue imageDeletionQueue;
     private final SubscriptionService subscriptions;
-    private final EntityManager entityManager;
+    private final ProjectVersionCapture history;
 
     public TrailService(TrailRepository trailRepository, TrailItemRepository trailItemRepository,
                         ItemRepository itemRepository,
                         AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
-                        ImageDeletionQueue imageDeletionQueue, SubscriptionService subscriptions, EntityManager entityManager) {
+                        ImageDeletionQueue imageDeletionQueue, SubscriptionService subscriptions, ProjectVersionCapture history) {
         this.trailRepository = trailRepository;
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
@@ -54,7 +53,7 @@ public class TrailService {
         this.projectIdCodec = projectIdCodec;
         this.imageDeletionQueue = imageDeletionQueue;
         this.subscriptions = subscriptions;
-        this.entityManager = entityManager;
+        this.history = history;
     }
 
     @Transactional
@@ -62,11 +61,11 @@ public class TrailService {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
-        Project project = accessGuard.getOwnedProject(projectId, requester);
+        Project project = history.lock(projectId, requester);
         ContentLimits.assertTrailDescription(request.getDescription());
-        subscriptions.lockStorage(requester);
         long bytes = ContentLimits.bytes(request.getDescription());
         if (bytes > 0) subscriptions.assertUploadAllowed(requester, bytes, subscriptions.isSupporter(requester));
+        history.beforeChange(project);
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
         trail.setDescription(request.getDescription());
@@ -91,13 +90,14 @@ public class TrailService {
 
     @Transactional
     public void reorder(Long projectId, List<Long> trailIds, User requester) {
-        Project project = accessGuard.getOwnedProject(projectId, requester);
-        entityManager.lock(project, LockModeType.PESSIMISTIC_WRITE);
+        Project project = history.lock(projectId, requester);
         List<Trail> trails = trailRepository.findByProjectId(projectId);
         var byId = trails.stream().collect(Collectors.toMap(Trail::getId, trail -> trail));
         if (trailIds.size() != byId.size() || !byId.keySet().equals(new HashSet<>(trailIds))) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_ORDER_INVALID);
         }
+        if (trails.stream().map(Trail::getId).toList().equals(trailIds)) return;
+        history.beforeChange(project);
         for (int index = 0; index < trailIds.size(); index++) byId.get(trailIds.get(index)).setOrderIndex(index);
         trailRepository.saveAll(trails);
     }
@@ -105,8 +105,13 @@ public class TrailService {
     @Transactional
     public TrailResponseDTO update(Long id, TrailRequestDTO request, User requester) {
         ContentLimits.assertTrailDescription(request.getDescription());
-        subscriptions.lockStorage(requester);
+        Project project = history.lockTrail(id, requester);
         Trail trail = getOwnedTrail(id, requester);
+        boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !java.util.Objects.equals(request.getTitle(), trail.getTitle()))
+                || (request.getDescription() != null && !java.util.Objects.equals(request.getDescription(), trail.getDescription()))
+                || (request.getVisibility() != null && !java.util.Objects.equals(request.getVisibility(), trail.getVisibility()));
+        if (!changed) return toResponse(trail);
+        history.beforeChange(project);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             trail.setTitle(request.getTitle());
         }
@@ -125,6 +130,7 @@ public class TrailService {
     @Transactional
     public void delete(Long id, User requester) {
         Trail trail = getOwnedTrailForUpdate(id, requester);
+        history.beforeChange(trail.getProject());
         clearThumbnailReference(trail);
         List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(id);
         for (TrailItem membership : memberships) {
@@ -155,6 +161,7 @@ public class TrailService {
     }
 
     public Trail getOwnedTrailForUpdate(Long id, User requester) {
+        history.lockTrail(id, requester);
         trailRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
         return getOwnedTrail(id, requester);
     }

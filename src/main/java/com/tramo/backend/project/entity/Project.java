@@ -50,6 +50,11 @@ public class Project {
     private Date creationDate;
     private Date modifiedDate;
     private Date lastEditedDate;
+    @Column(nullable = false)
+    private long restoreEpoch;
+    @Column(nullable = false)
+    private boolean historyUnavailable;
+    private Date lastAutoVersionDate;
     
     private Date firstPublishedDate;
     private Date lastPublishedDate;

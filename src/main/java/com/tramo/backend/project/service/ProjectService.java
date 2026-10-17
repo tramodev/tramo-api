@@ -65,6 +65,7 @@ public class ProjectService {
     private final TagService tagService;
     private final ImageDeletionQueue imageDeletionQueue;
     private final AccessGuard accessGuard;
+    private final ProjectVersionCapture history;
     private final ProjectThumbnailResolver thumbnailResolver;
     private final ProjectResponseMapper responseMapper;
     private final ProjectPublishService publishService;
@@ -84,9 +85,10 @@ public class ProjectService {
                            ImageDeletionQueue imageDeletionQueue,
                             AccessGuard accessGuard, ProjectThumbnailResolver thumbnailResolver,
                             ProjectResponseMapper responseMapper, ProjectPublishService publishService, R2Client r2Client,
-                            SubscriptionService subscriptions) {
+                            SubscriptionService subscriptions, ProjectVersionCapture history) {
         this.subscriptions = subscriptions;
         this.accessGuard = accessGuard;
+        this.history = history;
         this.thumbnailResolver = thumbnailResolver;
         this.responseMapper = responseMapper;
         this.publishService = publishService;
@@ -160,8 +162,14 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponseDTO update(Long id, ProjectRequestDTO request, User requester) {
-        subscriptions.lockStorage(requester);
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = history.lock(id, requester);
+        boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !java.util.Objects.equals(request.getTitle(), project.getTitle()))
+                || (request.getDescription() != null && !java.util.Objects.equals(request.getDescription(), project.getDescription()))
+                || (request.getGraphColors() != null && !java.util.Objects.equals(request.getGraphColors(), project.getGraphColors()))
+                || (request.getVisibility() != null && request.getVisibility() != project.getVisibility())
+                || (request.getTags() != null && !new java.util.HashSet<>(responseMapper.normalizeTagNames(request.getTags())).equals(new java.util.HashSet<>(responseMapper.liveTagNames(project))));
+        if (!changed && request.getVisibility() != ProjectVisibility.PUBLISHED) return responseMapper.toResponse(project, responseMapper.liveTagNames(project));
+        if (changed) history.beforeChange(project);
         ProjectVisibility previousVisibility = project.getVisibility();
         boolean touchesModifiedDate = false;
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
@@ -209,11 +217,14 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponseDTO setThumbnail(Long id, SetThumbnailRequestDTO request, User requester) {
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = history.lock(id, requester);
         ProjectThumbnailType type = ProjectThumbnailType.valueOf(request.getType());
         ProjectThumbnailType previousType = project.getThumbnailType();
         String previousImageUrl = project.getThumbnailImageUrl();
 
+        if (project.getThumbnailType() == type && java.util.Objects.equals(project.getThumbnailImageUrl(), type == ProjectThumbnailType.DEDICATED ? request.getImageUrl() : null))
+            return responseMapper.toResponse(project, responseMapper.liveTagNames(project));
+        history.beforeChange(project);
         project.setThumbnailType(type);
         project.setThumbnailImageUrl(null);
         project.setThumbnailTrail(null);

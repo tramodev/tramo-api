@@ -116,6 +116,15 @@ public class EditorImageService {
         Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getOwnedProject(projectId, user);
         if (publicRead) access.assertViewable(project, user);
         Long snapshotId = request.snapshotId();
+        if (request.versionId() != null) {
+            if (publicRead || snapshotId != null || !images.versionBelongsTo(request.versionId(), projectId)) throw missing();
+            Set<UUID> requested = new LinkedHashSet<>(request.imageIds());
+            if (!new HashSet<>(images.versionImageIds(request.versionId())).containsAll(requested)) throw missing();
+            List<EditorImage> found = images.findAll(requested);
+            if (found.size() != requested.size() || found.stream().anyMatch(i -> !"READY".equals(i.state()))) throw missing();
+            Instant expires = Instant.now().plusSeconds(300);
+            return new EditorImageResolveResponse(found.stream().map(i -> new EditorImageResolveResponse.Image(i.id(), storage.presignRead(i), expires)).toList());
+        }
         if (snapshotId != null) {
             ProjectSnapshot snapshot = snapshots.findById(snapshotId).orElseThrow(this::missing);
             if (!snapshot.getProject().getId().equals(projectId) || (publicRead && (!"PUBLISH".equals(snapshot.getTrigger())
@@ -136,7 +145,7 @@ public class EditorImageService {
     public void syncItem(Item item, String content) {
         entityManager.flush();
         Set<UUID> ids = extract(content);
-        if (!new HashSet<>(images.editableImageIds(ids, item.getProject().getId(), item.getId())).containsAll(ids)) throw missing();
+        if (!new HashSet<>(images.editableImageIds(ids, item.getProject() == null ? null : item.getProject().getId(), item.getId())).containsAll(ids)) throw missing();
         lockReady(ids);
         images.replaceItemReferences(item.getId(), ids);
     }
@@ -149,6 +158,20 @@ public class EditorImageService {
         data.looseItems().forEach(i -> ids.addAll(extract(i.content())));
         lockReady(ids);
         images.addSnapshotReferences(snapshot.getId(), ids);
+    }
+
+    public void retainVersion(Long versionId, List<String> contents) {
+        Set<UUID> ids = contents.stream().flatMap(content -> extract(content).stream()).collect(Collectors.toSet());
+        lockReady(ids);
+        images.addVersionReferences(versionId, ids);
+    }
+
+    public void syncRestoredItem(Item item, String content, Long versionId) {
+        entityManager.flush();
+        Set<UUID> ids = extract(content);
+        if (!new HashSet<>(images.versionImageIds(versionId)).containsAll(ids)) throw missing();
+        lockReady(ids);
+        images.replaceItemReferences(item.getId(), ids);
     }
 
     public void copyForkImages(Project fork) {

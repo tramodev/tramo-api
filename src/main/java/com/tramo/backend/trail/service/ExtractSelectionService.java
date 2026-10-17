@@ -1,9 +1,9 @@
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.exception.*;
 import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.common.ContentLimits;
-import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.trail.dto.*;
 import com.tramo.backend.trail.entity.*;
 import com.tramo.backend.trail.repository.*;
@@ -26,12 +26,12 @@ public class ExtractSelectionService {
     private final AccessGuard access;
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
-    private final SubscriptionService subscriptions;
+    private final ProjectVersionCapture history;
     private static final Set<String> SELECTION_TYPES = Set.of("root", "paragraph", "heading", "quote", "list", "listitem", "text", "link", "autolink", "linebreak", "tab");
 
     public ExtractSelectionService(ItemService itemService, TrailService trailService, ItemRepository items,
-            TrailItemRepository memberships, AccessGuard access, JdbcTemplate jdbc, ObjectMapper mapper, SubscriptionService subscriptions) {
-        this.subscriptions = subscriptions;
+            TrailItemRepository memberships, AccessGuard access, JdbcTemplate jdbc, ObjectMapper mapper, ProjectVersionCapture history) {
+        this.history = history;
         this.itemService = itemService; this.trailService = trailService; this.items = items;
         this.memberships = memberships; this.access = access; this.jdbc = jdbc; this.mapper = mapper;
     }
@@ -51,8 +51,7 @@ public class ExtractSelectionService {
     public ExtractSelectionResponse extract(Long projectId, Long sourceId, ExtractSelectionRequest request, User user) {
         ContentLimits.assertNote(request.extractedContent());
         ContentLimits.assertNote(request.sourceContent());
-        subscriptions.lockStorage(user);
-        var project = access.getOwnedProject(projectId, user);
+        var project = history.lock(projectId, user);
         jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", request.operationId().toString());
         String fingerprint = hash(projectId + ":" + sourceId + ":" + mapper.writeValueAsString(request));
         var completed = jdbc.queryForList("SELECT owner_id, source_id, item_id, request_hash, source_hash FROM note_extraction WHERE operation_id = ?", request.operationId());

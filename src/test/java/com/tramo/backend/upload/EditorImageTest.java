@@ -635,4 +635,30 @@ class EditorImageTest extends AbstractIntegrationTest {
         if (user != null) request.header("Authorization", bearer(user));
         return mockMvc.perform(request).andExpect(status().is(expected)).andReturn().getResponse().getContentAsString();
     }
+    @Autowired com.tramo.backend.project.service.ProjectVersionService versions;
+    @Autowired com.tramo.backend.trail.service.ItemService itemService;
+
+    @Test
+    void privateHistoryRetainsImagesAuthorizesPreviewAndRestoresReferences() throws Exception {
+        User owner = createUser("historyimages");
+        Project project = createProject(owner, "History", "PRIVATE");
+        UUID imageId = upload(project, owner);
+        long itemId = saveImage(project, owner, imageId);
+        var manual = versions.create(project.getId(), "With image", owner);
+        itemService.updateContent(itemId, "without image", owner);
+        jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+        assertThat(imageRepository.cleanupCandidates()).isEmpty();
+        String body = "{\"imageIds\":[\"" + imageId + "\"],\"versionId\":" + manual.id() + "}";
+        mockMvc.perform(post("/api/project/" + pid(project) + "/editor-images/resolve").header("Authorization", bearer(owner))
+                .contentType("application/json").content(body)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/public/project/" + pid(project) + "/editor-images/resolve")
+                .contentType("application/json").content(body)).andExpect(status().isNotFound());
+        Project other = createProject(owner, "Other", "PRIVATE");
+        mockMvc.perform(post("/api/project/" + pid(other) + "/editor-images/resolve").header("Authorization", bearer(owner))
+                .contentType("application/json").content(body)).andExpect(status().isNotFound());
+        versions.restore(project.getId(), manual.id(), owner);
+        assertThat(itemService.getContent(itemId, owner).getContent()).contains(imageId.toString());
+        assertThat(imageRepository.visibleImageIds(project.getId(), null)).contains(imageId);
+    }
+
 }

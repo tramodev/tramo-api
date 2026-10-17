@@ -31,6 +31,7 @@ public interface PendingImageDeletionRepository extends JpaRepository<PendingIma
 
     @Query(value = "SELECT EXISTS (SELECT 1 FROM item_image_reference WHERE url = :url) " +
             "OR EXISTS (SELECT 1 FROM item_content WHERE strpos(content, :url) > 0) " +
+            "OR EXISTS (SELECT 1 FROM project_version WHERE strpos(snapshot, :url) > 0) " +
             "OR EXISTS (SELECT 1 FROM project_snapshot WHERE strpos(content, :url) > 0) " +
             "OR EXISTS (SELECT 1 FROM project WHERE thumbnail_image_url = :url) " +
             "OR EXISTS (SELECT 1 FROM users WHERE image_url = :url OR banner_url = :url)", nativeQuery = true)

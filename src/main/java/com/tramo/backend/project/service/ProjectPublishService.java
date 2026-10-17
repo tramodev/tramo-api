@@ -32,6 +32,7 @@ import java.util.List;
 @Service
 public class ProjectPublishService {
     private final AccessGuard accessGuard;
+    private final ProjectVersionCapture history;
     private final ProjectRepository projectRepository;
     private final TrailRepository trailRepository;
     private final ProjectSnapshotRepository projectSnapshotRepository;
@@ -50,8 +51,9 @@ public class ProjectPublishService {
                                   FollowRepository followRepository, NotificationService notificationService,
                                   BadgeService badgeService, ProjectResponseMapper responseMapper,
                                   EditorImageService editorImages, SubscriptionService subscriptions,
-                                  SnapshotCapture snapshotCapture, SnapshotLimits snapshotLimits) {
+                                  SnapshotCapture snapshotCapture, SnapshotLimits snapshotLimits, ProjectVersionCapture history) {
         this.accessGuard = accessGuard;
+        this.history = history;
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
@@ -67,8 +69,7 @@ public class ProjectPublishService {
 
     @Transactional
     public ProjectResponseDTO publish(Long id, User requester) {
-        subscriptions.lockStorage(requester);
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = history.lock(id, requester);
         if (project.getDescription() == null || project.getDescription().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
         }

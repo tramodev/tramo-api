@@ -15,6 +15,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ProjectResponseDTO {
     private String id;
+    private long restoreEpoch;
     private String title;
     private String description;
     private String graphColors;

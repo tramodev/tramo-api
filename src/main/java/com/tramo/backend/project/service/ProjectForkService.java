@@ -170,11 +170,12 @@ public class ProjectForkService {
         for (ProjectSnapshotData.ItemData itemData : data.looseItems()) {
             itemCopies.computeIfAbsent(itemData.id(), ignored -> copyItemFromData(itemData, fork, true));
         }
-        retargetMentions(itemCopies);
+        retargetMentions(itemCopies, objectMapper);
 
     }
 
-    private void retargetMentions(Map<Long, Item> itemCopies) {
+    static void retargetMentions(Map<Long, Item> itemCopies, ObjectMapper objectMapper) {
+        if (itemCopies.entrySet().stream().allMatch(entry -> entry.getKey().equals(entry.getValue().getId()))) return;
         for (Item copy : itemCopies.values()) {
             ItemContent content = copy.getContent();
             if (content == null || content.getContent() == null
@@ -190,7 +191,7 @@ public class ProjectForkService {
         }
     }
 
-    private boolean retargetMentions(JsonNode node, Map<Long, Item> itemCopies) {
+    private static boolean retargetMentions(JsonNode node, Map<Long, Item> itemCopies) {
         boolean changed = false;
         if (node.isObject() && "link".equals(node.path("type").asText(""))) {
             String rel = node.path("rel").asText("");

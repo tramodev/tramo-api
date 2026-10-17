@@ -200,4 +200,17 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
         assertThat(large).isEqualTo(small);
     }
 
+    @Test
+    void historyMetadataQueryCountDoesNotScaleWithVersions() throws Exception {
+        User owner = createUser("historyqueries");
+        Project project = createProject(owner, "History", "private");
+        postForId(owner, "/api/project/" + pid(project) + "/history", "{}");
+        long small = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/history")
+                .header("Authorization", bearer(owner))).andExpect(status().isOk()));
+        for (int index = 0; index < 5; index++) postForId(owner, "/api/project/" + pid(project) + "/history", "{}");
+        long large = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/history")
+                .header("Authorization", bearer(owner))).andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
 }

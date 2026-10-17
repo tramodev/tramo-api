@@ -9,4 +9,6 @@ import java.util.List;
 import java.util.UUID;
 
 public record EditorImageResolveRequest(@NotNull @Size(min = 1, max = 100) List<@NotNull UUID> imageIds,
-        @Positive Long snapshotId) {}
+        @Positive Long snapshotId, @Positive Long versionId) {
+    public EditorImageResolveRequest(List<UUID> imageIds, Long snapshotId) { this(imageIds, snapshotId, null); }
+}

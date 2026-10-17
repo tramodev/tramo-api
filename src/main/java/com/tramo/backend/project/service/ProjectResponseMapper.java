@@ -54,6 +54,7 @@ public class ProjectResponseMapper {
         Project source = project.getForkedFrom();
         return new ProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
+                project.getRestoreEpoch(),
                 project.getTitle(),
                 project.getDescription(),
                 project.getGraphColors(),

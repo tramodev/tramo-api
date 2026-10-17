@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.trail.dto.ItemTextStatsDTO;
@@ -56,7 +57,6 @@ public class ItemService {
     private static final Logger log = LoggerFactory.getLogger(ItemService.class);
     private static final long IMAGE_DELETION_GRACE_MS = 24 * 60 * 60 * 1000L;
     private static final long IMAGE_DELETION_PURGE_INTERVAL_MS = 60 * 60 * 1000L;
-    private static final long LAST_EDITED_THROTTLE_MS = 60 * 1000L;
     private static final int MIN_SEARCH_LENGTH = 3;
 
     private final ItemRepository itemRepository;
@@ -71,6 +71,7 @@ public class ItemService {
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
     private final SubscriptionService subscriptions;
+    private final ProjectVersionCapture history;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         TrailService trailService,
@@ -78,7 +79,7 @@ public class ItemService {
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
                         ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages,
-                        SubscriptionService subscriptions) {
+                        SubscriptionService subscriptions, ProjectVersionCapture history) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.trailService = trailService;
@@ -91,6 +92,7 @@ public class ItemService {
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
         this.subscriptions = subscriptions;
+        this.history = history;
     }
 
     @Transactional
@@ -99,6 +101,7 @@ public class ItemService {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
+        history.beforeChange(trail.getProject());
 
         ItemContent content = new ItemContent();
         content.setContent("");
@@ -129,7 +132,8 @@ public class ItemService {
         if (request.getTitle() == null || request.getTitle().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
-        Project project = getOwnedProject(projectId, requester);
+        Project project = history.lock(projectId, requester);
+        history.beforeChange(project);
 
         ItemContent content = new ItemContent();
         content.setContent("");
@@ -271,13 +275,15 @@ public class ItemService {
 
     @Transactional
     public void reorderTrailItems(Long trailId, List<Long> itemIds, User requester) {
-        trailService.getOwnedTrailForUpdate(trailId, requester);
+        Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
         List<TrailItem> steps = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId);
         Map<Long, TrailItem> byItemId = steps.stream()
                 .collect(Collectors.toMap(step -> step.getItem().getId(), step -> step));
         if (itemIds.size() != byItemId.size() || !byItemId.keySet().equals(new HashSet<>(itemIds))) {
             throw new RequestValidationException(RequestErrorCode.TRAIL_ORDER_INVALID);
         }
+        if (steps.stream().map(step -> step.getItem().getId()).toList().equals(itemIds)) return;
+        history.beforeChange(trail.getProject());
         for (int index = 0; index < itemIds.size(); index++) {
             byItemId.get(itemIds.get(index)).setOrderIndex(index);
         }
@@ -310,7 +316,13 @@ public class ItemService {
     
     @Transactional
     public ItemResponseDTO update(Long id, ItemRequestDTO request, User requester) {
+        Project project = history.lockItem(id, requester);
         Item item = getOwnedItem(id, requester);
+        boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !Objects.equals(request.getTitle(), item.getTitle()))
+                || (request.getType() != null && !Objects.equals(request.getType(), item.getType()))
+                || (request.getTitleAlign() != null && !Objects.equals(request.getTitleAlign(), item.getTitleAlign()));
+        if (!changed) return toResponse(item);
+        history.beforeChange(project);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             item.setTitle(request.getTitle());
         }
@@ -326,7 +338,9 @@ public class ItemService {
 
     @Transactional
     public void delete(Long id, User requester) {
+        Project project = history.lockItem(id, requester);
         Item item = getOwnedItem(id, requester);
+        history.beforeChange(project);
         deleteItemCompletely(item, requester.getId());
     }
 
@@ -357,7 +371,7 @@ public class ItemService {
     @Transactional
     public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
         ContentLimits.assertNote(content);
-        subscriptions.lockStorage(requester);
+        Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);
         ItemContent itemContent = item.getContent();
@@ -369,6 +383,8 @@ public class ItemService {
         if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
         if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note changed in another session. Your changes were kept locally; reload before saving.");
+        if (Objects.equals(content, previousContent)) return;
+        history.beforeChange(project);
         if (itemContent == null) {
             itemContent = new ItemContent();
             item.setContent(itemContent);
@@ -376,7 +392,6 @@ public class ItemService {
         itemContent.setContent(content);
         itemContent.setUpdatedDate(new Date());
         itemRepository.save(item);
-        bumpOwningProjectLastEditedDate(item);
         editorImages.syncItem(item, content);
         Set<String> newUrls = r2Client.extractReferencedUrls(content);
         resyncImageReferences(item, newUrls);
@@ -420,16 +435,6 @@ public class ItemService {
         }
     }
 
-    private void bumpOwningProjectLastEditedDate(Item item) {
-        Long projectId = item.getProject() != null
-                ? item.getProject().getId()
-                : trailItemRepository.findByItemId(item.getId()).stream().findFirst()
-                        .map(trailItem -> trailItem.getTrail().getProject().getId()).orElse(null);
-        if (projectId == null) return;
-        Date now = new Date();
-        projectRepository.touchLastEditedDate(projectId, now, new Date(now.getTime() - LAST_EDITED_THROTTLE_MS));
-    }
-
     @Transactional
     public void attachToTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
@@ -440,6 +445,7 @@ public class ItemService {
         if (trailItemRepository.existsByTrailIdAndItemId(trail.getId(), item.getId())) {
             return;
         }
+        history.beforeChange(trail.getProject());
         TrailItem trailItem = new TrailItem();
         trailItem.setTrail(trail);
         trailItem.setItem(item);
@@ -449,11 +455,13 @@ public class ItemService {
 
     @Transactional
     public void detachFromTrail(Long trailId, Long itemId, User requester) {
-        trailService.getOwnedTrailForUpdate(trailId, requester);
+        Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
         Item item = getOwnedItem(itemId, requester);
 
-        trailItemRepository.findByTrailIdAndItemId(trailId, item.getId())
-                .ifPresent(trailItemRepository::delete);
+        var membership = trailItemRepository.findByTrailIdAndItemId(trailId, item.getId());
+        if (membership.isEmpty()) return;
+        history.beforeChange(trail.getProject());
+        trailItemRepository.delete(membership.get());
 
         
         

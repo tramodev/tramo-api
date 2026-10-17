@@ -234,6 +234,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
     void rejectsOversizedProjectsBeforeLoadingTheirBodies() throws Exception {
         Fixture f = fixture();
         jdbcTemplate.update("UPDATE item_content SET content = repeat('x', 8388609) WHERE id = (SELECT content_id FROM item WHERE id = ?)", f.shared);
+        org.mockito.Mockito.clearInvocations(items);
         assertThatThrownBy(() -> exports.prepare(f.project.getId(), f.owner)).isInstanceOf(ProjectExportException.class).hasMessageContaining("limits");
         verify(items, never()).findForExport(any());
     }

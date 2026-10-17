@@ -98,10 +98,10 @@ public class RateLimitFilter implements Filter {
             if (bucket != null && !tryConsumeOrReject(bucket, res)) {
                 return;
             }
-        } else if (MUTATING_METHODS.contains(req.getMethod()) && !path.startsWith("/api/admin/")) {
+        } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?"))) && !path.startsWith("/api/admin/")) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
-                boolean tight = path.endsWith("/report") || TIGHT_TIER_PATHS.contains(path)
+                boolean tight = MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+/restore)?") || path.endsWith("/report") || TIGHT_TIER_PATHS.contains(path)
                         || path.matches("/api/uploads/[0-9a-fA-F-]+/complete");
                 Bucket bucket = tight
                         ? rateLimiterService.resolveBucket("user:tight:" + user.getId(), 10, 10, Duration.ofMinutes(1))

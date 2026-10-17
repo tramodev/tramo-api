@@ -80,6 +80,10 @@ public class SnapshotLimits {
 
     public String write(ProjectSnapshotData data) {
         validate(data);
+        return writeValue(data);
+    }
+
+    public String writeValue(Object data) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
         mapper.writeValue(new OutputStream() {
             private int count;
