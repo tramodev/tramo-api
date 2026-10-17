@@ -15,9 +15,10 @@ public record ProjectSnapshotData(
         String thumbnail,
         String tags,
         List<TrailData> trails,
-        List<ItemData> looseItems
+        List<ItemData> looseItems,
+        String thumbnailType
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
 
     public List<ItemData> looseItems() {
         return looseItems == null ? List.of() : looseItems;

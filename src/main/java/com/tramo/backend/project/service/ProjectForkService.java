@@ -13,6 +13,8 @@ import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
+import com.tramo.backend.project.snapshot.SnapshotCapture;
+import com.tramo.backend.project.snapshot.SnapshotLimits;
 import com.tramo.backend.tag.service.TagService;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.ItemContent;
@@ -57,6 +59,8 @@ public class ProjectForkService {
     private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
     private final SubscriptionService subscriptions;
+    private final SnapshotLimits snapshotLimits;
+    private final SnapshotCapture snapshotCapture;
 
     public ProjectForkService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
@@ -65,7 +69,8 @@ public class ProjectForkService {
                                PrivacyPolicy privacyPolicy, TagService tagService,
                                NotificationService notificationService, BadgeService badgeService,
                                 ProjectResponseMapper responseMapper, ObjectMapper objectMapper, EditorImageService editorImages,
-                                SubscriptionService subscriptions) {
+                                SubscriptionService subscriptions,
+                                SnapshotLimits snapshotLimits, SnapshotCapture snapshotCapture) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
@@ -81,6 +86,8 @@ public class ProjectForkService {
         this.objectMapper = objectMapper;
         this.editorImages = editorImages;
         this.subscriptions = subscriptions;
+        this.snapshotLimits = snapshotLimits;
+        this.snapshotCapture = snapshotCapture;
     }
 
     @Transactional
@@ -101,88 +108,33 @@ public class ProjectForkService {
 
         ProjectSnapshotData published = projectSnapshotRepository
                 .findLatestPublishByProjectIdIn(List.of(sourceProjectId)).stream().findFirst()
-                .map(snapshot -> objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class))
+                .map(snapshot -> snapshotLimits.read(snapshot.getContent()))
                 .orElse(null);
+        if (published == null && (source.getFirstPublishedDate() != null || source.getVisibility() == ProjectVisibility.PUBLISHED)) {
+            throw new ResourceNotFoundException("Published version unavailable; owner must publish again");
+        }
+        if (published == null) published = snapshotCapture.capture(sourceProjectId);
         Project fork = new Project();
-        fork.setTitle(published != null ? published.title() : source.getTitle());
-        fork.setDescription(published != null ? published.description() : source.getDescription());
+        fork.setTitle(published.title());
+        fork.setDescription(published.description());
         fork.setVisibility(ProjectVisibility.PRIVATE);
         fork.setOwner(requester);
         fork.setForkedFrom(source);
+        fork.setForkedFromTitle(published.title());
         fork.setCreationDate(new Date());
         fork.setModifiedDate(new Date());
-        List<String> tags = published == null ? responseMapper.liveTagNames(source)
-                : published.tags() == null ? List.of() : List.of(published.tags().split(","));
+        List<String> tags = published.tags() == null ? List.of() : List.of(published.tags().split(","));
         tagService.applyProjectTags(fork, tags, requester.getId());
         fork = projectRepository.save(fork);
 
-        if (published != null) {
-            forkFromSnapshot(fork, published);
-        } else {
-            forkFromLiveTables(fork, sourceProjectId);
-        }
+        forkFromSnapshot(fork, published);
 
         itemRepository.flush();
         subscriptions.assertUploadAllowed(requester, 0, subscriptions.isSupporter(requester));
         editorImages.copyForkImages(fork);
         notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
         badgeService.checkAndAwardBadges(source.getOwner());
-        ProjectResponseDTO response = responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));
-        response.setForkedFromTitle(fork.getTitle());
-        return response;
-    }
-
-    private void forkFromLiveTables(Project fork, Long sourceProjectId) {
-        Map<Long, Item> itemCopies = new HashMap<>();
-
-        for (Trail sourceTrail : trailRepository.findByProjectId(sourceProjectId)) {
-            ContentLimits.assertTrailDescription(sourceTrail.getDescription());
-            Trail trailCopy = new Trail();
-            trailCopy.setTitle(sourceTrail.getTitle());
-            trailCopy.setDescription(sourceTrail.getDescription());
-            trailCopy.setVisibility(sourceTrail.getVisibility());
-            trailCopy.setCreationDate(new Date());
-            trailCopy.setModifiedDate(new Date());
-            trailCopy.setProject(fork);
-            trailCopy.setForkedFrom(sourceTrail);
-            trailCopy.setOrderIndex(sourceTrail.getOrderIndex());
-            trailCopy = trailRepository.save(trailCopy);
-
-            for (TrailItem membership : trailItemRepository.findByTrailIdOrderByOrderIndexAsc(sourceTrail.getId())) {
-                Item itemCopy = itemCopies.computeIfAbsent(membership.getItem().getId(),
-                        ignored -> copyItem(membership.getItem(), fork, false));
-
-                TrailItem membershipCopy = new TrailItem();
-                membershipCopy.setTrail(trailCopy);
-                membershipCopy.setItem(itemCopy);
-                membershipCopy.setOrderIndex(membership.getOrderIndex());
-                membershipCopy = trailItemRepository.save(membershipCopy);
-            }
-        }
-
-        for (Item item : itemRepository.findByProjectId(sourceProjectId)) {
-            itemCopies.computeIfAbsent(item.getId(), ignored -> copyItem(item, fork, true));
-        }
-        retargetMentions(itemCopies);
-    }
-
-    private Item copyItem(Item source, Project fork, boolean unfiled) {
-        Item copy = new Item();
-        copy.setProject(fork);
-        copy.setUnfiled(unfiled);
-        copy.setTitle(source.getTitle());
-        copy.setType(source.getType());
-        copy.setTitleAlign(source.getTitleAlign());
-        copy.setCreatedDate(new Date());
-        copy.setModifiedDate(new Date());
-        if (source.getContent() != null) {
-            ContentLimits.assertNote(source.getContent().getContent());
-            ItemContent contentCopy = new ItemContent();
-            contentCopy.setContent(source.getContent().getContent());
-            contentCopy.setUpdatedDate(new Date());
-            copy.setContent(contentCopy);
-        }
-        return itemRepository.save(copy);
+        return responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));
     }
 
     private void forkFromSnapshot(Project fork, ProjectSnapshotData data) {

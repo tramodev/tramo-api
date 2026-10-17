@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.service;
 
-import com.tramo.backend.project.entity.ProjectSnapshot;
+import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 
 import java.util.List;
 import java.util.Map;
@@ -10,7 +10,7 @@ import java.util.Set;
 
 record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Map<Long, Long> commentCounts,
                     Set<Long> votedProjectIds, Set<Long> bookmarkedProjectIds,
-                    Map<Long, ProjectSnapshot> latestPublishByProjectId,
+                    Map<Long, ProjectSnapshotData> latestPublishByProjectId,
                     Map<Long, List<String>> tagNamesByProjectId,
                     Map<Long, ThumbnailResolution> thumbnailByProjectId) {
     static final FeedContext EMPTY = new FeedContext(Map.of(), Map.of(), Map.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of());
@@ -25,7 +25,7 @@ record FeedContext(Map<Long, Long> voteCounts, Map<Long, Long> forkCounts, Map<L
                 latestPublishByProjectId, tagNamesByProjectId, thumbnailByProjectId);
     }
 
-    FeedContext withLatestPublish(Map<Long, ProjectSnapshot> latestPublish) {
+    FeedContext withLatestPublish(Map<Long, ProjectSnapshotData> latestPublish) {
         return new FeedContext(voteCounts, forkCounts, commentCounts, votedProjectIds, bookmarkedProjectIds,
                 latestPublish, tagNamesByProjectId, thumbnailByProjectId);
     }

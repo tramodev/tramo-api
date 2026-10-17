@@ -65,7 +65,7 @@ public class ProjectResponseMapper {
                 latestOf(project.getModifiedDate(), project.getLastEditedDate()),
                 storageBytes,
                 source != null ? projectIdCodec.encode(source.getId()) : null,
-                source != null ? source.getTitle() : null,
+                project.getForkedFromTitle(),
                 source != null ? source.getOwner().getUsername() : null
         );
     }

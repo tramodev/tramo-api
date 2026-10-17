@@ -182,11 +182,12 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void historicalBackfillDoesNotPreventStartupWhenAnAccountIsOverQuota() {
+    void legacyPublishedProjectIsNotBackfilledFromLiveData() throws Exception {
         User user = createUser("backfillquota");
-        createProject(user, "Legacy", "published", "Description", null);
+        Project project = createProject(user, "Legacy", "published", "Description", null);
+        jdbcTemplate.update("delete from project_snapshot where project_id = ?", project.getId());
         reserve(user, 8192);
-        publish.backfillMissingPublishSnapshots();
+        mockMvc.perform(get("/api/public/project/" + pid(project))).andExpect(status().isNotFound());
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM project_snapshot", Integer.class)).isZero();
     }
 

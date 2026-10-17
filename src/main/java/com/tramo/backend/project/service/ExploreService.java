@@ -97,6 +97,7 @@ public class ExploreService {
 
         FeedContext ctx = feedMapper.publishedContextFor(pageProjects, requester);
         List<ProjectFeedItemDTO> feed = pageProjects.stream()
+                .filter(project -> ctx.latestPublishByProjectId().containsKey(project.getId()))
                 .map(project -> feedMapper.toFeedItem(project, ctx, blockRelated))
                 .toList();
 
@@ -109,7 +110,7 @@ public class ExploreService {
                 featured = projectRepository.findByFeaturedTrue()
                         .filter(project -> project.getVisibility() == ProjectVisibility.PUBLISHED)
                         .filter(project -> !blockRelated.contains(project.getOwner().getUsername()))
-                        .map(project -> feedMapper.toFeedItem(project, feedMapper.publishedContextFor(List.of(project), requester)))
+                        .flatMap(project -> feedMapper.toPublishedFeedItems(List.of(project), requester).stream().findFirst())
                         .orElse(null);
             }
             hotTopics = cachedHotTopics;
@@ -150,7 +151,8 @@ public class ExploreService {
                 .collect(Collectors.toMap(Project::getId, p -> p));
         List<Project> projects = ids.stream().map(byId::get).toList();
         FeedContext ctx = feedMapper.publishedContextFor(projects, null);
-        return projects.stream().map(project -> feedMapper.toFeedItem(project, ctx)).toList();
+        return projects.stream().filter(project -> ctx.latestPublishByProjectId().containsKey(project.getId()))
+                .map(project -> feedMapper.toFeedItem(project, ctx)).toList();
     }
 
     @Scheduled(cron = "0 0 0 * * *")

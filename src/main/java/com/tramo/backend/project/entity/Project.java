@@ -68,6 +68,8 @@ public class Project {
     @JoinColumn(name = "forked_from_id")
     private Project forkedFrom;
 
+    private String forkedFromTitle;
+
     @OneToMany(mappedBy = "project")
     private List<Trail> trails;
 

@@ -19,26 +19,18 @@ import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.repository.ProjectViewRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
-import com.tramo.backend.trail.entity.Item;
-import com.tramo.backend.trail.entity.Trail;
-import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.ItemRepository;
-import com.tramo.backend.trail.repository.TrailItemRepository;
-import com.tramo.backend.trail.repository.TrailRepository;
+import com.tramo.backend.project.snapshot.SnapshotCapture;
+import com.tramo.backend.project.snapshot.SnapshotLimits;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.user.service.PrivacyPolicy;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class PublicProjectService {
@@ -48,44 +40,39 @@ public class PublicProjectService {
     private final ProjectVoteRepository projectVoteRepository;
     private final ProjectBookmarkRepository projectBookmarkRepository;
     private final ProjectSnapshotRepository projectSnapshotRepository;
-    private final TrailRepository trailRepository;
-    private final TrailItemRepository trailItemRepository;
-    private final ItemRepository itemRepository;
     private final CommentRepository commentRepository;
     private final UserBadgeRepository userBadgeRepository;
     private final UserRepository userRepository;
     private final BadgeService badgeService;
     private final ProjectThumbnailResolver thumbnailResolver;
     private final ProjectIdCodec projectIdCodec;
-    private final ObjectMapper objectMapper;
     private final PrivacyPolicy privacyPolicy;
+    private final SnapshotLimits snapshotLimits;
+    private final SnapshotCapture snapshotCapture;
 
     public PublicProjectService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                  ProjectViewRepository projectViewRepository, ProjectVoteRepository projectVoteRepository,
                                  ProjectBookmarkRepository projectBookmarkRepository,
-                                 ProjectSnapshotRepository projectSnapshotRepository, TrailRepository trailRepository,
-                                 TrailItemRepository trailItemRepository, ItemRepository itemRepository,
+                                 ProjectSnapshotRepository projectSnapshotRepository,
                                  CommentRepository commentRepository, UserBadgeRepository userBadgeRepository,
                                  UserRepository userRepository, BadgeService badgeService,
                                  ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
-                                 ObjectMapper objectMapper, PrivacyPolicy privacyPolicy) {
+                                 PrivacyPolicy privacyPolicy, SnapshotLimits snapshotLimits, SnapshotCapture snapshotCapture) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.projectViewRepository = projectViewRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
-        this.trailRepository = trailRepository;
-        this.trailItemRepository = trailItemRepository;
-        this.itemRepository = itemRepository;
         this.commentRepository = commentRepository;
         this.userBadgeRepository = userBadgeRepository;
         this.userRepository = userRepository;
         this.badgeService = badgeService;
         this.thumbnailResolver = thumbnailResolver;
         this.projectIdCodec = projectIdCodec;
-        this.objectMapper = objectMapper;
         this.privacyPolicy = privacyPolicy;
+        this.snapshotLimits = snapshotLimits;
+        this.snapshotCapture = snapshotCapture;
     }
 
     @Transactional
@@ -116,68 +103,29 @@ public class PublicProjectService {
                 ? projectSnapshotRepository.findLatestPublishByProjectIdIn(List.of(id)).stream().findFirst()
                 : Optional.empty();
 
-        String title;
-        String description;
-        Date displayDate;
-        List<PublicTrailDTO> trails;
-        List<PublicItemDTO> looseItems;
-        if (snapshotOpt.isPresent()) {
-            ProjectSnapshot snapshot = snapshotOpt.get();
-            ProjectSnapshotData data = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
-            title = data.title();
-            description = data.description();
-            displayDate = snapshot.getCreatedDate();
-            trails = data.trails().stream()
-                    .map(t -> new PublicTrailDTO(
-                            t.id(), t.title(), t.description(), t.version(),
-                            t.forkedFromId() != null ? String.valueOf(t.forkedFromId()) : null,
-                            t.items().stream().map(this::toPublicItem).toList()
-                    ))
-                    .toList();
-            looseItems = data.looseItems().stream().map(this::toPublicItem).toList();
-        } else {
-            List<Trail> projectTrails = trailRepository.findByProjectId(id);
-            List<TrailItem> allTrailItems = projectTrails.isEmpty()
-                    ? List.of()
-                    : trailItemRepository.findByTrailIdInWithItemAndContent(projectTrails.stream().map(Trail::getId).toList());
-            Map<Long, List<TrailItem>> itemsByTrailId = allTrailItems.stream()
-                    .collect(Collectors.groupingBy(trailItem -> trailItem.getTrail().getId()));
-
-            Set<Long> trailItemIds = allTrailItems.stream()
-                    .map(ti -> ti.getItem().getId())
-                    .collect(Collectors.toSet());
-            List<Item> projectItems = itemRepository.findByProjectId(id);
-            Map<Long, Item> projectItemById = projectItems.stream()
-                    .collect(Collectors.toMap(Item::getId, item -> item, (a, b) -> a));
-            title = project.getTitle();
-            description = project.getDescription();
-            displayDate = project.getModifiedDate();
-            trails = projectTrails.stream()
-                    .map(trail -> new PublicTrailDTO(
-                            trail.getId(),
-                            trail.getTitle(),
-                            trail.getDescription(),
-                            trail.getVersion(),
-                            trail.getForkedFrom() != null ? String.valueOf(trail.getForkedFrom().getId()) : null,
-                            itemsByTrailId.getOrDefault(trail.getId(), List.of()).stream()
-                                    .map(ti -> toPublicItem(ti.getItem()))
-                                    .toList()
-                    ))
-                    .toList();
-            looseItems = projectItems.stream()
-                    .filter(item -> !trailItemIds.contains(item.getId()))
-                    .map(this::toPublicItem)
-                    .toList();
+        if (project.getVisibility() == ProjectVisibility.PUBLISHED && snapshotOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Published version unavailable; owner must publish again");
         }
+        ProjectSnapshotData data = snapshotOpt.isPresent() ? snapshotLimits.read(snapshotOpt.get().getContent())
+                : snapshotCapture.capture(id);
+        Date displayDate = snapshotOpt.isPresent() ? snapshotOpt.get().getCreatedDate() : project.getModifiedDate();
+        List<PublicTrailDTO> trails = data.trails().stream()
+                .map(t -> new PublicTrailDTO(
+                        t.id(), t.title(), t.description(), t.version(),
+                        t.forkedFromId() != null ? String.valueOf(t.forkedFromId()) : null,
+                        t.items().stream().map(item -> toPublicItem(item, snapshotOpt.isEmpty())).toList()
+                ))
+                .toList();
+        List<PublicItemDTO> looseItems = data.looseItems().stream().map(item -> toPublicItem(item, snapshotOpt.isEmpty())).toList();
 
         Project publicSource = project.getForkedFrom();
         return new PublicProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
-                title,
-                description,
+                data.title(),
+                data.description(),
                 project.getOwner().getUsername(),
                 displayDate,
-                thumbnailResolver.resolveThumbnail(project).imageUrl(),
+                thumbnailResolver.resolvePublished(data).imageUrl(),
                 trails,
                 looseItems,
                 projectVoteRepository.countByProjectId(id),
@@ -190,20 +138,16 @@ public class PublicProjectService {
                         .orElse(0L),
                 project.getVisibility().toJson(),
                 publicSource != null ? projectIdCodec.encode(publicSource.getId()) : null,
-                publicSource != null ? publicSource.getTitle() : null,
+                project.getForkedFromTitle(),
                 publicSource != null ? publicSource.getOwner().getUsername() : null,
                 privacyPolicy.canFork(project.getOwner()),
                 privacyPolicy.canComment(project.getOwner(), requester)
         );
     }
 
-    private PublicItemDTO toPublicItem(ProjectSnapshotData.ItemData item) {
-        return new PublicItemDTO(item.id(), item.title(), item.type(), item.content(), item.titleAlign());
-    }
-
-    private PublicItemDTO toPublicItem(Item item) {
-        String content = item.getContent() != null ? item.getContent().getContent() : "";
-        return new PublicItemDTO(item.getId(), item.getTitle(), item.getType(), content, item.getTitleAlign());
+    private PublicItemDTO toPublicItem(ProjectSnapshotData.ItemData item, boolean live) {
+        return new PublicItemDTO(item.id(), item.title(), item.type(),
+                live && item.content() == null ? "" : item.content(), item.titleAlign());
     }
 
     public List<SitemapProjectDTO> getSitemapProjects() {

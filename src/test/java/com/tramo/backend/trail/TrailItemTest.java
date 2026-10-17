@@ -413,9 +413,12 @@ class TrailItemTest extends AbstractIntegrationTest {
     void forkCopiesForkedFrom() throws Exception {
         User owner = createUser("forkann");
         User forker = createUser("forkann2");
-        Project source = createProject(owner, "Forkable", "published");
+        Project source = createProject(owner, "Forkable", "published", "Description", null);
         long trailId = createTrail(owner, source, "T");
         long itemId = createItem(owner, trailId, "Step");
+
+        mockMvc.perform(post("/api/project/" + pid(source) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
 
         String forkId = postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "");
         Project fork = projectRepository.findById(projectIdCodec.decode(forkId)).orElseThrow();

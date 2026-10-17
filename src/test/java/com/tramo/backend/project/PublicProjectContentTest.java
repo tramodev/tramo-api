@@ -37,7 +37,7 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
     @Test
     void publicProjectExposesThumbnailImageUrlWhenDedicatedButNotForGraphOrNone() throws Exception {
         User owner = createUser("publicthumbowner");
-        Project project = createProject(owner, "Thumbed", "published");
+        Project project = createProject(owner, "Thumbed", "published", "Description", null);
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
@@ -50,6 +50,9 @@ class PublicProjectContentTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"type":"DEDICATED","imageUrl":"%s"}""".formatted(thumbnail)))
+                 .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))

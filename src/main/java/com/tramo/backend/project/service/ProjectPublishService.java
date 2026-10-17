@@ -4,8 +4,6 @@ package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.common.ContentLimits;
-import com.tramo.backend.common.SafeLog;
-import com.tramo.backend.exception.StorageQuotaExceededException;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -20,63 +18,51 @@ import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
-import com.tramo.backend.trail.entity.Item;
-import com.tramo.backend.trail.entity.Trail;
-import com.tramo.backend.trail.entity.TrailItem;
-import com.tramo.backend.trail.repository.ItemRepository;
-import com.tramo.backend.trail.repository.TrailItemRepository;
+import com.tramo.backend.project.snapshot.SnapshotCapture;
+import com.tramo.backend.project.snapshot.SnapshotLimits;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.FollowRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
-import org.slf4j.LoggerFactory;
-import tools.jackson.databind.ObjectMapper;
 
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class ProjectPublishService {
     private final AccessGuard accessGuard;
     private final ProjectRepository projectRepository;
     private final TrailRepository trailRepository;
-    private final TrailItemRepository trailItemRepository;
-    private final ItemRepository itemRepository;
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final FollowRepository followRepository;
     private final NotificationService notificationService;
     private final BadgeService badgeService;
     private final ProjectResponseMapper responseMapper;
-    private final ObjectMapper objectMapper;
     private final EditorImageService editorImages;
     private final SubscriptionService subscriptions;
+    private final SnapshotCapture snapshotCapture;
+    private final SnapshotLimits snapshotLimits;
 
     public ProjectPublishService(AccessGuard accessGuard, ProjectRepository projectRepository,
-                                  TrailRepository trailRepository, TrailItemRepository trailItemRepository,
-                                  ItemRepository itemRepository,
+                                  TrailRepository trailRepository,
                                   ProjectSnapshotRepository projectSnapshotRepository,
                                   FollowRepository followRepository, NotificationService notificationService,
                                   BadgeService badgeService, ProjectResponseMapper responseMapper,
-                                   ObjectMapper objectMapper, EditorImageService editorImages, SubscriptionService subscriptions) {
+                                  EditorImageService editorImages, SubscriptionService subscriptions,
+                                  SnapshotCapture snapshotCapture, SnapshotLimits snapshotLimits) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
-        this.trailItemRepository = trailItemRepository;
-        this.itemRepository = itemRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
         this.followRepository = followRepository;
         this.notificationService = notificationService;
         this.badgeService = badgeService;
         this.responseMapper = responseMapper;
-        this.objectMapper = objectMapper;
         this.editorImages = editorImages;
         this.subscriptions = subscriptions;
+        this.snapshotCapture = snapshotCapture;
+        this.snapshotLimits = snapshotLimits;
     }
 
     @Transactional
@@ -136,48 +122,12 @@ public class ProjectPublishService {
                 followRepository.findFollowersByFollowedId(actor.getId()), type, project, actor);
     }
 
-    private ProjectSnapshotData.ItemData toItemData(Item item) {
-        return new ProjectSnapshotData.ItemData(item.getId(), item.getTitle(), item.getType(),
-                item.getTitleAlign(), item.getContent() != null ? item.getContent().getContent() : null);
-    }
-
     void createSnapshot(Project project, String trigger) {
         subscriptions.lockStorage(project.getOwner());
-        List<Trail> projectTrails = trailRepository.findByProjectId(project.getId());
-        List<Long> trailIds = projectTrails.stream().map(Trail::getId).toList();
-
-        Map<Long, List<TrailItem>> membershipsByTrailId = trailIds.isEmpty() ? Map.of()
-                : trailItemRepository.findByTrailIdInWithItemContent(trailIds).stream()
-                        .collect(Collectors.groupingBy(ti -> ti.getTrail().getId(), LinkedHashMap::new, Collectors.toList()));
-
-        Set<Long> trailItemIds = membershipsByTrailId.values().stream()
-                .flatMap(List::stream)
-                .map(ti -> ti.getItem().getId())
-                .collect(Collectors.toSet());
-
-        List<Item> projectItems = itemRepository.findByProjectId(project.getId());
-
-        List<ProjectSnapshotData.TrailData> trails = new ArrayList<>();
-        for (Trail trail : projectTrails) {
-            List<ProjectSnapshotData.ItemData> items = new ArrayList<>();
-            for (TrailItem membership : membershipsByTrailId.getOrDefault(trail.getId(), List.of())) {
-                Item item = membership.getItem();
-                items.add(toItemData(item));
-            }
-            trails.add(new ProjectSnapshotData.TrailData(trail.getId(), trail.getTitle(), trail.getDescription(),
-                    trail.getVisibility(), trail.getVersion(),
-                    trail.getForkedFrom() != null ? trail.getForkedFrom().getId() : null, items));
-        }
-
-        List<ProjectSnapshotData.ItemData> looseItems = projectItems.stream()
-                .filter(item -> !trailItemIds.contains(item.getId()))
-                .map(this::toItemData)
-                .toList();
-
-        ProjectSnapshotData data = new ProjectSnapshotData(ProjectSnapshotData.CURRENT_SCHEMA_VERSION,
-                project.getId(), project.getTitle(), project.getDescription(),
-                project.getVisibility().toJson(), project.getThumbnailImageUrl(),
-                String.join(",", responseMapper.liveTagNames(project)), trails, looseItems);
+        projectRepository.flush();
+        boolean supporter = subscriptions.isSupporter(project.getOwner());
+        ProjectSnapshotData data = snapshotCapture.capture(project.getId(),
+                subscriptions.remainingStorageBytes(project.getOwner(), supporter));
 
         ProjectSnapshot snapshot = new ProjectSnapshot();
         snapshot.setProject(project);
@@ -185,34 +135,17 @@ public class ProjectPublishService {
         if ("PUBLISH".equals(trigger)) {
             snapshot.setVersion(projectSnapshotRepository.findMaxVersion(project.getId()).orElse(0) + 1);
         }
-        snapshot.setContent(objectMapper.writeValueAsString(data));
+        snapshot.setContent(snapshotLimits.write(data));
         subscriptions.assertUploadAllowed(project.getOwner(), ContentLimits.bytes(snapshot.getContent()),
-                subscriptions.isSupporter(project.getOwner()));
+                supporter);
         snapshot.setCreatedDate(new Date());
         projectSnapshotRepository.save(snapshot);
         editorImages.retainSnapshot(snapshot);
     }
 
-    @Transactional
-    public void backfillMissingPublishSnapshots() {
-        Set<Long> alreadySnapshotted = Set.copyOf(projectSnapshotRepository.findProjectIdsWithPublishSnapshot());
-        for (Project project : projectRepository.findByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility.PUBLISHED)) {
-            if (!alreadySnapshotted.contains(project.getId())) {
-                try {
-                    createSnapshot(project, "PUBLISH");
-                } catch (StorageQuotaExceededException overQuota) {
-                    SafeLog.failure(LoggerFactory.getLogger(ProjectPublishService.class),
-                            "snapshot_backfill_skipped", "STORAGE_QUOTA_EXCEEDED", overQuota);
-                }
-            }
-        }
-    }
-
     public List<ProjectSnapshotSummaryDTO> listSnapshots(Long id, User requester) {
         accessGuard.getOwnedProject(id, requester);
-        return projectSnapshotRepository.findByProjectIdAndTriggerOrderByVersionDesc(id, "PUBLISH").stream()
-                .map(s -> new ProjectSnapshotSummaryDTO(s.getId(), s.getVersion(), s.getCreatedDate()))
-                .toList();
+        return projectSnapshotRepository.findByProjectIdAndTriggerOrderByVersionDesc(id, "PUBLISH");
     }
 
     public ProjectSnapshotDetailDTO getSnapshotDetail(Long id, Long snapshotId, User requester) {
@@ -222,7 +155,7 @@ public class ProjectPublishService {
         if (!snapshot.getProject().getId().equals(id)) {
             throw new ResourceNotFoundException("Version not found");
         }
-        ProjectSnapshotData content = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
+        ProjectSnapshotData content = snapshotLimits.read(snapshot.getContent());
         return new ProjectSnapshotDetailDTO(snapshot.getId(), snapshot.getVersion(), snapshot.getCreatedDate(), content);
     }
 
@@ -238,7 +171,7 @@ public class ProjectPublishService {
         if (!snapshot.getProject().getId().equals(id) || !"PUBLISH".equals(snapshot.getTrigger())) {
             throw new ResourceNotFoundException("Version not found");
         }
-        ProjectSnapshotData content = objectMapper.readValue(snapshot.getContent(), ProjectSnapshotData.class);
+        ProjectSnapshotData content = snapshotLimits.read(snapshot.getContent());
         return new ProjectSnapshotDetailDTO(snapshot.getId(), snapshot.getVersion(), snapshot.getCreatedDate(), content);
     }
 }

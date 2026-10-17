@@ -23,6 +23,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class QueryCountTest extends AbstractIntegrationTest {
     @Autowired NotificationService notifications;
+    @Autowired com.tramo.backend.project.service.ProjectPublishService publishService;
+
+    @Test
+    void publicSnapshotThumbnailsDoNotAddQueriesPerTrailOrNote() throws Exception {
+        User owner = createUser("qcsnapshotthumb");
+        Project project = seedPublishedProject(owner, "Thumbnail", 1, 1, null);
+        jdbcTemplate.update("update project set thumbnail_type = 'GRAPH' where id = ?", project.getId());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/users/qcsnapshotthumb/published"))
+                .andExpect(status().isOk()));
+        for (int i = 0; i < 5; i++) {
+            long trail = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Extra\"}");
+            for (int j = 0; j < 4; j++) postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"Note\"}");
+        }
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/users/qcsnapshotthumb/published"))
+                .andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
 
     @Test
     void publicSiteContentUsesOneQueryPerSectionRegardlessOfEntryCount() throws Exception {
@@ -95,6 +116,7 @@ class QueryCountTest extends AbstractIntegrationTest {
             mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(voter)))
                     .andExpect(status().isOk());
         }
+        publishService.publish(project.getId(), owner);
         return project;
     }
 

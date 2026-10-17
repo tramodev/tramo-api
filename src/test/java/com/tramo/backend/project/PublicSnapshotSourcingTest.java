@@ -81,19 +81,23 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void backfillCreatesSnapshotForPreExistingPublishedProject() throws Exception {
+    void legacyPublishedProjectWithoutSnapshotDoesNotExposeLiveData() throws Exception {
         User owner = createUser("snapsrcowner4");
         
         
         Project project = createProject(owner, "Legacy Published", "published", "Legacy description", "tag");
-
-        publishService.backfillMissingPublishSnapshots();
+        jdbcTemplate.update("delete from project_snapshot where project_id = ?", project.getId());
 
         renameProject(owner, project, "Legacy Edited After Backfill");
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Legacy Published"));
+                .andExpect(status().isNotFound());
+        org.assertj.core.api.Assertions.assertThat(mockMvc.perform(get("/api/public/explore"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .doesNotContain("Legacy Edited After Backfill");
+        org.assertj.core.api.Assertions.assertThat(mockMvc.perform(get("/api/public/users/snapsrcowner4/published"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .doesNotContain("Legacy Edited After Backfill");
     }
 
     private long publishAndCaptureSnapshotId(User owner, Project project) throws Exception {

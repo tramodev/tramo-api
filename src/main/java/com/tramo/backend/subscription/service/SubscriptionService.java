@@ -68,11 +68,14 @@ public class SubscriptionService {
     }
 
     public void assertUploadAllowed(User user, long contentBytes, boolean supporter) {
-        long used = uploadRecordRepository.sumStorageBytesByUserId(user.getId());
-        long quota = supporter ? supporterStorageBytes : freeStorageBytes;
-        if (contentBytes > quota - used) {
+        if (contentBytes > remainingStorageBytes(user, supporter)) {
             throw new StorageQuotaExceededException();
         }
+    }
+
+    public long remainingStorageBytes(User user, boolean supporter) {
+        long used = uploadRecordRepository.sumStorageBytesByUserId(user.getId());
+        return (supporter ? supporterStorageBytes : freeStorageBytes) - used;
     }
 
     public void lockStorage(User user) {

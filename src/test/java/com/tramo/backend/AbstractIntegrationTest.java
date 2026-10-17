@@ -117,6 +117,15 @@ public abstract class AbstractIntegrationTest {
     protected TagRepository tagRepository;
 
     @Autowired
+    private com.tramo.backend.project.snapshot.SnapshotCapture fixtureSnapshots;
+
+    @Autowired
+    private com.tramo.backend.project.snapshot.SnapshotLimits fixtureSnapshotLimits;
+
+    @Autowired
+    private com.tramo.backend.project.repository.ProjectSnapshotRepository fixtureSnapshotRepository;
+
+    @Autowired
     protected ProjectIdCodec projectIdCodec;
 
     @Autowired
@@ -268,6 +277,16 @@ public abstract class AbstractIntegrationTest {
                 project.getProjectTags().add(tag);
             }
         }
-        return projectRepository.save(project);
+        project = projectRepository.save(project);
+        if (project.getVisibility() == ProjectVisibility.PUBLISHED) {
+            com.tramo.backend.project.entity.ProjectSnapshot snapshot = new com.tramo.backend.project.entity.ProjectSnapshot();
+            snapshot.setProject(project);
+            snapshot.setTrigger("PUBLISH");
+            snapshot.setVersion(1);
+            snapshot.setCreatedDate(project.getCreationDate());
+            snapshot.setContent(fixtureSnapshotLimits.write(fixtureSnapshots.capture(project.getId())));
+            fixtureSnapshotRepository.save(snapshot);
+        }
+        return project;
     }
 }

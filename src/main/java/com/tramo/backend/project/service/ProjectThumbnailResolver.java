@@ -1,30 +1,21 @@
-// Copyright (C) 2026 Ezequiel Martino
-// SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.project.dto.GraphPreviewDTO;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.entity.ProjectThumbnailType;
-import com.tramo.backend.trail.entity.Trail;
-import com.tramo.backend.trail.repository.TrailItemRepository;
-import com.tramo.backend.trail.repository.TrailRepository;
+import com.tramo.backend.project.snapshot.ProjectSnapshotData;
+import com.tramo.backend.project.snapshot.SnapshotCapture;
 import org.springframework.stereotype.Component;
-
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Component
 public class ProjectThumbnailResolver {
-    private final TrailRepository trailRepository;
-    private final TrailItemRepository trailItemRepository;
+    private final SnapshotCapture capture;
 
-    public ProjectThumbnailResolver(TrailRepository trailRepository, TrailItemRepository trailItemRepository) {
-        this.trailRepository = trailRepository;
-        this.trailItemRepository = trailItemRepository;
+    public ProjectThumbnailResolver(SnapshotCapture capture) {
+        this.capture = capture;
     }
 
     ThumbnailResolution resolveThumbnail(Project project) {
@@ -33,54 +24,40 @@ public class ProjectThumbnailResolver {
 
     Map<Long, ThumbnailResolution> resolveThumbnails(List<Project> projects) {
         Map<Long, ThumbnailResolution> result = new HashMap<>();
-        List<Project> chosenGraphProjects = new ArrayList<>();
-        List<Project> fallbackCandidates = new ArrayList<>();
-
-        for (Project project : projects) {
-            ProjectThumbnailType type = project.getThumbnailType();
-            if (type == null || type == ProjectThumbnailType.NONE) {
-                fallbackCandidates.add(project);
-            } else if (type == ProjectThumbnailType.GRAPH) {
-                chosenGraphProjects.add(project);
-            } else {
-                result.put(project.getId(), new ThumbnailResolution(project.getThumbnailImageUrl(), null));
-            }
+        for (var entry : capture.capturePreviews(projects.stream().map(Project::getId).toList()).entrySet()) {
+            result.put(entry.getKey(), resolvePublished(entry.getValue()));
         }
-
-        if (!chosenGraphProjects.isEmpty() || !fallbackCandidates.isEmpty()) {
-            List<Project> graphProjects = new ArrayList<>(chosenGraphProjects);
-            graphProjects.addAll(fallbackCandidates);
-            List<Long> graphProjectIds = graphProjects.stream().map(Project::getId).toList();
-            Map<Long, List<Trail>> trailsByProjectId = trailRepository.findByProjectIdIn(graphProjectIds).stream()
-                    .collect(Collectors.groupingBy(t -> t.getProject().getId(), LinkedHashMap::new, Collectors.toList()));
-            List<Long> allTrailIds = trailsByProjectId.values().stream().flatMap(List::stream).map(Trail::getId).toList();
-            GraphLookup lookup = GraphLookup.forTrailIds(allTrailIds, trailItemRepository);
-
-            for (Project project : chosenGraphProjects) {
-                result.put(project.getId(), new ThumbnailResolution(null,
-                        lookup.buildGraphPreview(trailsByProjectId.getOrDefault(project.getId(), List.of()))));
-            }
-
-            List<Long> needsImageFallback = new ArrayList<>();
-            for (Project project : fallbackCandidates) {
-                GraphPreviewDTO chosen = null;
-                for (Trail trail : trailsByProjectId.getOrDefault(project.getId(), List.of())) {
-                    GraphPreviewDTO graph = lookup.buildGraphPreview(trail);
-                    if (graph != null && graph.items().stream().anyMatch(i -> !i.linkedItemIds().isEmpty())) {
-                        chosen = graph;
-                        break;
-                    }
-                }
-                if (chosen != null) {
-                    result.put(project.getId(), new ThumbnailResolution(null, chosen));
-                } else {
-                    needsImageFallback.add(project.getId());
-                }
-            }
-
-            for (Long projectId : needsImageFallback) result.put(projectId, ThumbnailResolution.EMPTY);
-        }
-
         return result;
+    }
+
+    ThumbnailResolution resolvePublished(ProjectSnapshotData data) {
+        String type = data.thumbnailType();
+        if ("DEDICATED".equals(type) || "PROJECT_IMAGE".equals(type)
+                || (type == null && data.thumbnail() != null)) {
+            return new ThumbnailResolution(data.thumbnail(), null);
+        }
+        if ("GRAPH".equals(type)) return new ThumbnailResolution(null, graph(data.trails()));
+        for (var trail : data.trails()) {
+            GraphPreviewDTO graph = graph(List.of(trail));
+            if (graph != null && graph.items().stream().anyMatch(i -> !i.linkedItemIds().isEmpty())) {
+                return new ThumbnailResolution(null, graph);
+            }
+        }
+        return ThumbnailResolution.EMPTY;
+    }
+
+    private GraphPreviewDTO graph(List<ProjectSnapshotData.TrailData> trails) {
+        if (trails.isEmpty()) return null;
+        Map<Long, ProjectSnapshotData.ItemData> items = new LinkedHashMap<>();
+        trails.forEach(t -> t.items().forEach(i -> items.putIfAbsent(i.id(), i)));
+        List<GraphPreviewDTO.GraphTrailDTO> previewTrails = trails.stream().map(t ->
+                new GraphPreviewDTO.GraphTrailDTO(String.valueOf(t.id()), t.title(),
+                        t.items().stream().map(i -> String.valueOf(i.id())).toList())).toList();
+        List<GraphPreviewDTO.GraphItemDTO> previewItems = items.values().stream().map(i ->
+                new GraphPreviewDTO.GraphItemDTO(String.valueOf(i.id()), i.title(),
+                        GraphLookup.linkedItemIds(i.content()).stream()
+                                .filter(id -> !id.equals(i.id()) && items.containsKey(id))
+                                .map(String::valueOf).toList())).toList();
+        return new GraphPreviewDTO(previewTrails, previewItems);
     }
 }

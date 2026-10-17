@@ -13,10 +13,12 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.repository.ProjectVoteRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
+import com.tramo.backend.project.snapshot.SnapshotLimits;
+import com.tramo.backend.project.entity.ProjectVisibility;
+import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.service.PrivacyPolicy;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -35,14 +37,14 @@ public class ProjectFeedMapper {
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final ProjectThumbnailResolver thumbnailResolver;
     private final ProjectIdCodec projectIdCodec;
-    private final ObjectMapper objectMapper;
     private final PrivacyPolicy privacyPolicy;
+    private final SnapshotLimits snapshotLimits;
 
     public ProjectFeedMapper(ProjectRepository projectRepository, ProjectVoteRepository projectVoteRepository,
                               ProjectBookmarkRepository projectBookmarkRepository, CommentRepository commentRepository,
                               ProjectSnapshotRepository projectSnapshotRepository,
                               ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
-                              ObjectMapper objectMapper, PrivacyPolicy privacyPolicy) {
+                               PrivacyPolicy privacyPolicy, SnapshotLimits snapshotLimits) {
         this.projectRepository = projectRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.projectBookmarkRepository = projectBookmarkRepository;
@@ -50,8 +52,8 @@ public class ProjectFeedMapper {
         this.projectSnapshotRepository = projectSnapshotRepository;
         this.thumbnailResolver = thumbnailResolver;
         this.projectIdCodec = projectIdCodec;
-        this.objectMapper = objectMapper;
         this.privacyPolicy = privacyPolicy;
+        this.snapshotLimits = snapshotLimits;
     }
 
     FeedContext contextFor(List<Project> projects, User requester) {
@@ -63,13 +65,16 @@ public class ProjectFeedMapper {
         FeedContext base = withComments(baseContext(projects, requester), projects);
         List<Long> ids = projects.stream().map(Project::getId).toList();
         if (!ids.isEmpty()) {
-            Map<Long, ProjectSnapshot> latestPublish = new HashMap<>();
+            Map<Long, ProjectSnapshotData> latestPublish = new HashMap<>();
+            Map<Long, ThumbnailResolution> thumbnails = new HashMap<>();
             for (ProjectSnapshot snapshot : projectSnapshotRepository.findLatestPublishByProjectIdIn(ids)) {
-                latestPublish.put(snapshot.getProject().getId(), snapshot);
+                ProjectSnapshotData data = snapshotLimits.read(snapshot.getContent());
+                latestPublish.put(snapshot.getProject().getId(), data);
+                thumbnails.put(snapshot.getProject().getId(), thumbnailResolver.resolvePublished(data));
             }
-            base = base.withLatestPublish(latestPublish);
+            base = base.withLatestPublish(latestPublish).withThumbnails(thumbnails);
         }
-        return base.withThumbnails(thumbnailResolver.resolveThumbnails(projects));
+        return base;
     }
 
     private FeedContext baseContext(List<Project> projects, User requester) {
@@ -111,15 +116,20 @@ public class ProjectFeedMapper {
     List<ProjectFeedItemDTO> toFeedItems(List<Project> allProjects, User requester) {
         Set<String> blockRelated = privacyPolicy.blockRelatedUsernames(requester);
         List<Project> projects = withoutBlockRelatedOwners(allProjects, blockRelated);
-        FeedContext ctx = contextFor(projects, requester);
-        return projects.stream().map(project -> toFeedItem(project, ctx, blockRelated)).toList();
+        List<Project> published = projects.stream().filter(p -> p.getVisibility() == ProjectVisibility.PUBLISHED).toList();
+        List<Project> live = projects.stream().filter(p -> p.getVisibility() != ProjectVisibility.PUBLISHED).toList();
+        FeedContext publicContext = publishedContextFor(published, requester);
+        FeedContext liveContext = contextFor(live, requester);
+        return projects.stream().filter(p -> !published.contains(p) || publicContext.latestPublishByProjectId().containsKey(p.getId()))
+                .map(project -> toFeedItem(project, published.contains(project) ? publicContext : liveContext, blockRelated)).toList();
     }
 
     List<ProjectFeedItemDTO> toPublishedFeedItems(List<Project> allProjects, User requester) {
         Set<String> blockRelated = privacyPolicy.blockRelatedUsernames(requester);
         List<Project> projects = withoutBlockRelatedOwners(allProjects, blockRelated);
         FeedContext ctx = publishedContextFor(projects, requester);
-        return projects.stream().map(project -> toFeedItem(project, ctx, blockRelated)).toList();
+        return projects.stream().filter(p -> ctx.latestPublishByProjectId().containsKey(p.getId()))
+                .map(project -> toFeedItem(project, ctx, blockRelated)).toList();
     }
 
     List<ForkFeedItemDTO> toForkFeedItems(List<Project> projects, User requester) {
@@ -141,9 +151,10 @@ public class ProjectFeedMapper {
     }
 
     ProjectFeedItemDTO toFeedItem(Project project, FeedContext ctx, Set<String> blockRelated) {
-        ProjectSnapshot latestPublish = ctx.latestPublishByProjectId().get(project.getId());
-        ProjectSnapshotData snapshot = latestPublish != null
-                ? objectMapper.readValue(latestPublish.getContent(), ProjectSnapshotData.class) : null;
+        ProjectSnapshotData snapshot = ctx.latestPublishByProjectId().get(project.getId());
+        if (snapshot == null && project.getVisibility() == ProjectVisibility.PUBLISHED) {
+            throw new ResourceNotFoundException("Published version unavailable");
+        }
         Date lastPublishedDate = project.getLastPublishedDate() != null
                 && !project.getLastPublishedDate().equals(project.getFirstPublishedDate())
                 ? project.getLastPublishedDate() : null;
@@ -173,7 +184,7 @@ public class ProjectFeedMapper {
                 ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured(),
                 source != null ? projectIdCodec.encode(source.getId()) : null,
-                source != null ? source.getTitle() : null,
+                source != null ? project.getForkedFromTitle() : null,
                 source != null ? source.getOwner().getUsername() : null,
                 privacyPolicy.canFork(project.getOwner())
         );
@@ -199,7 +210,7 @@ public class ProjectFeedMapper {
                 ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured(),
                 source != null ? projectIdCodec.encode(source.getId()) : null,
-                source != null ? source.getTitle() : null,
+                project.getForkedFromTitle(),
                 source != null ? source.getOwner().getUsername() : null
         );
     }
