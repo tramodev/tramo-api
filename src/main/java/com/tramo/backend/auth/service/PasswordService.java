@@ -13,6 +13,8 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.notification.service.NotificationService;
 import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,6 +39,8 @@ public class PasswordService {
     private final IdentityRateLimiter identityRateLimiter;
     private final NotificationService notifications;
     private final TransactionTemplate transactionTemplate;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public PasswordService(UserRepository userRepository, PasswordEncoder passwordEncoder,
                            PasswordResetTokenRepository passwordResetTokenRepository,
@@ -59,17 +63,24 @@ public class PasswordService {
         }
 
         userRepository.findByEmail(email).ifPresent(user -> {
+            UUID observedVersion = user.getSessionVersion();
             String token = transactionTemplate.execute(status -> {
-                passwordResetTokenRepository.deleteByUserId(user.getId());
-                return createPasswordResetToken(user);
+                User current = lockUser(user.getId());
+                if (!java.util.Objects.equals(current.getSessionVersion(), observedVersion)) return null;
+                passwordResetTokenRepository.deleteByUserId(current.getId());
+                return createPasswordResetToken(current);
             });
-            emailService.sendPasswordResetEmail(user, token);
+            if (token != null) emailService.sendPasswordResetEmail(user, token);
         });
     }
 
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public void resetPassword(String token, String newPassword) {
-        PasswordResetToken resetToken = passwordResetTokenRepository.findByTokenHashForUpdate(OpaqueToken.hash(token))
+        String hash = OpaqueToken.hash(token);
+        Long userId = passwordResetTokenRepository.findUserIdByTokenHash(hash)
+                .orElseThrow(() -> new InvalidTokenException("Invalid or expired reset link"));
+        User user = lockUser(userId);
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByTokenHashForUpdate(hash)
                 .orElseThrow(() -> new InvalidTokenException("Invalid or expired reset link"));
 
         if (!resetToken.getExpiresAt().isAfter(Instant.now())) {
@@ -77,11 +88,10 @@ public class PasswordService {
             throw new InvalidTokenException("Invalid or expired reset link");
         }
 
-        User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);
-        passwordResetTokenRepository.delete(resetToken);
+        passwordResetTokenRepository.deleteByUserId(user.getId());
 
         refreshTokenRepository.deleteByUserId(user.getId());
         notifications.revokeSessionsAfterCommit(user.getId());
@@ -89,16 +99,23 @@ public class PasswordService {
 
     @Transactional
     public void changePassword(User principal, String currentPassword, String newPassword) {
-        User user = userRepository.findById(principal.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = lockUser(principal.getId());
         if (user.getPassword() == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new RequestValidationException(RequestErrorCode.CURRENT_PASSWORD_INCORRECT);
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);
+        passwordResetTokenRepository.deleteByUserId(user.getId());
         refreshTokenRepository.deleteByUserId(user.getId());
         notifications.revokeSessionsAfterCommit(user.getId());
+    }
+
+    private User lockUser(Long id) {
+        User user = userRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        entityManager.refresh(user);
+        return user;
     }
 
     private String createPasswordResetToken(User user) {

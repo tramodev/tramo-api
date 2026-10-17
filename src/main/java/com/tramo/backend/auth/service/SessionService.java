@@ -89,8 +89,13 @@ public class SessionService {
 
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public AuthResponse refresh(RefreshTokenRequestDTO request) {
+        String hash = OpaqueToken.hash(request.getRefreshToken());
+        Long userId = refreshTokenRepository.findUserIdByTokenHash(hash)
+                .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
+        userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
         RefreshToken refreshToken = refreshTokenRepository
-                .findByTokenHashForUpdate(OpaqueToken.hash(request.getRefreshToken()))
+                .findByTokenHashForUpdate(hash)
                 .orElseThrow(() -> new InvalidTokenException("Invalid refresh token"));
 
         Instant now = Instant.now();

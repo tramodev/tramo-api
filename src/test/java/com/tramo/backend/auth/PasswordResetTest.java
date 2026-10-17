@@ -62,6 +62,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
 
     private ResultActions resetPassword(String token, String newPassword) throws Exception {
         return mockMvc.perform(post("/api/auth/reset-password")
+                .with(uniqueIp())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"token":"%s","newPassword":"%s"}""".formatted(token, newPassword)));
@@ -73,6 +74,93 @@ class PasswordResetTest extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"username":"%s","password":"%s"}""".formatted(username, password)));
+    }
+
+    @Test
+    void changingPasswordInvalidatesAllOutstandingResetLinks() throws Exception {
+        User user = createUser("changedreset");
+        String first = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String second = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        passwordService.changePassword(user, "Passw0rd123!", "ChangedPassw0rd!");
+        resetPassword(first, "NewPassw0rd!").andExpect(status().isUnauthorized());
+        resetPassword(second, "NewPassw0rd!").andExpect(status().isUnauthorized());
+        passwordService.forgotPassword(user.getEmail());
+        ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendPasswordResetEmail(any(User.class), token.capture());
+        resetPassword(token.getValue(), "NewPassw0rd!").andExpect(status().isNoContent());
+        resetPassword(token.getValue(), "OtherPassw0rd!").andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void resettingPasswordInvalidatesOtherOutstandingLinks() throws Exception {
+        User user = createUser("allreset");
+        String first = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String second = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        resetPassword(first, "NewPassw0rd!").andExpect(status().isNoContent());
+        resetPassword(second, "OtherPassw0rd!").andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentResetAndAuthenticatedChangeCannotBothUseOldCredentials() throws Exception {
+        User user = createUser("concurrentchange");
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            var reset = executor.submit(() -> {
+                start.await();
+                try {
+                    passwordService.resetPassword(token, "ResetPassw0rd!");
+                    return true;
+                } catch (InvalidTokenException rejected) {
+                    return false;
+                }
+            });
+            var change = executor.submit(() -> {
+                start.await();
+                try {
+                    passwordService.changePassword(user, "Passw0rd123!", "ChangedPassw0rd!");
+                    return true;
+                } catch (com.tramo.backend.exception.RequestValidationException rejected) {
+                    return false;
+                }
+            });
+            start.countDown();
+            assertThat(java.util.List.of(reset.get(10, TimeUnit.SECONDS), change.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            assertThat(passwordResetTokenRepository.findAll()).isEmpty();
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentDistinctResetLinksCannotBothChangePassword() throws Exception {
+        User user = createUser("concurrentlinks");
+        String first = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String second = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        java.util.function.Function<String, java.util.concurrent.Callable<Boolean>> call = token -> () -> {
+            start.await();
+            try {
+                passwordService.resetPassword(token, "NewPassw0rd!");
+                return true;
+            } catch (InvalidTokenException rejected) {
+                return false;
+            }
+        };
+        try {
+            var one = executor.submit(call.apply(first));
+            var two = executor.submit(call.apply(second));
+            start.countDown();
+            assertThat(java.util.List.of(one.get(10, TimeUnit.SECONDS), two.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
