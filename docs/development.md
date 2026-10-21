@@ -36,7 +36,7 @@ shell `export` statements or surrounding quotes. Never commit real credentials.
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET` | Cloudflare R2 credentials |
 | `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `R2_PUBLIC_BASE_URL` | Public and private buckets and the public base URL |
 | `MAIL_ENABLED`, `RESEND_API_KEY` | Mail toggle and SMTP credential; the example disables mail locally |
-| `PATREON_WEBHOOK_SECRET` | Optional in configuration; required to authenticate Patreon webhooks |
+| `PATREON_WEBHOOK_SECRET` | Required in `prod`; blank local configuration disables webhooks and logs a warning |
 
 Generate each cryptographic key independently:
 
@@ -45,8 +45,21 @@ openssl rand -base64 32
 ```
 
 Keep existing `TOKEN_ENCRYPTION_KEY` and `PROJECT_ID_SALT` values stable: changing
-them makes stored tokens unreadable or changes public project IDs. Rotating
+them makes stored tokens unreadable or changes public project IDs. Unreadable
+Patreon credentials do not block login or profile reads; syncing asks the user to
+reconnect and preserves the stored ciphertext. Restore the original encryption
+key to read existing credentials; a new key alone cannot recover them. Rotating
 `JWT_SECRET` invalidates existing signed tokens.
+
+Migration V40 stores a SHA-256 fingerprint of `PROJECT_ID_SALT` on the first
+startup after migration. Use the existing salt for that deployment: no earlier
+fingerprint exists to detect a change made before this first startup. Later
+startups fail if the configured salt differs. Keep the guard row with database
+backups; do not delete or replace it to bypass the check.
+
+Restoring a project version requires `X-Project-Epoch`. Missing or blank headers
+return 428; stale values return 409. Reload the project to obtain its current
+epoch before restoring.
 
 Start the API on `http://localhost:8080`:
 
