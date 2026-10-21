@@ -31,6 +31,65 @@ class ProjectCrudTest extends AbstractIntegrationTest {
     @Autowired
     ProjectBookmarkRepository projectBookmarkRepository;
 
+    @ParameterizedTest
+    @ValueSource(strings = {"title", "description"})
+    void oversizedMetadataIsRejectedWithoutBreakingVersions(String field) throws Exception {
+        User owner = createUser("metadatalimit");
+        Project project = createProject(owner, "Original", "private", "Description", null);
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"" + field + "\":\"" + "x".repeat(256) + "\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Original"))
+                .andExpect(jsonPath("$.description").value("Description"));
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"" + field + "\":\"" + "x".repeat(255) + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/history")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"After rejected edit\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"%", "_", "a%b", "a_b", "a!b"})
+    void exploreSearchTreatsWildcardsAsLiteralText(String query) throws Exception {
+        User owner = createUser("literalquery");
+        for (String title : java.util.List.of("Literal " + query, "Unrelated project")) {
+            Project project = createProject(owner, title, "private", "Description", null);
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                            .header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        for (String sort : java.util.List.of("recent", "hot")) {
+            mockMvc.perform(get("/api/public/explore").param("q", query).param("sort", sort))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.feed.length()").value(1))
+                    .andExpect(jsonPath("$.feed[0].title").value("Literal " + query));
+        }
+    }
+
+    @Test
+    void repeatedPublishingAndProfileLoadsDoNotRepeatBadgeNotifications() throws Exception {
+        User owner = createUser("badgeonce");
+        Project project = createProject(owner, "Badge project", "private", "Description", null);
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                            .header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/profile/stats").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk());
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM notification WHERE recipient_id = ? AND badge_code = 'first_publish'",
+                Long.class, owner.getId())).isEqualTo(1L);
+    }
+
     @Test
     void createRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/project")

@@ -63,7 +63,8 @@ public class ExploreService {
 
     public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
         String q = query == null ? "" : query.trim().toLowerCase();
-        if (q.length() < 3) q = "";
+        if (q.length() < 3 && !q.contains("%") && !q.contains("_")) q = "";
+        q = q.replace("!", "!!").replace("%", "!%").replace("_", "!_");
         Pageable pageable = Pagination.page(page, size);
         Long viewerId = requester == null ? null : requester.getId();
         Set<String> blockRelated = privacyPolicy.blockRelatedUsernames(requester);

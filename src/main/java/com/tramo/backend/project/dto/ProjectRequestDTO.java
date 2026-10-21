@@ -12,7 +12,9 @@ import java.util.List;
 @Getter
 @Setter
 public class ProjectRequestDTO {
+    @Size(max = 255)
     private String title;
+    @Size(max = 255)
     private String description;
     private ProjectVisibility visibility;
     private List<String> tags;
