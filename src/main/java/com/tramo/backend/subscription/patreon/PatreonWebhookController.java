@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -53,7 +55,11 @@ public class PatreonWebhookController {
                                      SubscriptionService subscriptionService,
                                      ObjectMapper objectMapper,
                                       PatreonWebhookSignatureRepository webhookSignatureRepository,
-                                      PlatformTransactionManager transactionManager) {
+                                      PlatformTransactionManager transactionManager, Environment environment) {
+        if (webhookSecret.isBlank()) {
+            if (environment.acceptsProfiles(Profiles.of("prod"))) throw new IllegalStateException("PATREON_WEBHOOK_SECRET is required in production");
+            log.warn("event=patreon_webhook_disabled code=MISSING_SECRET");
+        }
         this.webhookSecret = webhookSecret;
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
@@ -67,6 +73,7 @@ public class PatreonWebhookController {
                                         @RequestHeader("X-Patreon-Signature") String signature,
                                         @RequestHeader(value = "X-Patreon-Event", required = false) String eventType) {
         if (!signatureValid(rawBody, signature)) {
+            log.warn("event=patreon_webhook_rejected code=BAD_SIGNATURE");
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         if (eventType == null || (!ACTIVATION_EVENTS.contains(eventType) && !DEACTIVATION_EVENTS.contains(eventType))) {

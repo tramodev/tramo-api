@@ -27,7 +27,9 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
     private final SecureRandom random = new SecureRandom();
 
     public EncryptedStringConverter(@Value("${app.security.token-encryption-key}") String base64Key) {
-        this.key = new SecretKeySpec(Base64.getDecoder().decode(base64Key), "AES");
+        byte[] decoded = Base64.getDecoder().decode(base64Key);
+        if (decoded.length != 32) throw new IllegalArgumentException("TOKEN_ENCRYPTION_KEY must be a base64-encoded 256-bit AES key");
+        this.key = new SecretKeySpec(decoded, "AES");
     }
 
     @Override

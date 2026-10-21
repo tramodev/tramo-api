@@ -3,7 +3,6 @@
 package com.tramo.backend.user.entity;
 
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.security.crypto.EncryptedStringConverter;
 import com.tramo.backend.subscription.entity.Subscription;
 import com.tramo.backend.user.Role;
 import jakarta.persistence.*;
@@ -75,12 +74,10 @@ public class User implements UserDetails {
 
     @Column(unique = true)
     private String patreonUserId;
-    @Column(columnDefinition = "text")
-    @Convert(converter = EncryptedStringConverter.class)
-    private String patreonAccessToken;
-    @Column(columnDefinition = "text")
-    @Convert(converter = EncryptedStringConverter.class)
-    private String patreonRefreshToken;
+    @Column(name = "patreon_access_token", columnDefinition = "text")
+    private String encryptedPatreonAccessToken;
+    @Column(name = "patreon_refresh_token", columnDefinition = "text")
+    private String encryptedPatreonRefreshToken;
 
     @Transient
     private Boolean requiresBirthDate;

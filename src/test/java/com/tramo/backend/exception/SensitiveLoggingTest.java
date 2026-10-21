@@ -200,7 +200,7 @@ class SensitiveLoggingTest {
     @Test
     void oauthCallbackDoesNotLogQueryTokensOrProviderErrorDescription() throws Exception {
         PatreonController controller = new PatreonController(mock(PlatformTransactionManager.class),
-                null, null, null, null, "client", "https://callback.test", "https://tramo.test");
+                null, null, null, null, "client", "https://callback.test", "https://tramo.test", null);
         MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
         var response = mvc.perform(get("/api/auth/patreon/callback")
                         .param("code", "CODE_SECRET").param("state", "STATE_SECRET")

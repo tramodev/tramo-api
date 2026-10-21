@@ -26,6 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class SubscriptionTest extends AbstractIntegrationTest {
 
+    @Autowired
+    private com.tramo.backend.security.crypto.EncryptedStringConverter cipher;
+
     private static final String FAKE_HASH = "0123456789abcdef".repeat(4);
     private static final long FREE_STORAGE_BYTES = 524_288_000L;
 
@@ -65,7 +68,7 @@ class SubscriptionTest extends AbstractIntegrationTest {
     void patreonSyncActivatesVerifiedMembershipAndIsRateLimited() throws Exception {
         User user = createUser("syncedpatron");
         user.setPatreonUserId("patreon-sync");
-        user.setPatreonAccessToken("access-sync");
+        user.setEncryptedPatreonAccessToken(cipher.convertToDatabaseColumn("access-sync"));
         userRepository.save(user);
         when(patreonClient.fetchIdentity("access-sync"))
                 .thenReturn(new PatreonClient.PatreonIdentity("patreon-sync", true));

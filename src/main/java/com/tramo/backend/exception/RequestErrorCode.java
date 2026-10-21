@@ -5,6 +5,7 @@ package com.tramo.backend.exception;
 public enum RequestErrorCode {
     PAGINATION_INVALID("page must be non-negative and size must be between 1 and 100, within the supported offset range"),
     TITLE_REQUIRED("Title is required"),
+    PATREON_RECONNECT_REQUIRED("Your Patreon connection could not be read. Reconnect Patreon from Settings."),
     PROJECT_DESCRIPTION_REQUIRED("Add a description before publishing"),
     PROJECT_PUBLISH_AFTER_CREATE("Publish the project after creating it"),
     CURRENT_PASSWORD_INCORRECT("Current password is incorrect"),

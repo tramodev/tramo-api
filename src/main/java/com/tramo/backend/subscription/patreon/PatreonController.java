@@ -3,6 +3,7 @@
 package com.tramo.backend.subscription.patreon;
 
 import com.tramo.backend.common.SafeLog;
+import com.tramo.backend.security.crypto.EncryptedStringConverter;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.user.entity.User;
@@ -43,6 +44,7 @@ public class PatreonController {
     private final String clientId;
     private final String redirectUri;
     private final String frontendUrl;
+    private final EncryptedStringConverter cipher;
 
     public PatreonController(PlatformTransactionManager transactionManager,
                               PatreonConnectTokenRepository connectTokenRepository,
@@ -51,7 +53,7 @@ public class PatreonController {
                               UserRepository userRepository,
                               @Value("${app.patreon.client-id}") String clientId,
                               @Value("${app.patreon.redirect-uri}") String redirectUri,
-                              @Value("${app.frontend-url}") String frontendUrl) {
+                              @Value("${app.frontend-url}") String frontendUrl, EncryptedStringConverter cipher) {
         this.connectTokenRepository = connectTokenRepository;
         this.patreonClient = patreonClient;
         this.subscriptionService = subscriptionService;
@@ -60,6 +62,7 @@ public class PatreonController {
         this.clientId = clientId;
         this.redirectUri = redirectUri;
         this.frontendUrl = frontendUrl;
+        this.cipher = cipher;
     }
 
     @GetMapping("/connect")
@@ -120,8 +123,8 @@ public class PatreonController {
                     throw new InvalidTokenException("Invalid account");
                 }
                 user.setPatreonUserId(identity.patreonUserId());
-                user.setPatreonAccessToken(tokens.accessToken());
-                user.setPatreonRefreshToken(tokens.refreshToken());
+                user.setEncryptedPatreonAccessToken(cipher.convertToDatabaseColumn(tokens.accessToken()));
+                user.setEncryptedPatreonRefreshToken(cipher.convertToDatabaseColumn(tokens.refreshToken()));
                 userRepository.save(user);
 
                 if (identity.activePatron()) {

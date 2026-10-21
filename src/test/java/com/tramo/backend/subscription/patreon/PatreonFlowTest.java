@@ -27,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PatreonFlowTest {
+    private final com.tramo.backend.security.crypto.EncryptedStringConverter cipher = new com.tramo.backend.security.crypto.EncryptedStringConverter(java.util.Base64.getEncoder().encodeToString(new byte[32]));
     private final User user = new User();
     private final UserRepository users = mock(UserRepository.class);
     private final SubscriptionService subscriptions = mock(SubscriptionService.class);
@@ -40,6 +41,9 @@ class PatreonFlowTest {
         assertThat(response.getHeaders().getLocation().toString())
                 .isEqualTo("https://www.patreon.com/cw/Tramodev/membership");
         assertThat(user.getPatreonUserId()).isEqualTo("patreon-user");
+        assertThat(user.getEncryptedPatreonAccessToken()).isNotEqualTo("access");
+        assertThat(cipher.convertToEntityAttribute(user.getEncryptedPatreonAccessToken())).isEqualTo("access");
+        assertThat(cipher.convertToEntityAttribute(user.getEncryptedPatreonRefreshToken())).isEqualTo("refresh");
         verify(users).save(user);
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
     }
@@ -126,7 +130,7 @@ class PatreonFlowTest {
     void syncRecognizesPaymentWithoutWaitingForWebhook() {
         PatreonClient client = linkedClient(true);
 
-        new PatreonMembershipService(client, subscriptions).sync(user);
+        new PatreonMembershipService(client, subscriptions, cipher).sync(user);
 
         verify(subscriptions).activateSupporterSubscription(eq(user), any());
         verify(subscriptions).getStatus(user);
@@ -136,7 +140,7 @@ class PatreonFlowTest {
     void syncRemovesBenefitsWhenMembershipIsNotActive() {
         PatreonClient client = linkedClient(false);
 
-        new PatreonMembershipService(client, subscriptions).sync(user);
+        new PatreonMembershipService(client, subscriptions, cipher).sync(user);
 
         verify(subscriptions).deactivateSupporterSubscription(user);
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
@@ -146,7 +150,7 @@ class PatreonFlowTest {
     void syncDoesNotContactPatreonForUnlinkedAccount() {
         PatreonClient client = mock(PatreonClient.class);
 
-        new PatreonMembershipService(client, subscriptions).sync(user);
+        new PatreonMembershipService(client, subscriptions, cipher).sync(user);
 
         verify(client, never()).fetchIdentity(any());
         verify(subscriptions).getStatus(user);
@@ -157,7 +161,7 @@ class PatreonFlowTest {
         PatreonClient client = linkedClient(true);
         when(client.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("another-user", true));
 
-        assertThatThrownBy(() -> new PatreonMembershipService(client, subscriptions).sync(user))
+        assertThatThrownBy(() -> new PatreonMembershipService(client, subscriptions, cipher).sync(user))
                 .isInstanceOf(InvalidTokenException.class);
 
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
@@ -169,7 +173,7 @@ class PatreonFlowTest {
         PatreonClient client = linkedClient(false);
         when(client.fetchIdentity("access")).thenThrow(new InvalidTokenException("Patreon unavailable"));
 
-        assertThatThrownBy(() -> new PatreonMembershipService(client, subscriptions).sync(user))
+        assertThatThrownBy(() -> new PatreonMembershipService(client, subscriptions, cipher).sync(user))
                 .isInstanceOf(InvalidTokenException.class);
 
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
@@ -178,7 +182,7 @@ class PatreonFlowTest {
 
     private PatreonClient linkedClient(boolean active) {
         user.setPatreonUserId("patreon-user");
-        user.setPatreonAccessToken("access");
+        user.setEncryptedPatreonAccessToken(cipher.convertToDatabaseColumn("access"));
         PatreonClient client = mock(PatreonClient.class);
         when(client.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-user", active));
         return client;
@@ -199,14 +203,14 @@ class PatreonFlowTest {
         when(client.exchangeCode("code")).thenReturn(new PatreonClient.PatreonTokens("access", "refresh"));
         when(client.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-user", active));
         return new PatreonController(transactions, tokens, client, subscriptions, users,
-                "client-id", "https://api.tramo.test/callback", "https://tramo.test");
+                "client-id", "https://api.tramo.test/callback", "https://tramo.test", cipher);
     }
 
     private PatreonWebhookController webhookController() {
         var transactions = mock(PlatformTransactionManager.class);
         when(transactions.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
         var controller = new PatreonWebhookController("secret", users, subscriptions, new ObjectMapper(),
-                mock(PatreonWebhookSignatureRepository.class), transactions);
+                mock(PatreonWebhookSignatureRepository.class), transactions, new org.springframework.mock.env.MockEnvironment());
         ReflectionTestUtils.setField(controller, "campaignId", "tramo-campaign");
         when(users.findByPatreonUserId("patreon-user")).thenReturn(Optional.of(user));
         return controller;
