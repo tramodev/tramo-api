@@ -55,6 +55,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).header("X-Tracking-Id", trackingId).body(error);
     }
 
+    @ExceptionHandler(PreconditionRequiredException.class)
+    public ResponseEntity<ErrorResponse> handlePreconditionRequired(PreconditionRequiredException ex) {
+        ErrorResponse error = new ErrorResponse(428, ex.getMessage(), LocalDateTime.now());
+        error.setCode("PROJECT_EPOCH_REQUIRED");
+        return handled(ex, error, HttpStatus.PRECONDITION_REQUIRED);
+    }
+
     @ExceptionHandler(ProjectVersionConflictException.class)
     public ResponseEntity<ErrorResponse> handleProjectVersionConflict(ProjectVersionConflictException ex) {
         ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());

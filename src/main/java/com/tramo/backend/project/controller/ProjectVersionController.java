@@ -35,7 +35,9 @@ public class ProjectVersionController {
     }
 
     @PostMapping("/{versionId}/restore")
-    public Map<String, Long> restore(@PathVariable String id, @PathVariable Long versionId, @AuthenticationPrincipal User user) {
+    public Map<String, Long> restore(@PathVariable String id, @PathVariable Long versionId,
+            @RequestHeader(value = "X-Project-Epoch", required = false) String epoch, @AuthenticationPrincipal User user) {
+        if (epoch == null || epoch.isBlank()) throw new com.tramo.backend.exception.PreconditionRequiredException("Reload the project before restoring; X-Project-Epoch is required.");
         return Map.of("restoreEpoch", versions.restore(codec.decode(id), versionId, user));
     }
 }

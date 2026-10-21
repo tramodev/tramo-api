@@ -44,6 +44,27 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     void edit(Fixture f, String content) { items.updateContent(f.item, content, f.user); }
 
     @Test
+    void restoreRequiresEpochAndRejectsStaleRequestsWithoutChangingContent() throws Exception {
+        var f = fixture();
+        var manual = versions.create(f.project.getId(), null, f.user);
+        edit(f, "important work");
+        String url = "/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore";
+        mockMvc.perform(post(url).header("Authorization", bearer(f.user)))
+                .andExpect(status().is(428)).andExpect(jsonPath("$.code").value("PROJECT_EPOCH_REQUIRED"));
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("important work");
+        mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1"))
+                .andExpect(status().isConflict());
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("important work");
+        mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.restoreEpoch").value(1));
+        mockMvc.perform(post(url).header("Authorization", bearer(f.user)))
+                .andExpect(status().is(428));
+        mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1")
+                .contentType("application/json").content("{\"content\":\"stale\",\"extractionEpoch\":0}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("restored or extracted")));
+    }
+
+    @Test
     void firstEditCapturesPreviousStateAndFrequentSavesDoNotCaptureAgain() {
         var f = fixture(); edit(f, "after"); edit(f, "later");
         var rows = versions.list(f.project.getId(), null, f.user).versions();
@@ -180,7 +201,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
         User stranger = createUser("historystanger");
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/history").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore").header("X-Project-Epoch", "0").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
         var other = createProject(f.user, "Other", "PRIVATE");
         mockMvc.perform(get("/api/project/" + pid(other) + "/history/" + manual.id()).header("Authorization", bearer(f.user))).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/public/project/" + pid(f.project) + "/versions/" + manual.id())).andExpect(status().is4xxClientError());

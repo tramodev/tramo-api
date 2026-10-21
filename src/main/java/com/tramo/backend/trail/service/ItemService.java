@@ -377,7 +377,7 @@ public class ItemService {
         ItemContent itemContent = item.getContent();
         int epoch = itemContent == null ? 0 : itemContent.getExtractionEpoch();
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
-            throw new com.tramo.backend.exception.ExtractionConflictException("This note was extracted in another session. Your changes were kept locally; reload the note before saving.");
+            throw new com.tramo.backend.exception.ExtractionConflictException("This note was restored or extracted in another session. Your changes were kept locally; reload the note before saving.");
         String previousContent = itemContent != null ? itemContent.getContent() : null;
         long growth = (long) ContentLimits.bytes(content) - ContentLimits.bytes(previousContent);
         if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
