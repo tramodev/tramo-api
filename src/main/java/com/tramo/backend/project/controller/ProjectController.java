@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.controller;
 
+import com.tramo.backend.project.dto.DraftCommitDTO;
+import com.tramo.backend.project.dto.DraftCommitRequest;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.moderation.dto.ReportRequestDTO;
 import com.tramo.backend.moderation.service.ModerationService;
@@ -62,6 +64,13 @@ public class ProjectController {
     public ResponseEntity<ProjectResponseDTO> create(@Valid @RequestBody ProjectRequestDTO request,
                                                        @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.create(request, user));
+    }
+
+    @PostMapping("/draft-commit")
+    public ResponseEntity<DraftCommitDTO> commitDraft(
+            @Valid @RequestBody DraftCommitRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(startService.commitDraft(request, user));
     }
 
     @PostMapping("/start")

@@ -13,6 +13,7 @@ import java.util.Date;
 @Setter
 @AllArgsConstructor
 public class UserProfileDTO {
+    private String userId;
     private String username;
     private String email;
     private String bio;

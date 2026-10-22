@@ -60,7 +60,7 @@ public class ProfileService {
 
     public UserProfileDTO getProfile(User user) {
         User fresh = userRepository.findById(user.getId()).orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return new UserProfileDTO(fresh.getUsername(), fresh.getEmail(), fresh.getBio(), fresh.getBirthDate(), fresh.getLocation(), fresh.getWebsite(), fresh.getImageUrl(), fresh.getBannerUrl(), fresh.getCreatedAt(), fresh.getRole().name(), fresh.getSelectedBadge());
+        return new UserProfileDTO(String.valueOf(fresh.getId()), fresh.getUsername(), fresh.getEmail(), fresh.getBio(), fresh.getBirthDate(), fresh.getLocation(), fresh.getWebsite(), fresh.getImageUrl(), fresh.getBannerUrl(), fresh.getCreatedAt(), fresh.getRole().name(), fresh.getSelectedBadge());
     }
 
     private Integer computeAge(LocalDate birthDate) {
@@ -122,7 +122,7 @@ public class ProfileService {
         if (request.getBannerUrl() != null && !request.getBannerUrl().equals(previousBannerUrl)) {
             imageDeletionQueue.queue(previousBannerUrl, user.getId());
         }
-        return new UserProfileDTO(saved.getUsername(), saved.getEmail(), saved.getBio(), saved.getBirthDate(), saved.getLocation(), saved.getWebsite(), saved.getImageUrl(), saved.getBannerUrl(), saved.getCreatedAt(), saved.getRole().name(), saved.getSelectedBadge());
+        return new UserProfileDTO(String.valueOf(saved.getId()), saved.getUsername(), saved.getEmail(), saved.getBio(), saved.getBirthDate(), saved.getLocation(), saved.getWebsite(), saved.getImageUrl(), saved.getBannerUrl(), saved.getCreatedAt(), saved.getRole().name(), saved.getSelectedBadge());
     }
 
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
