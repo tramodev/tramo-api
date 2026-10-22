@@ -57,10 +57,6 @@ fingerprint exists to detect a change made before this first startup. Later
 startups fail if the configured salt differs. Keep the guard row with database
 backups; do not delete or replace it to bypass the check.
 
-Restoring a project version requires `X-Project-Epoch`. Missing or blank headers
-return 428; stale values return 409. Reload the project to obtain its current
-epoch before restoring.
-
 Start the API on `http://localhost:8080`:
 
 ```bash
