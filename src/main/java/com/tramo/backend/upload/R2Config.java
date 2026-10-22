@@ -19,11 +19,11 @@ import java.time.Duration;
 public class R2Config {
 
     @Bean
-    public S3Presigner r2Presigner(@Value("${app.r2.account-id}") String accountId,
+    public S3Presigner r2Presigner(@Value("${app.r2.endpoint}") URI endpoint,
                                    @Value("${app.r2.access-key}") String accessKey,
                                    @Value("${app.r2.secret-key}") String secretKey) {
         return S3Presigner.builder()
-                .endpointOverride(endpoint(accountId))
+                .endpointOverride(endpoint)
                 .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials(accessKey, secretKey))
@@ -31,11 +31,11 @@ public class R2Config {
     }
 
     @Bean
-    public S3Client r2S3Client(@Value("${app.r2.account-id}") String accountId,
+    public S3Client r2S3Client(@Value("${app.r2.endpoint}") URI endpoint,
                                @Value("${app.r2.access-key}") String accessKey,
                                @Value("${app.r2.secret-key}") String secretKey) {
         return S3Client.builder()
-                .endpointOverride(endpoint(accountId))
+                .endpointOverride(endpoint)
                 .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
                 .region(Region.of("auto"))
                 .credentialsProvider(credentials(accessKey, secretKey))
@@ -43,10 +43,6 @@ public class R2Config {
                         .apiCallTimeout(Duration.ofSeconds(10))
                         .apiCallAttemptTimeout(Duration.ofSeconds(3)))
                 .build();
-    }
-
-    private URI endpoint(String accountId) {
-        return URI.create("https://" + accountId + ".r2.cloudflarestorage.com");
     }
 
     private StaticCredentialsProvider credentials(String accessKey, String secretKey) {

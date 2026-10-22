@@ -22,18 +22,18 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class CaptchaVerifierTest {
 
-    private static final String URL = "https://www.google.com/recaptcha/api/siteverify";
+    private static final String URL = "http://localhost:8089/recaptcha/api/siteverify";
 
     private CaptchaVerifier captchaVerifier;
     private MockRestServiceServer server;
 
     @BeforeEach
     void setUp() {
-        captchaVerifier = new CaptchaVerifier();
+        captchaVerifier = new CaptchaVerifier("http://localhost:8089");
         ReflectionTestUtils.setField(captchaVerifier, "secretKey", "shhh");
         ReflectionTestUtils.setField(captchaVerifier, "minScore", 0.5);
 
-        RestClient.Builder builder = RestClient.builder().baseUrl("https://www.google.com");
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8089");
         server = MockRestServiceServer.bindTo(builder).build();
         ReflectionTestUtils.setField(captchaVerifier, "restClient", builder.build());
     }

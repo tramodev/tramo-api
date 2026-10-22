@@ -20,10 +20,14 @@ public class CaptchaVerifier {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
-    private final RestClient restClient = RestClient.builder()
-            .baseUrl("https://www.google.com")
-            .requestFactory(timeoutFactory())
-            .build();
+    private final RestClient restClient;
+
+    public CaptchaVerifier(@Value("${app.captcha.base-url}") String baseUrl) {
+        restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(timeoutFactory())
+                .build();
+    }
 
     private static SimpleClientHttpRequestFactory timeoutFactory() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
