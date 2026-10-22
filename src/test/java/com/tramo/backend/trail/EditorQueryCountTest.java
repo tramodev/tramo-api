@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class EditorQueryCountTest extends AbstractIntegrationTest {
@@ -67,6 +68,15 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
     private long createItem(User owner, long trailId, String title) throws Exception {
         return postForId(owner, "/api/trail/" + trailId + "/item", """
                 {"title":"%s"}""".formatted(title));
+    }
+
+    private void createVersion(User owner, Project project) throws Exception {
+        mockMvc.perform(post("/api/project/" + pid(project) + "/history")
+                        .header("Authorization", bearer(owner))
+                        .header("X-Project-Epoch", "0")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -204,10 +214,10 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
     void historyMetadataQueryCountDoesNotScaleWithVersions() throws Exception {
         User owner = createUser("historyqueries");
         Project project = createProject(owner, "History", "private");
-        postForId(owner, "/api/project/" + pid(project) + "/history", "{}");
+        createVersion(owner, project);
         long small = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/history")
                 .header("Authorization", bearer(owner))).andExpect(status().isOk()));
-        for (int index = 0; index < 5; index++) postForId(owner, "/api/project/" + pid(project) + "/history", "{}");
+        for (int index = 0; index < 5; index++) createVersion(owner, project);
         long large = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(project) + "/history")
                 .header("Authorization", bearer(owner))).andExpect(status().isOk()));
         assertThat(large).isEqualTo(small);

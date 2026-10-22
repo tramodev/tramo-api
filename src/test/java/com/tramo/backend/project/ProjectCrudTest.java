@@ -52,6 +52,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/project/" + pid(project) + "/history")
                         .header("Authorization", bearer(owner))
+                        .header("X-Project-Epoch", "0")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"After rejected edit\"}"))
                 .andExpect(status().isOk());

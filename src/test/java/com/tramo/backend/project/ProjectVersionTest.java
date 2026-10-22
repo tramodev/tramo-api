@@ -44,6 +44,30 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     void edit(Fixture f, String content) { items.updateContent(f.item, content, f.user); }
 
     @Test
+    void creatingSnapshotRequiresEpochBeforeAndAfterRestore() throws Exception {
+        var f = fixture();
+        String url = "/api/project/" + pid(f.project) + "/history";
+        for (int epoch = 0; epoch <= 1; epoch++) {
+            for (String missing : new String[]{"", " "}) {
+                mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", missing)
+                                .contentType("application/json").content("{}"))
+                        .andExpect(status().is(428)).andExpect(jsonPath("$.code").value("PROJECT_EPOCH_REQUIRED"));
+            }
+            mockMvc.perform(post(url).header("Authorization", bearer(f.user))
+                            .contentType("application/json").content("{}"))
+                    .andExpect(status().is(428));
+            mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", Integer.toString(epoch))
+                            .contentType("application/json").content("{}"))
+                    .andExpect(status().isOk());
+            var manual = versions.create(f.project.getId(), null, f.user);
+            versions.restore(f.project.getId(), manual.id(), f.user);
+        }
+        mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void restoreRequiresEpochAndRejectsStaleRequestsWithoutChangingContent() throws Exception {
         var f = fixture();
         var manual = versions.create(f.project.getId(), null, f.user);

@@ -30,7 +30,9 @@ public class ProjectVersionController {
     }
 
     @PostMapping
-    public ProjectVersionSummaryDTO create(@PathVariable String id, @Valid @RequestBody CreateProjectVersionRequest request, @AuthenticationPrincipal User user) {
+    public ProjectVersionSummaryDTO create(@PathVariable String id, @Valid @RequestBody CreateProjectVersionRequest request,
+            @RequestHeader(value = "X-Project-Epoch", required = false) String epoch, @AuthenticationPrincipal User user) {
+        if (epoch == null || epoch.isBlank()) throw new com.tramo.backend.exception.PreconditionRequiredException("Reload the project before creating a snapshot; X-Project-Epoch is required.");
         return versions.create(codec.decode(id), request.name(), user);
     }
 
