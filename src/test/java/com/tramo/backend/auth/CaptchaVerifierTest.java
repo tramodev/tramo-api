@@ -2,58 +2,73 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.auth;
 
+import com.sun.net.httpserver.HttpServer;
 import com.tramo.backend.auth.service.CaptchaVerifier;
 import com.tramo.backend.exception.CaptchaVerificationException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class CaptchaVerifierTest {
 
-    private static final String URL = "http://localhost:8089/recaptcha/api/siteverify";
-
+    private HttpServer server;
     private CaptchaVerifier captchaVerifier;
-    private MockRestServiceServer server;
+    private String responseBody;
+    private int responseStatus;
+    private String requestPath;
+    private String requestContentType;
+    private String requestBody;
 
     @BeforeEach
-    void setUp() {
-        captchaVerifier = new CaptchaVerifier("http://localhost:8089");
+    void setUp() throws IOException {
+        responseBody = "{}";
+        responseStatus = 200;
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/recaptcha/api/siteverify", exchange -> {
+            requestPath = exchange.getRequestURI().getPath();
+            requestContentType = exchange.getRequestHeaders().getFirst("Content-Type");
+            requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(responseStatus, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        captchaVerifier = new CaptchaVerifier("http://127.0.0.1:" + server.getAddress().getPort());
         ReflectionTestUtils.setField(captchaVerifier, "secretKey", "shhh");
         ReflectionTestUtils.setField(captchaVerifier, "minScore", 0.5);
+    }
 
-        RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8089");
-        server = MockRestServiceServer.bindTo(builder).build();
-        ReflectionTestUtils.setField(captchaVerifier, "restClient", builder.build());
+    @AfterEach
+    void tearDown() {
+        server.stop(0);
     }
 
     private void respondWith(String body) {
-        server.expect(requestTo(URL)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+        responseBody = body;
+        responseStatus = 200;
     }
 
     @Test
     void acceptsScoreAboveThresholdAndPostsSecretAndToken() {
-        server.expect(requestTo(URL))
-                .andExpect(method(org.springframework.http.HttpMethod.POST))
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_FORM_URLENCODED))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("secret=shhh")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("response=tok")))
-                .andRespond(withSuccess("""
-                        {"success":true,"score":0.9,"action":"register"}""", MediaType.APPLICATION_JSON));
+        respondWith("""
+                {"success":true,"score":0.9,"action":"register"}""");
 
         assertThatCode(() -> captchaVerifier.verify("tok", "register")).doesNotThrowAnyException();
-        server.verify();
+        assertThat(requestPath).isEqualTo("/recaptcha/api/siteverify");
+        assertThat(requestContentType).startsWith("application/x-www-form-urlencoded");
+        assertThat(requestBody).contains("secret=shhh").contains("response=tok");
     }
 
     @Test
@@ -93,7 +108,8 @@ class CaptchaVerifierTest {
 
     @Test
     void rejectsWhenProviderReturnsError() {
-        server.expect(requestTo(URL)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        responseBody = "{}";
+        responseStatus = HttpStatus.SERVICE_UNAVAILABLE.value();
 
         assertThatThrownBy(() -> captchaVerifier.verify("tok", "register"))
                 .isInstanceOf(CaptchaVerificationException.class);
