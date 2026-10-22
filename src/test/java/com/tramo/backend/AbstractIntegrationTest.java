@@ -164,8 +164,12 @@ public abstract class AbstractIntegrationTest {
         return statistics.getPrepareStatementCount();
     }
 
+    @Autowired
+    private com.tramo.backend.security.ratelimit.RateLimiterService rateLimiter;
+
     @BeforeEach
     void cleanDatabase() {
+        ((com.github.benmanes.caffeine.cache.Cache<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(rateLimiter, "cache")).invalidateAll();
         List<String> tables = jdbcTemplate.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
                 String.class);
