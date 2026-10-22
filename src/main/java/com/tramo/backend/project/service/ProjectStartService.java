@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.project.entity.ProjectDraftCommit;
+import com.tramo.backend.project.dto.DraftCommitDTO;
+import com.tramo.backend.project.dto.DraftCommitRequest;
+import com.tramo.backend.project.repository.ProjectDraftCommitRepository;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -31,6 +36,7 @@ import java.util.Map;
 
 @Service
 public class ProjectStartService {
+    private final ProjectDraftCommitRepository draftCommits;
     private final ProjectRepository projects;
     private final TrailRepository trails;
     private final TrailItemRepository steps;
@@ -44,7 +50,8 @@ public class ProjectStartService {
 
     public ProjectStartService(ProjectRepository projects, TrailRepository trails, TrailItemRepository steps,
                                ItemRepository items, TrailService trailService, ItemService itemService,
-                               ProjectIdCodec codec, EntityManager entityManager, ObjectMapper mapper, ProjectVersionCapture history) {
+                               ProjectIdCodec codec, EntityManager entityManager, ObjectMapper mapper, ProjectVersionCapture history, ProjectDraftCommitRepository draftCommits) {
+        this.draftCommits = draftCommits;
         this.projects = projects;
         this.trails = trails;
         this.steps = steps;
@@ -55,6 +62,50 @@ public class ProjectStartService {
         this.codec = codec;
         this.entityManager = entityManager;
         this.mapper = mapper;
+    }
+
+    @Transactional
+    public DraftCommitDTO commitDraft(DraftCommitRequest request, User user) {
+        entityManager.find(User.class, user.getId(), LockModeType.PESSIMISTIC_WRITE);
+        var existing = draftCommits.findByUserIdAndClientRequestId(user.getId(), request.clientRequestId());
+        if (existing.isPresent()) return draftResult(existing.get());
+        ContentLimits.assertNote(request.item().content());
+        var project = new Project();
+        project.setOwner(user);
+        project.setTitle(draftTitle(request.project().title(), "Untitled project"));
+        project.setVisibility(ProjectVisibility.PRIVATE);
+        project.setCreationDate(new Date());
+        project.setModifiedDate(new Date());
+        projects.save(project);
+        String trailTitle = draftTitle(request.trail().title(), "My first trail");
+        String itemTitle = draftTitle(request.item().title(), "Untitled note");
+        Long trailId = trail(project.getId(), trailTitle, "", user);
+        var itemRequest = new ItemRequestDTO();
+        itemRequest.setTitle(itemTitle);
+        itemRequest.setTitleAlign(request.item().titleAlign());
+        Long itemId = itemService.create(trailId, itemRequest, user).getId();
+        itemService.update(itemId, itemRequest, user);
+        itemService.updateContent(itemId, request.item().content(), user);
+        var receipt = new ProjectDraftCommit();
+        receipt.setUserId(user.getId());
+        receipt.setClientRequestId(request.clientRequestId());
+        receipt.setProjectId(project.getId());
+        receipt.setTrailId(trailId);
+        receipt.setItemId(itemId);
+        receipt.setProjectTitle(project.getTitle());
+        receipt.setTrailTitle(trailTitle);
+        receipt.setItemTitle(itemTitle);
+        draftCommits.save(receipt);
+        return draftResult(receipt);
+    }
+
+    private String draftTitle(String title, String fallback) {
+        return title.isBlank() ? fallback : title.strip();
+    }
+
+    private DraftCommitDTO draftResult(ProjectDraftCommit receipt) {
+        return new DraftCommitDTO(codec.encode(receipt.getProjectId()), receipt.getTrailId(),
+                receipt.getItemId(), 0, receipt.getProjectTitle(), receipt.getTrailTitle(), receipt.getItemTitle());
     }
 
     @Transactional
