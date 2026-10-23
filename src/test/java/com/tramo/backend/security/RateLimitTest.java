@@ -197,6 +197,25 @@ class RateLimitTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void draftCommitsHaveTheirOwnTightBucket() throws Exception {
+        var user = createUser("draftbucket");
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/project/draft-commit").header("Authorization", bearer(user))
+                    .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(post("/api/project/draft-commit").header("Authorization", bearer(user))
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().is(429));
+        mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(user))
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        for (int i = 0; i < 9; i++) {
+            mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(user))
+                    .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(user))
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().is(429));
+    }
+
+    @Test
     void adminRoutesAreExemptFromUserRateLimit() throws Exception {
         User admin = createAdmin("rateadmin");
         User target = createUser("ratetarget");

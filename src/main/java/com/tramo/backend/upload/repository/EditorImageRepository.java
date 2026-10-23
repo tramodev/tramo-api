@@ -50,6 +50,21 @@ public class EditorImageRepository {
                 id, objectId, projectId, uploadId);
     }
 
+    public boolean isOwnedUnattached(UUID id, Long userId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM editor_image i JOIN upload_record r ON r.id = i.upload_record_id " +
+                "WHERE i.id = ? AND i.project_id IS NULL AND r.project_id IS NULL AND r.user_id = ?)", Boolean.class, id, userId));
+    }
+
+    public void attachOwnedImages(Collection<UUID> ids, Long projectId, Long userId) {
+        if (ids.isEmpty()) return;
+        var params = Map.of("ids", ids, "projectId", projectId, "userId", userId);
+        named.update("UPDATE editor_image i SET project_id = :projectId FROM upload_record r, editor_image_object o " +
+                "WHERE i.id IN (:ids) AND i.project_id IS NULL AND r.id = i.upload_record_id AND r.project_id IS NULL " +
+                "AND r.user_id = :userId AND o.id = i.object_id AND o.state = 'READY'", params);
+        named.update("UPDATE upload_record r SET project_id = :projectId FROM editor_image i " +
+                "WHERE i.id IN (:ids) AND i.project_id = :projectId AND r.id = i.upload_record_id AND r.user_id = :userId", params);
+    }
+
     public void setState(UUID objectId, String state) {
         jdbc.update("UPDATE editor_image_object SET state = ?, lease_until = CASE WHEN ? = 'COPYING' THEN CURRENT_TIMESTAMP + INTERVAL '60 seconds' ELSE NULL END WHERE id = ?", state, state, objectId);
         if ("READY".equals(state)) jdbc.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP WHERE object_id = ?", objectId);

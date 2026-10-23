@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
-public record EditorImagePresignRequest(@NotBlank String projectId,
+public record EditorImagePresignRequest(@Pattern(regexp = "[a-zA-Z0-9]+") String projectId,
         @NotNull @Pattern(regexp = "image/jpeg|image/png|image/webp|image/gif") String contentType,
         @NotBlank @Pattern(regexp = "[a-f0-9]{64}") String contentHash,
         @NotNull @Positive Long contentBytes) {}

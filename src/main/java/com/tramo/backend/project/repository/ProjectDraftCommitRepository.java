@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface ProjectDraftCommitRepository extends JpaRepository<ProjectDraftCommit, Long> {
     Optional<ProjectDraftCommit> findByUserIdAndClientRequestId(Long userId, UUID clientRequestId);
+    long deleteByCreatedAtBefore(java.util.Date cutoff);
 }

@@ -104,7 +104,7 @@ public class RateLimitFilter implements Filter {
                 boolean tight = MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+/restore)?") || path.endsWith("/report") || TIGHT_TIER_PATHS.contains(path)
                         || path.matches("/api/uploads/[0-9a-fA-F-]+/complete");
                 Bucket bucket = tight
-                        ? rateLimiterService.resolveBucket("user:tight:" + user.getId(), 10, 10, Duration.ofMinutes(1))
+                        ? rateLimiterService.resolveBucket("user:tight:" + (path.equals("/api/project/draft-commit") ? "draft-commit:" : "") + user.getId(), 10, 10, Duration.ofMinutes(1))
                         : rateLimiterService.resolveBucket("user:default:" + user.getId(), 60, 60, Duration.ofMinutes(1));
 
                 if (!tryConsumeOrReject(bucket, res)) {

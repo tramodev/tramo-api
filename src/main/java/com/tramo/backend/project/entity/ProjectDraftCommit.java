@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import java.util.UUID;
+import java.util.Date;
 
 @Entity
 @Getter
@@ -22,4 +23,5 @@ public class ProjectDraftCommit {
     private String projectTitle;
     private String trailTitle;
     private String itemTitle;
+    private Date createdAt = new Date();
 }

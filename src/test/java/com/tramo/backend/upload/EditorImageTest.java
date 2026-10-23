@@ -65,6 +65,49 @@ class EditorImageTest extends AbstractIntegrationTest {
         });
     }
 
+    @Autowired com.tramo.backend.project.service.ProjectStartService draftStarter;
+    @MockitoSpyBean com.tramo.backend.subscription.service.SubscriptionService subscriptions;
+
+    @Test
+    void imageFirstDraftChecksQuotaWithoutCreatingAProject() throws Exception {
+        var owner = createUser("imagequota");
+        doThrow(new com.tramo.backend.exception.StorageQuotaExceededException()).when(subscriptions)
+                .assertUploadAllowed(any(), anyLong(), anyBoolean());
+        mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"contentType\":\"image/jpeg\",\"contentBytes\":" + JPEG.length + ",\"contentHash\":\"" + HASH + "\"}"))
+                .andExpect(status().is(429)).andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"));
+        assertThat(projectRepository.count()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record", Integer.class)).isZero();
+    }
+
+    @Test
+    void unattachedImagesArePrivateUntilTheOwnerCommitsRealContent() throws Exception {
+        var owner = createUser("imagedraft");
+        var stranger = createUser("imageintruder");
+        var response = mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"contentType\":\"image/jpeg\",\"contentBytes\":" + JPEG.length + ",\"contentHash\":\"" + HASH + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var id = UUID.fromString(JsonPath.read(response, "$.imageId"));
+        mockMvc.perform(post("/api/uploads/editor-images/" + id + "/complete").header("Authorization", bearer(stranger)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/uploads/editor-images/" + id + "/complete").header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        assertThat(projectRepository.count()).isZero();
+        var empty = new com.tramo.backend.project.dto.DraftCommitRequest.NamedEntity("");
+        var request = new com.tramo.backend.project.dto.DraftCommitRequest(UUID.randomUUID(), empty, empty,
+                new com.tramo.backend.project.dto.DraftCommitRequest.DraftItem("", "left", content(id)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> draftStarter.commitDraft(request, stranger))
+                .isInstanceOf(com.tramo.backend.exception.ResourceNotFoundException.class);
+        assertThat(projectRepository.count()).isZero();
+        var committed = draftStarter.commitDraft(request, owner);
+        assertThat(projectRepository.count()).isEqualTo(1);
+        var project = projectRepository.findById(projectIdCodec.decode(committed.projectId())).orElseThrow();
+        assertThat(imageRepository.findAll(List.of(id)).get(0).projectId()).isEqualTo(project.getId());
+        assertThat(itemService.getContent(committed.itemId(), owner).getContent()).contains(id.toString());
+        resolve(project, owner, id, false, null, 200);
+        resolve(project, null, id, true, null, 404);
+    }
+
     @Test
     void publicEditorUploadIsBlockedBeforeQuotaAndRecording() throws Exception {
         User owner = createUser("guard");
