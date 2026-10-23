@@ -74,7 +74,7 @@ public class EditorImageService {
     }
 
     public EditorImagePresignResponse presign(EditorImagePresignRequest request, User user) {
-        Project project = access.getOwnedProject(codec.decode(request.projectId()), user);
+        Project project = request.projectId() == null ? null : access.getOwnedProject(codec.decode(request.projectId()), user);
         if (request.contentBytes() > maxBytes) throw new RequestValidationException(RequestErrorCode.IMAGE_SIZE_LIMIT_EXCEEDED);
         if (!limiter.resolveBucket("upload-bytes:" + user.getId(), bytesPerHour, bytesPerHour, Duration.ofHours(1))
                 .tryConsume(request.contentBytes())) throw new LimitExceededException("Upload throughput limit reached. Try again later.");
@@ -84,16 +84,17 @@ public class EditorImageService {
             UUID imageId = UUID.randomUUID();
             UUID objectId = UUID.randomUUID();
             images.createObject(objectId, request.contentType(), request.contentBytes(), request.contentHash());
-            createImage(imageId, objectId, project, request.contentBytes());
-            return new EditorImage(imageId, objectId, project.getId(), request.contentType(), request.contentBytes(), "PENDING", request.contentHash());
+            createImage(imageId, objectId, project, user, request.contentBytes());
+            return new EditorImage(imageId, objectId, project == null ? null : project.getId(), request.contentType(), request.contentBytes(), "PENDING", request.contentHash());
         });
         return new EditorImagePresignResponse(image.id(), storage.presignUpload(image));
     }
 
     public void complete(UUID id, User user) {
         EditorImage image = findOne(id);
-        if (image.projectId() == null) throw missing();
-        access.getOwnedProject(image.projectId(), user);
+        if (image.projectId() == null) {
+            if (!images.isOwnedUnattached(id, user.getId())) throw missing();
+        } else access.getOwnedProject(image.projectId(), user);
         UUID attempt = images.withObjectLock(image.objectId(), () ->
                 transactions.execute(status -> images.claimCompletion(image.objectId())));
         if (attempt == null) return;
@@ -145,6 +146,7 @@ public class EditorImageService {
     public void syncItem(Item item, String content) {
         entityManager.flush();
         Set<UUID> ids = extract(content);
+        if (item.getProject() != null) images.attachOwnedImages(ids, item.getProject().getId(), item.getProject().getOwner().getId());
         if (!new HashSet<>(images.editableImageIds(ids, item.getProject() == null ? null : item.getProject().getId(), item.getId())).containsAll(ids)) throw missing();
         lockReady(ids);
         images.replaceItemReferences(item.getId(), ids);
@@ -239,11 +241,15 @@ public class EditorImageService {
     }
 
     private void createImage(UUID id, UUID objectId, Project project, long bytes) {
+        createImage(id, objectId, project, project.getOwner(), bytes);
+    }
+
+    private void createImage(UUID id, UUID objectId, Project project, User owner, long bytes) {
         UploadRecord upload = new UploadRecord();
-        upload.setUserId(project.getOwner().getId()); upload.setProjectId(project.getId());
+        upload.setUserId(owner.getId()); upload.setProjectId(project == null ? null : project.getId());
         upload.setObjectKey("private/" + id); upload.setBytes(bytes); upload.setCreatedDate(new Date());
         uploads.saveAndFlush(upload);
-        images.createImage(id, objectId, project.getId(), upload.getId());
+        images.createImage(id, objectId, project == null ? null : project.getId(), upload.getId());
     }
 
     private EditorImage findOne(UUID id) { return images.findAll(List.of(id)).stream().findFirst().orElseThrow(this::missing); }

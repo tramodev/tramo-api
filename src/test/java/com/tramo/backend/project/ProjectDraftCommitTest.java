@@ -73,7 +73,9 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
         var request = request(UUID.randomUUID(), "content");
         var result = starter.commitDraft(request, owner);
         projectService.delete(projectIdCodec.decode(result.projectId()), owner);
-        assertThat(starter.commitDraft(request, owner)).isEqualTo(result);
+        assertThatThrownBy(() -> starter.commitDraft(request, owner))
+                .isInstanceOf(com.tramo.backend.exception.ResourceNotFoundException.class);
+        assertThat(receipts.count()).isEqualTo(1);
         assertThat(projectRepository.count()).isZero();
     }
 
@@ -82,7 +84,7 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
         var owner = createUser("draftdefaults");
         var empty = new DraftCommitRequest.NamedEntity(" ");
         var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty,
-                new DraftCommitRequest.DraftItem("", "right", ""));
+                new DraftCommitRequest.DraftItem("", "right", "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"Written\"}]}}"));
         var result = starter.commitDraft(request, owner);
         assertThat(result.projectTitle()).isEqualTo("Untitled project");
         assertThat(result.trailTitle()).isEqualTo("My first trail");
@@ -92,6 +94,31 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
                 .isInstanceOf(com.tramo.backend.exception.PayloadTooLargeException.class);
         assertThat(projectRepository.count()).isEqualTo(1);
         assertThat(receipts.count()).isEqualTo(1);
+    }
+
+    @Test
+    void emptyBodiesAndInvisibleTitlesDoNotCreateProjects() {
+        var owner = createUser("draftempty");
+        var empty = new DraftCommitRequest.NamedEntity("\u200b");
+        for (String content : java.util.List.of("", "{\"root\":{\"children\":[]}}", "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"\u200b\"}]}}")) {
+            var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty, new DraftCommitRequest.DraftItem("", "left", content));
+            assertThatThrownBy(() -> starter.commitDraft(request, owner)).isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(projectRepository.count()).isZero();
+        assertThat(receipts.count()).isZero();
+    }
+
+    @Test
+    void receiptsExpireAfterThirtyDays() {
+        var owner = createUser("draftretention");
+        starter.commitDraft(request(UUID.randomUUID(), "Written"), owner);
+        var receipt = receipts.findAll().get(0);
+        receipt.setCreatedAt(java.util.Date.from(java.time.Instant.now().minus(31, java.time.temporal.ChronoUnit.DAYS)));
+        receipts.saveAndFlush(receipt);
+        starter.commitDraft(request(UUID.randomUUID(), "New"), owner);
+        starter.purgeDraftCommits();
+        assertThat(receipts.count()).isEqualTo(1);
+        assertThat(projectRepository.count()).isEqualTo(2);
     }
 
     @Test

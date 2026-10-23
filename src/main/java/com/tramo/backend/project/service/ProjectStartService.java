@@ -33,6 +33,11 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import org.springframework.scheduling.annotation.Scheduled;
+import com.tramo.backend.exception.ResourceNotFoundException;
+import tools.jackson.databind.JsonNode;
 
 @Service
 public class ProjectStartService {
@@ -70,6 +75,8 @@ public class ProjectStartService {
         var existing = draftCommits.findByUserIdAndClientRequestId(user.getId(), request.clientRequestId());
         if (existing.isPresent()) return draftResult(existing.get());
         ContentLimits.assertNote(request.item().content());
+        if (java.util.stream.Stream.of(request.project().title(), request.trail().title(), request.item().title()).noneMatch(this::visibleText)
+                && !meaningfulContent(request.item().content())) throw new RequestValidationException(RequestErrorCode.EDITOR_CONTENT_INVALID);
         var project = new Project();
         project.setOwner(user);
         project.setTitle(draftTitle(request.project().title(), "Untitled project"));
@@ -99,11 +106,38 @@ public class ProjectStartService {
         return draftResult(receipt);
     }
 
+    @Scheduled(cron = "0 0 3 * * *")
+    @Transactional
+    public void purgeDraftCommits() {
+        draftCommits.deleteByCreatedAtBefore(Date.from(Instant.now().minus(30, ChronoUnit.DAYS)));
+    }
+
+    private boolean visibleText(String text) {
+        return text != null && text.codePoints().anyMatch(c -> !Character.isWhitespace(c) && !Character.isSpaceChar(c) && Character.getType(c) != Character.FORMAT);
+    }
+
+    private boolean meaningfulContent(String content) {
+        if (!visibleText(content)) return false;
+        try { return meaningfulNode(mapper.readTree(content).path("root")); }
+        catch (RuntimeException invalid) { return true; }
+    }
+
+    private boolean meaningfulNode(JsonNode node) {
+        if (visibleText(node.path("text").asText("")) || visibleText(node.path("equation").asText(""))
+                || visibleText(node.path("abc").asText(""))) return true;
+        if ("image".equals(node.path("type").asText()) && visibleText(node.path("imageId").asText(""))) return true;
+        if ("embed".equals(node.path("type").asText()) && visibleText(node.path("id").asText(""))) return true;
+        for (JsonNode child : node.path("children")) if (meaningfulNode(child)) return true;
+        return false;
+    }
+
     private String draftTitle(String title, String fallback) {
         return title.isBlank() ? fallback : title.strip();
     }
 
     private DraftCommitDTO draftResult(ProjectDraftCommit receipt) {
+        if (receipt.getProjectId() == null || receipt.getTrailId() == null || receipt.getItemId() == null)
+            throw new ResourceNotFoundException("This draft's project or note was deleted.");
         return new DraftCommitDTO(codec.encode(receipt.getProjectId()), receipt.getTrailId(),
                 receipt.getItemId(), 0, receipt.getProjectTitle(), receipt.getTrailTitle(), receipt.getItemTitle());
     }
