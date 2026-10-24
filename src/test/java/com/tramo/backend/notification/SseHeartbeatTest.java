@@ -6,6 +6,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.exception.LimitExceededException;
+import com.tramo.backend.notification.service.NotificationService;
+import com.tramo.backend.user.entity.User;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +28,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +41,9 @@ class SseHeartbeatTest extends AbstractIntegrationTest {
         registry.add("app.notifications.sse-heartbeat-ms", () -> "300");
         registry.add("app.notifications.sse-timeout-ms", () -> "60000");
     }
+
+    @MockitoSpyBean
+    private NotificationService notifications;
 
     @LocalServerPort
     private int port;
@@ -109,6 +118,44 @@ class SseHeartbeatTest extends AbstractIntegrationTest {
         } finally {
             root.detachAppender(logs);
         }
+    }
+
+    @Test
+    void sixthConnectionEvictsTheOldestOverHttp() throws Exception {
+        var user = createUser("sseeviction");
+        var bodies = new java.util.ArrayList<java.io.InputStream>();
+        var client = HttpClient.newHttpClient();
+        try {
+            for (int i = 0; i < 6; i++) {
+                var response = client.send(HttpRequest.newBuilder(
+                                URI.create("http://localhost:" + port + "/api/notifications/stream"))
+                        .header("Authorization", bearer(user))
+                        .header("Accept", "text/event-stream")
+                        .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofInputStream());
+                bodies.add(response.body());
+                assertEquals(200, response.statusCode());
+            }
+            String oldest = new String(bodies.get(0).readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(oldest.contains("event:evicted"));
+            assertTrue(oldest.contains("event:unread-count"));
+        } finally {
+            notifications.revokeSessionsAfterCommit(user.getId());
+            for (var body : bodies) body.close();
+        }
+    }
+
+    @Test
+    void instanceLimitReturns429ForAnEventStreamRequest() throws Exception {
+        var user = createUser("ssegloballimit");
+        doThrow(new LimitExceededException("full")).when(notifications).subscribe(any(User.class));
+        var response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + port + "/api/notifications/stream"))
+                .header("Authorization", bearer(user))
+                .header("Accept", "text/event-stream")
+                .timeout(Duration.ofSeconds(10)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(429, response.statusCode());
+        assertEquals("30", response.headers().firstValue("Retry-After").orElseThrow());
+        assertEquals("", response.body());
     }
 
     private static String describe(ILoggingEvent event) {

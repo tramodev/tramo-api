@@ -9,6 +9,7 @@ import com.tramo.backend.user.service.PrivacyPolicy;
 import com.tramo.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -53,7 +54,9 @@ class SseConnectionLimitTest {
             })).toList();
             int accepted = 0;
             for (var attempt : attempts) if (attempt.get()) accepted++;
-            assertThat(accepted).isEqualTo(5);
+            assertThat(accepted).isEqualTo(20);
+            var connections = (java.util.Map<?, ?>) ReflectionTestUtils.getField(notifications, "emitters");
+            assertThat((List<?>) connections.get(1L)).hasSize(5);
             assertThatCode(() -> notifications.subscribe(user(2))).doesNotThrowAnyException();
         } finally { executor.shutdownNow(); }
     }
@@ -76,7 +79,9 @@ class SseConnectionLimitTest {
             completion.getValue().run();
             timeout.getValue().run();
             notifications.subscribe(user(1));
-            assertThatThrownBy(() -> notifications.subscribe(user(1))).isInstanceOf(LimitExceededException.class);
+            verify(construction.constructed().get(1), never()).complete();
+            notifications.subscribe(user(1));
+            verify(construction.constructed().get(1)).complete();
         }
     }
 
@@ -92,7 +97,47 @@ class SseConnectionLimitTest {
             }).when(emitter).complete();
             assertThatCode(notifications::sendHeartbeat).doesNotThrowAnyException();
             verify(emitter).complete();
-            assertThatThrownBy(() -> notifications.subscribe(user(1))).isInstanceOf(LimitExceededException.class);
+            verify(construction.constructed().get(1), never()).complete();
+            notifications.subscribe(user(1));
+            verify(construction.constructed().get(1)).complete();
+        }
+    }
+
+    @Test
+    void evictsOldestAndStillCompletesWhenItsEventCannotBeSent() throws Exception {
+        try (var construction = mockConstruction(SseEmitter.class)) {
+            for (int i = 0; i < 5; i++) notifications.subscribe(user(1));
+            SseEmitter oldest = construction.constructed().get(0);
+            doThrow(new IOException("gone")).when(oldest).send(any(SseEmitter.SseEventBuilder.class));
+            doThrow(new IllegalStateException("gone")).when(oldest).complete();
+            assertThatCode(() -> notifications.subscribe(user(1))).doesNotThrowAnyException();
+            verify(oldest).complete();
+            verify(construction.constructed().get(1), never()).complete();
+            notifications.subscribe(user(1));
+            verify(construction.constructed().get(1)).complete();
+        }
+    }
+
+    @Test
+    void replacementIsAllowedAtTheInstanceLimit() {
+        try (var construction = mockConstruction(SseEmitter.class)) {
+            for (int i = 0; i < 5; i++) notifications.subscribe(user(1));
+            for (int id = 2; id <= 996; id++) notifications.subscribe(user(id));
+            assertThatCode(() -> notifications.subscribe(user(1))).doesNotThrowAnyException();
+            verify(construction.constructed().get(0)).complete();
+            assertThatThrownBy(() -> notifications.subscribe(user(997))).isInstanceOf(LimitExceededException.class);
+        }
+    }
+
+    @Test
+    void errorCallbackReleasesTheSlot() {
+        try (var construction = mockConstruction(SseEmitter.class)) {
+            for (int i = 0; i < 5; i++) notifications.subscribe(user(1));
+            var error = ArgumentCaptor.forClass(java.util.function.Consumer.class);
+            verify(construction.constructed().get(0)).onError(error.capture());
+            error.getValue().accept(new IOException("gone"));
+            notifications.subscribe(user(1));
+            verify(construction.constructed().get(1), never()).complete();
         }
     }
 

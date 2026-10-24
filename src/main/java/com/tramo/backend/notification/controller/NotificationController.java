@@ -3,6 +3,7 @@
 package com.tramo.backend.notification.controller;
 
 import com.tramo.backend.notification.dto.NotificationDTO;
+import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import org.springframework.web.bind.annotation.RequestParam;
 import com.tramo.backend.notification.dto.UnreadCountDTO;
@@ -44,8 +45,12 @@ public class NotificationController {
     }
 
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@AuthenticationPrincipal User user) {
-        return notificationService.subscribe(user);
+    public ResponseEntity<SseEmitter> stream(@AuthenticationPrincipal User user) {
+        try {
+            return ResponseEntity.ok(notificationService.subscribe(user));
+        } catch (LimitExceededException limit) {
+            return ResponseEntity.status(429).header("Retry-After", "30").build();
+        }
     }
 
     @PostMapping("/read")

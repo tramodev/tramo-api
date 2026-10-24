@@ -45,6 +45,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Service
 public class NotificationService {
     private static final int READ_RETENTION_DAYS = 90;
+    private static final int MAX_CONNECTIONS_PER_USER = 5;
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final NotificationRepository notificationRepository;
@@ -94,18 +95,30 @@ public class NotificationService {
     public SseEmitter subscribe(User user) {
         SseEmitter emitter = new SseEmitter(sseTimeoutMs);
         Connection connection = new Connection(emitter, user.getSessionVersion());
-        synchronized (emitters) {
-            if (emitters.getOrDefault(user.getId(), new CopyOnWriteArrayList<>()).size() >= 5
-                    || emitters.values().stream().mapToInt(List::size).sum() >= 1000) {
-                throw new LimitExceededException("Too many notification connections. Close another tab and retry.");
-            }
-            emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>()).add(connection);
-        }
-
         Runnable cleanup = () -> removeEmitter(user.getId(), emitter);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(e -> cleanup.run());
+
+        Connection evicted = null;
+        synchronized (emitters) {
+            var connections = emitters.get(user.getId());
+            boolean replacing = connections != null && connections.size() >= MAX_CONNECTIONS_PER_USER;
+            if (!replacing && emitters.values().stream().mapToInt(List::size).sum() >= 1000) {
+                throw new LimitExceededException("Too many notification connections. Close another tab and retry.");
+            }
+            if (replacing) evicted = connections.remove(0);
+            emitters.computeIfAbsent(user.getId(), id -> new CopyOnWriteArrayList<>()).add(connection);
+        }
+
+        if (evicted != null) {
+            try {
+                evicted.emitter().send(SseEmitter.event().name("evicted").data(""));
+            } catch (Exception subscriberIsGone) {
+            } finally {
+                closeEmitter(user.getId(), evicted.emitter());
+            }
+        }
 
         try {
             emitter.send(SseEmitter.event().name("unread-count").data(new UnreadCountDTO(getUnreadCount(user))));
