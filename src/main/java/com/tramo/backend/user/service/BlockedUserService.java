@@ -3,6 +3,7 @@
 package com.tramo.backend.user.service;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import com.tramo.backend.user.dto.BlockResponseDTO;
 import com.tramo.backend.user.dto.BlockedUserDTO;
@@ -24,12 +25,14 @@ public class BlockedUserService {
     private final UserRepository userRepository;
     private final BlockedUserRepository blockedUserRepository;
     private final FollowRepository followRepository;
+    private final NotificationService notificationService;
 
     public BlockedUserService(UserRepository userRepository, BlockedUserRepository blockedUserRepository,
-                               FollowRepository followRepository) {
+                               FollowRepository followRepository, NotificationService notificationService) {
         this.userRepository = userRepository;
         this.blockedUserRepository = blockedUserRepository;
         this.followRepository = followRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -55,6 +58,8 @@ public class BlockedUserService {
             followRepository.findByFollowerIdAndFollowedId(blocker.getId(), target.getId()).ifPresent(followRepository::delete);
             followRepository.findByFollowerIdAndFollowedId(target.getId(), blocker.getId()).ifPresent(followRepository::delete);
         }
+        notificationService.publishUnreadCount(blocker);
+        notificationService.publishUnreadCount(target);
         return new BlockResponseDTO(blocked);
     }
 

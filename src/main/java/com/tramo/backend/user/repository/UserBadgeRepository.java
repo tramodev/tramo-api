@@ -14,6 +14,12 @@ import org.springframework.data.repository.query.Param;
 
 @Repository
 public interface UserBadgeRepository extends JpaRepository<UserBadge, Long> {
+    @Modifying(flushAutomatically = true)
+    @Query(value = "INSERT INTO user_badge (id, user_id, badge_code, earned_at) "
+            + "VALUES (nextval('user_badge_seq'), :userId, :badgeCode, CURRENT_TIMESTAMP) "
+            + "ON CONFLICT (user_id, badge_code) DO NOTHING", nativeQuery = true)
+    int insertIfAbsent(@Param("userId") Long userId, @Param("badgeCode") String badgeCode);
+
     List<UserBadge> findByUserId(Long userId);
 
     boolean existsByUserIdAndBadgeCode(Long userId, String badgeCode);

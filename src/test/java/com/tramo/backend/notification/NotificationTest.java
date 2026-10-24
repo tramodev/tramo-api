@@ -390,4 +390,108 @@ class NotificationTest extends AbstractIntegrationTest {
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().isFeatured()).isTrue();
     }
+
+    @Test
+    void togglingVoteDoesNotInflateNotification() throws Exception {
+        User owner = createUser("toggleowner");
+        User fan = createUser("togglefan");
+        Project project = publishedProject(owner, "Toggle");
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1));
+    }
+
+    @Test
+    void blockedNotificationsDoNotCountOrConsumePage() throws Exception {
+        User owner = createUser("blockedowner");
+        User fan = createUser("blockedfan");
+        Project project = publishedProject(owner, "Blocked");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+        var stream = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(owner)))
+                .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(post("/api/users/blockedfan/block").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.unreadCount").value(0));
+        assertThat(stream.getResponse().getContentAsString()).contains("\"unreadCount\":0");
+        mockMvc.perform(get("/api/notifications?size=1").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content.length()").value(0))
+                .andExpect(jsonPath("$.hasMore").value(false));
+    }
+
+    @Test
+    void readingAllPublishesUpdatedCount() throws Exception {
+        User owner = createUser("readstreamowner");
+        User fan = createUser("readstreamfan");
+        Project project = publishedProject(owner, "Read stream");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+        var stream = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(owner)))
+                .andExpect(request().asyncStarted()).andReturn();
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        assertThat(stream.getResponse().getContentAsString()).contains("\"unreadCount\":0");
+    }
+
+    @Test
+    void onlyRecipientCanReadOneNotification() throws Exception {
+        User owner = createUser("singleowner");
+        User fan = createUser("singlefan");
+        Project project = publishedProject(owner, "Single");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+        String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
+        mockMvc.perform(post("/api/notifications/" + id + "/read").header("Authorization", bearer(fan)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/notifications/" + id + "/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications/unread-count").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void removingVotesUpdatesActorAndRemovesEmptyNotification() throws Exception {
+        User owner = createUser("removeowner");
+        User first = createUser("removefirst");
+        User last = createUser("removelast");
+        Project project = publishedProject(owner, "Remove vote");
+        for (User voter : List.of(first, last, last)) {
+            mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(voter)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("removefirst"));
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(first)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void deletingPublishesUpdatedCountToEveryStream() throws Exception {
+        User owner = createUser("deletestreamowner");
+        User fan = createUser("deletestreamfan");
+        Project project = publishedProject(owner, "Delete stream");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(fan)))
+                .andExpect(status().isOk());
+        var first = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(owner)))
+                .andExpect(request().asyncStarted()).andReturn();
+        var second = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(owner)))
+                .andExpect(request().asyncStarted()).andReturn();
+        String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
+        mockMvc.perform(delete("/api/notifications/" + id).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        assertThat(first.getResponse().getContentAsString()).contains("\"unreadCount\":0");
+        assertThat(second.getResponse().getContentAsString()).contains("\"unreadCount\":0");
+    }
+
 }

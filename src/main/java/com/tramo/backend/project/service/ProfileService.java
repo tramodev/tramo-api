@@ -125,6 +125,7 @@ public class ProfileService {
         return new UserProfileDTO(String.valueOf(saved.getId()), saved.getUsername(), saved.getEmail(), saved.getBio(), saved.getBirthDate(), saved.getLocation(), saved.getWebsite(), saved.getImageUrl(), saved.getBannerUrl(), saved.getCreatedAt(), saved.getRole().name(), saved.getSelectedBadge());
     }
 
+    @Transactional
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
         ProfileStatsDTO stats = badgeService.getProfileStats(user);
         List<BadgeDTO> badges = badgeService.buildBadges(stats, subscriptionService.isSupporter(user));

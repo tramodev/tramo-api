@@ -17,7 +17,6 @@ import org.springframework.data.domain.Page;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
-import com.tramo.backend.user.service.PrivacyPolicy;
 import com.tramo.backend.user.service.UserPreferencesService;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -54,16 +53,14 @@ public class NotificationService {
 
     private final Map<Long, CopyOnWriteArrayList<Connection>> emitters = new ConcurrentHashMap<>();
     private final long sseTimeoutMs;
-    private final PrivacyPolicy privacyPolicy;
     private final UserRepository userRepository;
 
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
                                 @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs,
-                                PrivacyPolicy privacyPolicy, UserRepository userRepository) {
+                                UserRepository userRepository) {
         this.notificationRepository = notificationRepository;
         this.projectIdCodec = projectIdCodec;
         this.sseTimeoutMs = sseTimeoutMs;
-        this.privacyPolicy = privacyPolicy;
         this.userRepository = userRepository;
     }
 
@@ -142,7 +139,7 @@ public class NotificationService {
         }
     }
 
-    private void publishUnreadCount(User recipient) {
+    public void publishUnreadCount(User recipient) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -251,7 +248,11 @@ public class NotificationService {
             notification.setUpdatedDate(now);
             notificationRepository.save(notification);
         }
-        publishUnreadCount(recipient);
+        if (NotificationTypes.UPVOTE.equals(type) && project != null) {
+            syncUpvotes(recipient, project);
+        } else {
+            publishUnreadCount(recipient);
+        }
     }
 
     @Transactional
@@ -330,9 +331,7 @@ public class NotificationService {
     public PageResponseDTO<NotificationDTO> getNotifications(User user, int page, int size) {
         Page<Notification> result = notificationRepository.findByRecipientIdOrderByUpdatedDateDesc(
                 user.getId(), Pagination.page(page, size));
-        Set<Long> blockRelated = privacyPolicy.blockRelatedIds(user);
         List<NotificationDTO> items = result.getContent().stream()
-                .filter(n -> n.getLatestActor() == null || !blockRelated.contains(n.getLatestActor().getId()))
                 .map(n -> new NotificationDTO(
                         n.getId(),
                         n.getType(),
@@ -356,6 +355,22 @@ public class NotificationService {
     @Transactional
     public void markAllRead(User user) {
         notificationRepository.markAllReadByRecipientId(user.getId());
+        publishUnreadCount(user);
+    }
+
+    @Transactional
+    public void markRead(User user, Long notificationId) {
+        if (notificationRepository.markReadByIdAndRecipientId(notificationId, user.getId()) == 0) {
+            throw new ResourceNotFoundException("Notification not found");
+        }
+        publishUnreadCount(user);
+    }
+
+    @Transactional
+    public void syncUpvotes(User recipient, Project project) {
+        notificationRepository.syncUpvotes(recipient.getId(), project.getId());
+        notificationRepository.deleteEmptyUpvotes(recipient.getId(), project.getId());
+        publishUnreadCount(recipient);
     }
 
     @Transactional
@@ -364,5 +379,6 @@ public class NotificationService {
         if (deleted == 0) {
             throw new ResourceNotFoundException("Notification not found");
         }
+        publishUnreadCount(user);
     }
 }

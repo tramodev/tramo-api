@@ -48,6 +48,7 @@ public class ProjectEngagementService {
         boolean voted;
         if (existingVote.isPresent()) {
             projectVoteRepository.delete(existingVote.get());
+            notificationService.syncUpvotes(project.getOwner(), project);
             voted = false;
         } else {
             accessGuard.assertViewable(project, requester);

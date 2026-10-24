@@ -59,6 +59,12 @@ public class NotificationController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/{id}/read")
+    public ResponseEntity<Void> markRead(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        notificationService.markRead(user, id);
+        return ResponseEntity.ok().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteNotification(@PathVariable Long id, @AuthenticationPrincipal User user) {
         notificationService.deleteNotification(user, id);

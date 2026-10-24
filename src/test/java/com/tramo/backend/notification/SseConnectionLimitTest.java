@@ -5,7 +5,6 @@ import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.notification.repository.NotificationRepository;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.user.entity.User;
-import com.tramo.backend.user.service.PrivacyPolicy;
 import com.tramo.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,7 +24,7 @@ import static org.mockito.Mockito.*;
 class SseConnectionLimitTest {
     private final UserRepository users = mock(UserRepository.class);
     private final NotificationService notifications = new NotificationService(mock(NotificationRepository.class),
-            mock(ProjectIdCodec.class), 1800000, mock(PrivacyPolicy.class), users);
+            mock(ProjectIdCodec.class), 1800000, users);
 
     SseConnectionLimitTest() {
         when(users.findSessionStates(any())).thenAnswer(call -> {

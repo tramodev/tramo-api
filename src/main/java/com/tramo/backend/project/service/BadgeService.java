@@ -16,7 +16,6 @@ import com.tramo.backend.user.repository.UserBadgeRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -49,7 +48,7 @@ public class BadgeService {
         long trailsPublished = projectRepository.countByOwnerIdAndVisibility(user.getId(), ProjectVisibility.PUBLISHED);
         long upvotesReceived = projectVoteRepository.countByProjectOwnerIdAndProjectPublished(user.getId());
         long totalViews = projectRepository.sumViewCountByOwnerIdAndPublished(user.getId());
-        long forksCount = projectRepository.countByOwnerIdAndForkedFromNotNull(user.getId());
+        long forksCount = projectRepository.countByForkedFromOwnerIdAndOwnerIdNot(user.getId(), user.getId());
         long followersCount = followRepository.countByFollowedId(user.getId());
         long followingCount = followRepository.countByFollowerId(user.getId());
         return new ProfileStatsDTO(trailsPublished, upvotesReceived, totalViews, forksCount, followersCount, followingCount);
@@ -84,12 +83,9 @@ public class BadgeService {
 
         for (BadgeDTO badge : badges) {
             if (badge.isEarned() && !alreadyAwarded.contains(badge.getCode())) {
-                UserBadge userBadge = new UserBadge();
-                userBadge.setUser(user);
-                userBadge.setBadgeCode(badge.getCode());
-                userBadge.setEarnedAt(new Date());
-                userBadgeRepository.save(userBadge);
-                notificationService.recordBadge(user, badge.getCode(), badge.getName());
+                if (userBadgeRepository.insertIfAbsent(user.getId(), badge.getCode()) == 1) {
+                    notificationService.recordBadge(user, badge.getCode(), badge.getName());
+                }
             }
         }
     }

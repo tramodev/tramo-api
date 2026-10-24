@@ -11,12 +11,10 @@ import com.tramo.backend.subscription.repository.PlanRepository;
 import com.tramo.backend.subscription.repository.SubscriptionRepository;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.user.entity.User;
-import com.tramo.backend.user.entity.UserBadge;
 import com.tramo.backend.user.repository.UserBadgeRepository;
 import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -147,18 +145,8 @@ public class SubscriptionService {
     }
 
     private void awardSupporterBadge(User user) {
-        if (userBadgeRepository.existsByUserIdAndBadgeCode(user.getId(), SUPPORTER_BADGE_CODE)) {
-            return;
+        if (userBadgeRepository.insertIfAbsent(user.getId(), SUPPORTER_BADGE_CODE) == 1) {
+            notificationService.recordBadge(user, SUPPORTER_BADGE_CODE, "Supporter");
         }
-        UserBadge badge = new UserBadge();
-        badge.setUser(user);
-        badge.setBadgeCode(SUPPORTER_BADGE_CODE);
-        badge.setEarnedAt(new Date());
-        try {
-            userBadgeRepository.save(badge);
-        } catch (DataIntegrityViolationException alreadyAwarded) {
-            return;
-        }
-        notificationService.recordBadge(user, SUPPORTER_BADGE_CODE, "Supporter");
     }
 }
