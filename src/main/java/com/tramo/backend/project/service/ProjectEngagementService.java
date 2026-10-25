@@ -60,7 +60,7 @@ public class ProjectEngagementService {
             vote.setDeviceId(deviceId);
             projectVoteRepository.save(vote);
             voted = true;
-            notificationService.recordEvent(project.getOwner(), "UPVOTE", project, requester);
+            notificationService.recordEvent(project.getOwner(), "UPVOTE", project, requester, vote.getCreatedDate());
             badgeService.checkAndAwardBadges(project.getOwner());
         }
         return new VoteResponseDTO(voted, projectVoteRepository.countByProjectId(projectId));

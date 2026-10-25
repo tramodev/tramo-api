@@ -132,7 +132,7 @@ public class ProjectForkService {
         itemRepository.flush();
         subscriptions.assertUploadAllowed(requester, 0, subscriptions.isSupporter(requester));
         editorImages.copyForkImages(fork);
-        notificationService.recordEvent(source.getOwner(), "FORK", source, requester);
+        notificationService.recordEvent(source.getOwner(), "FORK", source, requester, fork.getCreationDate());
         badgeService.checkAndAwardBadges(source.getOwner());
         return responseMapper.toResponse(fork, responseMapper.liveTagNames(fork));
     }

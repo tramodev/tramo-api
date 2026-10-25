@@ -166,7 +166,7 @@ public class NotificationService {
         }
     }
 
-    @Scheduled(fixedRateString = "${app.notifications.sse-heartbeat-ms:25000}")
+    @Scheduled(fixedRateString = "${app.notifications.sse-heartbeat-ms:5000}")
     public void sendHeartbeat() {
         if (emitters.isEmpty()) return;
         try {
@@ -175,7 +175,7 @@ public class NotificationService {
                     .collect(Collectors.toMap(UserRepository.SessionState::getId, Function.identity()));
             for (Long id : ids) {
                 var connections = emitters.get(id);
-                if (connections != null) sendToAll(id, connections, states.get(id), SseEmitter.event().comment("keep-alive"));
+                if (connections != null) sendToAll(id, connections, states.get(id), SseEmitter.event().name("heartbeat").data(""));
             }
         } catch (Exception failure) {
             SafeLog.failure(log, "notification_heartbeat_failed", "INTERNAL_ERROR", failure);
@@ -228,7 +228,7 @@ public class NotificationService {
     }
 
     @Transactional
-    public void recordEvent(User recipient, String type, Project project, User actor) {
+    public void recordEvent(User recipient, String type, Project project, User actor, Date eventDate) {
         if (recipient.getId().equals(actor.getId())) return;
         if (muted(recipient, type)) return;
 
@@ -244,12 +244,16 @@ public class NotificationService {
             notification.setProject(project);
             notification.setLatestActor(actor);
             notification.setCount(1);
-            notification.setCreatedDate(now);
+            notification.setCreatedDate(eventDate);
             notification.setUpdatedDate(now);
             notificationRepository.save(notification);
         }
         if (NotificationTypes.UPVOTE.equals(type) && project != null) {
             syncUpvotes(recipient, project);
+        } else if (NotificationTypes.FOLLOW.equals(type)) {
+            syncFollows(recipient);
+        } else if (NotificationTypes.COMMENT.equals(type) && project != null) {
+            syncComments(recipient, project);
         } else {
             publishUnreadCount(recipient);
         }
@@ -370,6 +374,20 @@ public class NotificationService {
     public void syncUpvotes(User recipient, Project project) {
         notificationRepository.syncUpvotes(recipient.getId(), project.getId());
         notificationRepository.deleteEmptyUpvotes(recipient.getId(), project.getId());
+        publishUnreadCount(recipient);
+    }
+
+    @Transactional
+    public void syncFollows(User recipient) {
+        notificationRepository.syncFollows(recipient.getId());
+        notificationRepository.deleteEmptyActivity(recipient.getId(), NotificationTypes.FOLLOW, null);
+        publishUnreadCount(recipient);
+    }
+
+    @Transactional
+    public void syncComments(User recipient, Project project) {
+        notificationRepository.syncComments(recipient.getId(), project.getId());
+        notificationRepository.deleteEmptyActivity(recipient.getId(), NotificationTypes.COMMENT, project.getId());
         publishUnreadCount(recipient);
     }
 

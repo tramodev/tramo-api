@@ -77,7 +77,7 @@ public class CommentService {
         comment = commentRepository.save(comment);
 
         if (!project.getOwner().getId().equals(author.getId())) {
-            notificationService.recordEvent(project.getOwner(), "COMMENT", project, author);
+            notificationService.recordEvent(project.getOwner(), "COMMENT", project, author, comment.getCreatedDate());
         }
 
         return toDto(comment, author);
@@ -120,6 +120,7 @@ public class CommentService {
         comment.setDeleted(true);
         comment.setContent(null);
         commentRepository.save(comment);
+        notificationService.syncComments(comment.getProject().getOwner(), comment.getProject());
     }
 
     private void assertViewable(Project project, User requester) {

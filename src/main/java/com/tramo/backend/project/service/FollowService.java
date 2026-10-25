@@ -58,6 +58,7 @@ public class FollowService {
         boolean following;
         if (existing.isPresent()) {
             followRepository.delete(existing.get());
+            notificationService.syncFollows(target);
             following = false;
         } else {
             Follow follow = new Follow();
@@ -66,7 +67,7 @@ public class FollowService {
             follow.setCreatedDate(new Date());
             followRepository.save(follow);
             following = true;
-            notificationService.recordEvent(target, "FOLLOW", null, requester);
+            notificationService.recordEvent(target, "FOLLOW", null, requester, follow.getCreatedDate());
         }
         return new FollowResponseDTO(following, followRepository.countByFollowedId(target.getId()));
     }

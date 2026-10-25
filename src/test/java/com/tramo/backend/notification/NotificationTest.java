@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -492,6 +493,107 @@ class NotificationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         assertThat(first.getResponse().getContentAsString()).contains("\"unreadCount\":0");
         assertThat(second.getResponse().getContentAsString()).contains("\"unreadCount\":0");
+    }
+
+
+    @Test
+    void followTogglesCountOnlyCurrentUnreadFollowers() throws Exception {
+        User owner = createUser("followcountowner");
+        User first = createUser("followcountfirst");
+        User second = createUser("followcountsecond");
+        for (User actor : List.of(first, second, first, first)) {
+            mockMvc.perform(post("/api/users/followcountowner/follow").header("Authorization", bearer(actor)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(2));
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/users/followcountowner/follow").header("Authorization", bearer(first)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1))
+                .andExpect(jsonPath("$.content[0].read").value(false));
+        mockMvc.perform(post("/api/users/followcountowner/follow").header("Authorization", bearer(first)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].read").value(true));
+    }
+
+    @Test
+    void repeatedCommentsCountDistinctUnreadAuthorsAndDeletingUpdatesTheActor() throws Exception {
+        User owner = createUser("commentcountowner");
+        User first = createUser("commentcountfirst");
+        User second = createUser("commentcountsecond");
+        Project project = publishedProject(owner, "Comment count");
+        long lastId = 0;
+        for (User actor : List.of(first, second, first)) {
+            String body = mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
+                            .header("Authorization", bearer(actor)).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"content\":\"hello\"}"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            lastId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.id")).longValue();
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(2))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("commentcountfirst"));
+        mockMvc.perform(delete("/api/comment/" + lastId).header("Authorization", bearer(first)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(2))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("commentcountsecond"));
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/comments")
+                        .header("Authorization", bearer(second)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"another\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1));
+    }
+
+    @Test
+    void newVotesExcludePreviouslyReadAndDismissedVotes() throws Exception {
+        User owner = createUser("votewindowowner");
+        User first = createUser("votewindowfirst");
+        User second = createUser("votewindowsecond");
+        User third = createUser("votewindowthird");
+        Project project = publishedProject(owner, "Vote window");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(first)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(second)))
+                .andExpect(status().isOk());
+        String body = mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("votewindowsecond"))
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
+        mockMvc.perform(delete("/api/notifications/" + id).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(third)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/vote").header("Authorization", bearer(first)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(jsonPath("$.content[0].count").value(1))
+                .andExpect(jsonPath("$.content[0].latestActorUsername").value("votewindowthird"));
+    }
+
+    @Test
+    void unsupportedNotificationMethodsReturn405AndAllowHeader() throws Exception {
+        User owner = createUser("notificationmethods");
+        for (var request : List.of(get("/api/notifications/123"), put("/api/notifications/123"),
+                patch("/api/notifications/123"))) {
+            mockMvc.perform(request.header("Authorization", bearer(owner)))
+                    .andExpect(status().isMethodNotAllowed())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Allow", "DELETE"))
+                    .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+        }
     }
 
 }

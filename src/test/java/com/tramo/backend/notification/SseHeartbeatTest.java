@@ -67,7 +67,7 @@ class SseHeartbeatTest extends AbstractIntegrationTest {
                 new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
             String line;
             while (heartbeats < 2 && (line = reader.readLine()) != null) {
-                if (line.startsWith(":")) {
+                if (line.equals("event:heartbeat")) {
                     heartbeats++;
                 }
             }
