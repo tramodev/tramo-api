@@ -96,6 +96,19 @@ class SensitiveLoggingTest {
     }
 
     @Test
+    void missingHandlerReturns404WithoutExposingThePathOrLoggingServerErrors() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var response = mvc.perform(get("/PRIVATE_BODY?token=RECOVERY_SECRET"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andReturn().getResponse();
+        assertSafe(response.getContentAsString());
+        assertSafe(logText());
+        assertThat(logs.list).noneMatch(event -> event.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.ERROR));
+    }
+
+    @Test
     void badRequestDoesNotEchoExceptionMessages() throws Exception {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
                 .setControllerAdvice(new GlobalExceptionHandler()).build();

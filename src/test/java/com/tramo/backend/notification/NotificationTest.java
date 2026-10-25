@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.notification;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.exception.GlobalExceptionHandler;
+import org.slf4j.LoggerFactory;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.service.ExploreService;
 import com.tramo.backend.user.entity.User;
@@ -606,6 +612,30 @@ class NotificationTest extends AbstractIntegrationTest {
                     .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                             .string("Allow", org.hamcrest.Matchers.containsString("GET")))
                     .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+        }
+    }
+
+
+    @Test
+    void missingRoutesReturn404WithoutLoggingServerErrors() throws Exception {
+        User owner = createUser("notificationmissing");
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            for (String path : List.of("/api/notifications/abc", "/api/notifications/-1", "/api/nonexistent")) {
+                for (var request : List.of(get(path), delete(path))) {
+                    mockMvc.perform(request.header("Authorization", bearer(owner)))
+                            .andExpect(status().isNotFound())
+                            .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                            .andExpect(jsonPath("$.message").value("Resource not found"));
+                }
+            }
+            assertThat(logs.list).noneMatch(event -> event.getLevel().isGreaterOrEqual(Level.ERROR));
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
         }
     }
 
