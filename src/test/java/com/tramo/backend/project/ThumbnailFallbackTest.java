@@ -35,7 +35,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"" + content + "\"}"))
+                        .content(contentRequest(content)))
                 .andExpect(status().isNoContent());
     }
 
@@ -46,7 +46,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, project, "T");
         long itemId = createItem(owner, trailId, "Only item");
         String url = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
-        setContent(owner, itemId, "look at " + url + " here");
+        setContent(owner, itemId, lexicalText("look at " + url + " here"));
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
@@ -61,7 +61,7 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, project, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        setContent(owner, itemA, ("{\"root\":{\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}").replace("\"", "\\\""));
+        setContent(owner, itemA, ("{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}"));
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
@@ -76,8 +76,8 @@ class ThumbnailFallbackTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, project, "T");
         long itemA = createItem(owner, trailId, "A");
         long itemB = createItem(owner, trailId, "B");
-        String link = "{\"root\":{\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"},{\"type\":\"link\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}";
-        setContent(owner, itemA, link.replace("\"", "\\\""));
+        String link = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + itemB + "\"},{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + itemB + "\"}]}}";
+        setContent(owner, itemA, link);
 
         mockMvc.perform(get("/api/project").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())

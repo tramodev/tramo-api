@@ -25,13 +25,15 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     @Autowired SubscriptionService subscriptions;
     @Autowired ProjectPublishService publish;
 
+    private static final int EDITOR_BYTES = lexicalText("").getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+
     private long note(User user, Project project) throws Exception {
         return postForId(user, "/api/project/" + pid(project) + "/item", "{\"title\":\"Note\"}");
     }
 
     private org.springframework.test.web.servlet.ResultActions save(User user, long id, String content) throws Exception {
         return mockMvc.perform(put("/api/item/" + id + "/content").header("Authorization", bearer(user))
-                .contentType("application/json").content("{\"content\":\"" + content + "\"}"));
+                .contentType("application/json").content(contentRequest(lexicalText(content))));
     }
 
     private void reserve(User user, long bytes) {
@@ -46,14 +48,14 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     void notesUseUtf8BytesAndShareQuotaWithUploads() throws Exception {
         User user = createUser("textquota");
         long note = note(user, createProject(user, "Quota", "private"));
-        reserve(user, 8192 - 10);
+        reserve(user, 8192 - 10 - EDITOR_BYTES);
         save(user, note, "é".repeat(6)).andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"));
         save(user, note, "é".repeat(5)).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.storageUsedBytes").value(8192))
-                .andExpect(jsonPath("$.storageImageBytes").value(8182))
-                .andExpect(jsonPath("$.storageTextBytes").value(10));
+                .andExpect(jsonPath("$.storageImageBytes").value(8182 - EDITOR_BYTES))
+                .andExpect(jsonPath("$.storageTextBytes").value(10 + EDITOR_BYTES));
         save(user, note, "a").andExpect(status().isNoContent());
     }
 
@@ -78,15 +80,15 @@ class StorageQuotaTest extends AbstractIntegrationTest {
             mockMvc.perform(post("/api/trail/" + trail + "/item/" + note).header("Authorization", bearer(user)))
                     .andExpect(status().isNoContent());
         }
-        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(2);
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(2 + EDITOR_BYTES);
         mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(user)))
                 .andExpect(status().isOk());
         Long snapshotBytes = jdbcTemplate.queryForObject("SELECT SUM(octet_length(content)) FROM project_snapshot", Long.class);
-        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(2 + snapshotBytes);
+        assertThat(uploads.sumStorageBytesByUserId(user.getId())).isEqualTo(2 + EDITOR_BYTES + snapshotBytes);
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.storageImageBytes").value(0))
-                .andExpect(jsonPath("$.storageTextBytes").value(2 + snapshotBytes));
+                .andExpect(jsonPath("$.storageTextBytes").value(2 + EDITOR_BYTES + snapshotBytes));
     }
 
     @Test
@@ -121,7 +123,7 @@ class StorageQuotaTest extends AbstractIntegrationTest {
         User user = createUser("concurrentquota");
         Project project = createProject(user, "Concurrent", "private");
         long first = note(user, project), second = note(user, project);
-        reserve(user, 8192 - 10);
+        reserve(user, 8192 - 10 - EDITOR_BYTES);
         CountDownLatch start = new CountDownLatch(1);
         var executor = Executors.newFixedThreadPool(2);
         try {
@@ -142,7 +144,7 @@ class StorageQuotaTest extends AbstractIntegrationTest {
         save(user, note, "é".repeat(524289)).andExpect(status().is(413))
                 .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
         mockMvc.perform(get("/api/item/" + note + "/content").header("Authorization", bearer(user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value("before"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(lexicalText("before")));
     }
 
     @Test
@@ -160,7 +162,7 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     void publicUploadsUseTheSameQuotaAsNotes() throws Exception {
         User user = createUser("uploadtextquota");
         Project project = createProject(user, "Upload", "private");
-        save(user, note(user, project), "a".repeat(8190)).andExpect(status().isNoContent());
+        save(user, note(user, project), "a".repeat(8190 - EDITOR_BYTES)).andExpect(status().isNoContent());
         for (int bytes : new int[]{3, 2}) {
             mockMvc.perform(post("/api/uploads/presign").header("Authorization", bearer(user))
                             .contentType("application/json").content("""

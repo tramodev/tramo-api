@@ -371,7 +371,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         Project target = createProject(owner, "Delete target", "private");
         long itemId = postForId(owner, "/api/project/" + pid(source) + "/item", "{\"title\":\"Keep note\"}");
         mockMvc.perform(put("/api/item/" + itemId + "/content").header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"content\":\"Keep this content\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText("Keep this content"))))
                 .andExpect(status().isNoContent());
         if (hasOtherMembership) {
             long sourceTrail = postForId(owner, "/api/project/" + pid(source) + "/trail", "{\"title\":\"Keep trail\"}");
@@ -391,7 +391,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT project_id FROM item WHERE id = ?", Long.class, itemId)).isEqualTo(source.getId());
         mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").value("Keep this content"));
+                .andExpect(jsonPath("$.content").value(lexicalText("Keep this content")));
         if (!hasOtherMembership) {
             assertThat(jdbcTemplate.queryForObject("SELECT unfiled FROM item WHERE id = ?", Boolean.class, itemId)).isTrue();
         }
@@ -692,7 +692,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"see " + url + " here\"}"))
+                        .content(contentRequest(lexicalText("see " + url + " here"))))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/images").header("Authorization", bearer(owner)))

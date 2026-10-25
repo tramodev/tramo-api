@@ -77,7 +77,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         Project source = createProject(owner, "Structured", "unlisted", "A description", null);
         long trailId = createTrail(owner, source, "Chapter one");
         long itemId = createItem(owner, trailId, "Only item");
-        setContent(owner, itemId, "live body");
+        setContent(owner, itemId, lexicalText("live body"));
 
         Project fork = forkOf(forker, source);
 
@@ -89,7 +89,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         List<Item> copies = itemsOf(fork);
         assertThat(copies).hasSize(1);
         assertThat(copies.get(0).getTitle()).isEqualTo("Only item");
-        assertThat(copies.get(0).getContent().getContent()).isEqualTo("live body");
+        assertThat(copies.get(0).getContent().getContent()).isEqualTo(lexicalText("live body"));
     }
 
     @Test
@@ -150,15 +150,15 @@ class ForkContentTest extends AbstractIntegrationTest {
         Project source = createProject(owner, "Content", "private", "A description", null);
         long trailId = createTrail(owner, source, "T");
         long itemId = createItem(owner, trailId, "Item");
-        setContent(owner, itemId, "published body");
+        setContent(owner, itemId, lexicalText("published body"));
         publish(owner, source);
-        setContent(owner, itemId, "draft body after publish");
+        setContent(owner, itemId, lexicalText("draft body after publish"));
 
         Project fork = forkOf(forker, source);
 
         List<Item> copies = itemsOf(fork);
         assertThat(copies).hasSize(1);
-        assertThat(copies.get(0).getContent().getContent()).isEqualTo("published body");
+        assertThat(copies.get(0).getContent().getContent()).isEqualTo(lexicalText("published body"));
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -171,7 +171,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         long filedId = createItem(owner, trailId, "Filed");
         long looseId = postForId(owner, "/api/project/" + pid(source) + "/item", """
                 {"title":"Loose one"}""");
-        setContent(owner, looseId, "loose body");
+        setContent(owner, looseId, lexicalText("loose body"));
         if (published) publish(owner, source);
 
         Project fork = forkOf(forker, source);
@@ -180,7 +180,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         assertThat(all).extracting(Item::getTitle).containsExactlyInAnyOrder("Filed", "Loose one");
 
         Item looseCopy = all.stream().filter(i -> i.getTitle().equals("Loose one")).findFirst().orElseThrow();
-        assertThat(looseCopy.getContent().getContent()).isEqualTo("loose body");
+        assertThat(looseCopy.getContent().getContent()).isEqualTo(lexicalText("loose body"));
         assertThat(looseCopy.getProject().getId()).isEqualTo(fork.getId());
         assertThat(itemsOf(fork)).extracting(Item::getTitle).containsExactly("Filed");
 
@@ -195,7 +195,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, source, "T");
         long first = createItem(owner, trailId, "First");
         long second = createItem(owner, trailId, "Second");
-        setContent(owner, first, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + second + "\",\"children\":[{\"type\":\"text\",\"text\":\"Second\"}]}]}}");
+        setContent(owner, first, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + second + "\",\"children\":[{\"type\":\"text\",\"text\":\"Second\"}]}]}}");
         if (published) publish(owner, source);
 
         Project fork = forkOf(forker, source);

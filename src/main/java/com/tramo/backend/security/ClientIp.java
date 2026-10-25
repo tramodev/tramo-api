@@ -11,6 +11,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 
@@ -37,12 +38,17 @@ public class ClientIp {
         if (signingKey.length == 0) return false;
         String ip = request.getHeader("X-Tramo-Client-IP");
         String signature = request.getHeader("X-Tramo-Signature");
-        if (ip == null || ip.length() > 45 || !ip.matches("[0-9a-fA-F:.]+")
-                || signature == null || signature.length() != 64) return false;
+        String timestamp = request.getHeader("X-Tramo-Timestamp");
+        if (ip == null || ip.length() > 45 || !(ip.matches("[0-9a-fA-F:.]+") || isPublicCacheRequest(request))
+                || signature == null || signature.length() != 64
+                || timestamp == null || !timestamp.matches("[0-9]{1,12}")) return false;
         try {
+            long now = Instant.now().getEpochSecond();
+            long signedAt = Long.parseLong(timestamp);
+            if (signedAt < now - 60 || signedAt > now + 60) return false;
             String target = request.getRequestURI()
                     + (request.getQueryString() == null ? "" : "?" + request.getQueryString());
-            String payload = ip + "\n" + request.getMethod() + "\n" + target;
+            String payload = ip + "\n" + timestamp + "\n" + request.getMethod() + "\n" + target;
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(signingKey, "HmacSHA256"));
             return MessageDigest.isEqual(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)),
@@ -52,6 +58,14 @@ public class ClientIp {
         } catch (GeneralSecurityException ex) {
             throw new IllegalStateException("BFF signature verification unavailable", ex);
         }
+    }
+
+    public boolean isPublicCacheRequest(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return "public-cache".equals(request.getHeader("X-Tramo-Client-IP"))
+                && "GET".equals(request.getMethod())
+                && (path.startsWith("/api/public/content/") || path.equals("/api/public/sitemap/projects")
+                || path.equals("/api/public/sitemap/users"));
     }
 
     public String from(HttpServletRequest request) {

@@ -38,7 +38,7 @@ class ItemImageReferenceBackfillTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(content))
+                        .content(contentRequest(lexicalText(content))))
                 .andExpect(status().isNoContent());
         return itemId;
     }
@@ -47,7 +47,7 @@ class ItemImageReferenceBackfillTest extends AbstractIntegrationTest {
     void backfillInsertsReferencesForImagesAlreadyInContent() throws Exception {
         User owner = createUser("backfill1");
         String url = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
-        seedItemWithContent(owner, "{\"content\":\"look at " + url + " here\"}");
+        seedItemWithContent(owner, "look at " + url + " here");
         itemImageReferenceRepository.deleteAll();
 
         runner.run(null);
@@ -61,7 +61,7 @@ class ItemImageReferenceBackfillTest extends AbstractIntegrationTest {
     void backfillIsANoopWhenReferencesAlreadyExist() throws Exception {
         User owner = createUser("backfill2");
         String url = r2PublicBaseUrl + "/editor-image/999999/deadbeefcafefeed.jpg";
-        seedItemWithContent(owner, "{\"content\":\"look at " + url + " here\"}");
+        seedItemWithContent(owner, "look at " + url + " here");
         long before = itemImageReferenceRepository.count();
         assertThat(before).isEqualTo(1);
 
@@ -73,7 +73,7 @@ class ItemImageReferenceBackfillTest extends AbstractIntegrationTest {
     @Test
     void backfillIgnoresItemsWithoutImages() throws Exception {
         User owner = createUser("backfill3");
-        seedItemWithContent(owner, "{\"content\":\"plain text only\"}");
+        seedItemWithContent(owner, "plain text only");
         itemImageReferenceRepository.deleteAll();
 
         runner.run(null);
@@ -84,7 +84,7 @@ class ItemImageReferenceBackfillTest extends AbstractIntegrationTest {
     @Test
     void backfillIgnoresForeignImageUrls() throws Exception {
         User owner = createUser("backfill4");
-        seedItemWithContent(owner, "{\"content\":\"see https://evil.example.com/a/b.png now\"}");
+        seedItemWithContent(owner, "see https://evil.example.com/a/b.png now");
         itemImageReferenceRepository.deleteAll();
 
         runner.run(null);

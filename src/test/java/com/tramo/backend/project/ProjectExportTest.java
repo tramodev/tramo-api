@@ -117,7 +117,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
                 Map.of("type", "equation", "equation", "x^2+1", "inline", true), Map.of("type", "music", "abc", "X:1\nK:C\nCDE"),
                 Map.of("type", "horizontalrule"), Map.of("type", "table", "children", List.of(Map.of("type", "tablerow", "children", List.of(Map.of("type", "tablecell", "headerState", 1, "colSpan", 2, "children", List.of(Map.of("type", "text", "text", "Cell"))))))),
                 Map.of("type", "future-node", "payload", "Unrecognized preserved")))));
-        itemService.updateContent(f.shared, content, f.owner);
+        jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", content, f.shared);
         var entries = unzip(download(f));
         String html = html(entries);
         assertThat(html).contains("&lt;script&gt;", "&lt;img", "<h2>Heading</h2>", "<blockquote>", "<ol start=\"3\">", "type=\"checkbox\" disabled checked", "<pre data-language=\"javascript\">", "href=\"#note-" + f.loose, "href=\"https://example.com\"", "x^2+1", "X:1", "colspan=\"2\"", "Unrecognized preserved", "Export warnings");
@@ -174,7 +174,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         items.findById(f.shared).orElseThrow();
         jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", imageContent(id), f.shared);
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(f.owner))).andExpect(status().isConflict());
-        jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", "{\"root\":{\"children\":[{\"type\":\"image\",\"src\":\"http://127.0.0.1/secret\"}]}}", f.shared);
+        jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\",\"src\":\"http://127.0.0.1/secret\"}]}}", f.shared);
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(f.owner))).andExpect(status().isConflict());
         verify(s3Client, never()).getObject(any(GetObjectRequest.class));
     }
@@ -189,7 +189,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         try {
             Future<Path> future = pool.submit(() -> exports.prepare(f.project.getId(), f.owner));
             assertThat(reading.await(15, TimeUnit.SECONDS)).isTrue();
-            itemService.updateContent(f.shared, "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"new content\"}]}}", f.owner);
+            itemService.updateContent(f.shared, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"new content\"}]}}", f.owner);
             resume.countDown();
             Path archive = future.get(20, TimeUnit.SECONDS);
             try { assertThat(json(unzip(Files.readAllBytes(archive))).path("items").get(0).path("content").asText()).isEqualTo(original); }

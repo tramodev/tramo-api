@@ -32,7 +32,7 @@ class MapPreviewTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
 
-        String content = "{\"root\":{\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"From first\"}]},{\"type\":\"paragraph\",\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + target + "\",\"children\":[{\"type\":\"text\",\"text\":\"Second link\"}]}]}]}}";
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"From first\"}]},{\"type\":\"paragraph\",\"children\":[{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + target + "\",\"children\":[{\"type\":\"text\",\"text\":\"Second link\"}]}]}]}}";
         mockMvc.perform(put("/api/item/" + source + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)

@@ -192,7 +192,7 @@ class ProjectStartTest extends AbstractIntegrationTest {
                 .doesNotContain("Related note:");
         assertThat(itemService.getContent(tokenNotes.get(1).id(), owner).getContent())
                 .contains("\"rel\":\"tramo-idea:" + shared + "\"");
-        String edited = "{\"root\":{\"children\":[{\"text\":\"Edited Memex\"}]}}";
+        String edited = lexicalText("Edited Memex");
         itemService.updateContent(shared, edited, owner);
         for (Long trailId : new Long[]{basics, tokens}) {
             assertThat(itemService.getContentsForTrail(trailId, owner).stream().filter(note -> note.id().equals(shared)).findFirst().orElseThrow().content()).isEqualTo(edited);

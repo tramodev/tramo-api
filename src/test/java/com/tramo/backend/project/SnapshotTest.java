@@ -70,8 +70,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"Hello frozen world"}"""))
+                        .content(contentRequest(lexicalText("Hello frozen world"))))
                 .andExpect(status().isNoContent());
 
         setVisibility(owner, project, "published");
@@ -88,20 +87,19 @@ class SnapshotTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.content.trails[0].title").value("Trail 0"))
                 .andExpect(jsonPath("$.content.trails[0].version").value(2))
-                .andExpect(jsonPath("$.content.trails[0].items[0].content").value("Hello frozen world"));
+                .andExpect(jsonPath("$.content.trails[0].items[0].content").value(lexicalText("Hello frozen world")));
 
         
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"Edited after publish"}"""))
+                        .content(contentRequest(lexicalText("Edited after publish"))))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/versions/" + snapshotId)
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.trails[0].items[0].content").value("Hello frozen world"));
+                .andExpect(jsonPath("$.content.trails[0].items[0].content").value(lexicalText("Hello frozen world")));
     }
 
     @Test
@@ -132,8 +130,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"Published content"}"""))
+                        .content(contentRequest(lexicalText("Published content"))))
                 .andExpect(status().isNoContent());
 
         setVisibility(owner, project, "published");
@@ -141,8 +138,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"Unpublished draft edit"}"""))
+                        .content(contentRequest(lexicalText("Unpublished draft edit"))))
                 .andExpect(status().isNoContent());
 
         String forkId = postForProjectId(forker, "/api/project/" + pid(project) + "/fork", "");
@@ -150,7 +146,7 @@ class SnapshotTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/item/" + forkedItemId + "/content").header("Authorization", bearer(forker)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").value("Published content"));
+                .andExpect(jsonPath("$.content").value(lexicalText("Published content")));
     }
 
     private long firstItemIdOfFork(String forkId, User forker) throws Exception {
@@ -177,8 +173,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"Never published content"}"""))
+                        .content(contentRequest(lexicalText("Never published content"))))
                 .andExpect(status().isNoContent());
         setVisibility(owner, project, "unlisted");
 
@@ -187,7 +182,7 @@ class SnapshotTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/item/" + forkedItemId + "/content").header("Authorization", bearer(forker)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").value("Never published content"));
+                .andExpect(jsonPath("$.content").value(lexicalText("Never published content")));
     }
 
     @Test

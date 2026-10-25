@@ -86,7 +86,7 @@ public class ProjectVersionService {
         em.flush();
         Map<Long, Item> restored = new LinkedHashMap<>();
         for (var row : data.items()) {
-            ContentLimits.assertNote(row.content());
+            ContentLimits.assertEditorNote(row.content());
             Item item = currentById.get(row.id());
             if (item == null || item.getProject() == null || !id.equals(item.getProject().getId()) || shared.contains(row.id())) {
                 item = new Item(); item.setProject(project); item.setCreatedDate(new Date());

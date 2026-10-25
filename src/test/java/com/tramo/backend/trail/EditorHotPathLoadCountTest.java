@@ -39,8 +39,7 @@ class EditorHotPathLoadCountTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"content":"%s"}""".formatted(text)))
+                        .content(contentRequest(lexicalText(text))))
                 .andExpect(status().isNoContent());
     }
 

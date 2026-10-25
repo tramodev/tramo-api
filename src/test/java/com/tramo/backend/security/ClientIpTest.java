@@ -12,12 +12,14 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -26,13 +28,18 @@ class ClientIpTest {
     private static final String KEY = "dGVzdC1iZmYtc2lnbmluZy1rZXktdGVzdC1iZmYta2V5";
 
     private MockHttpServletRequest signed(String ip) throws Exception {
-        var request = new MockHttpServletRequest("POST", "/api/auth/login");
+        return signed(ip, Instant.now().getEpochSecond(), "POST", "/api/auth/login");
+    }
+
+    private MockHttpServletRequest signed(String ip, long timestamp, String method, String path) throws Exception {
+        var request = new MockHttpServletRequest(method, path);
+        request.addHeader("X-Tramo-Timestamp", Long.toString(timestamp));
         request.setRemoteAddr("10.0.0.1");
         request.addHeader("X-Tramo-Client-IP", ip);
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(Base64.getDecoder().decode(KEY), "HmacSHA256"));
         request.addHeader("X-Tramo-Signature", HexFormat.of().formatHex(
-                mac.doFinal((ip + "\nPOST\n/api/auth/login").getBytes(StandardCharsets.UTF_8))));
+                mac.doFinal((ip + "\n" + timestamp + "\n" + method + "\n" + path).getBytes(StandardCharsets.UTF_8))));
         return request;
     }
 
@@ -68,11 +75,62 @@ class ClientIpTest {
     }
 
     @Test
-    void acceptsSignatureProducedByTheNodeBff() {
-        var request = new MockHttpServletRequest("POST", "/api/auth/login");
-        request.addHeader("X-Tramo-Client-IP", "1.2.3.4");
-        request.addHeader("X-Tramo-Signature", "e36496881db5ace152845ee2aa32d4d3ea4663c701e53289938e271771f87afc");
-        assertThat(new ClientIp(KEY).isTrusted(request)).isTrue();
+    void acceptsNodeSignatureAndEnforcesExactClockWindow() throws Exception {
+        Instant now = Instant.ofEpochSecond(1800000000);
+        try (var clock = mockStatic(Instant.class)) {
+            clock.when(Instant::now).thenReturn(now);
+            var clientIp = new ClientIp(KEY);
+            var request = new MockHttpServletRequest("POST", "/api/auth/login");
+            request.addHeader("X-Tramo-Client-IP", "1.2.3.4");
+            request.addHeader("X-Tramo-Timestamp", "1800000000");
+            request.addHeader("X-Tramo-Signature", "9f54754548f5f0061dd186e7c21647446826bfbc7d29a3f29a1b2c201cffc2ad");
+            assertThat(clientIp.isTrusted(request)).isTrue();
+            for (long offset : new long[]{-61, -60, 60, 61}) {
+                assertThat(clientIp.isTrusted(signed("1.2.3.4", 1800000000 + offset, "POST", "/api/auth/login")))
+                        .isEqualTo(Math.abs(offset) <= 60);
+            }
+        }
+    }
+
+    @Test
+    void rejectsExpiredFutureMissingAndTamperedTimestamps() throws Exception {
+        var clientIp = new ClientIp(KEY);
+        long now = Instant.now().getEpochSecond();
+        for (long offset : new long[]{-120, 120, Long.MAX_VALUE / 2}) {
+            assertThat(clientIp.isTrusted(signed("1.2.3.4", now + offset, "POST", "/api/auth/login"))).isFalse();
+        }
+        for (long offset : new long[]{-59, 59}) {
+            assertThat(clientIp.isTrusted(signed("1.2.3.4", now + offset, "POST", "/api/auth/login"))).isTrue();
+        }
+        for (String timestamp : new String[]{"", "invalid", Long.toString(now + 1)}) {
+            var request = signed("1.2.3.4", now, "POST", "/api/auth/login");
+            request.removeHeader("X-Tramo-Timestamp");
+            request.addHeader("X-Tramo-Timestamp", timestamp);
+            assertThat(clientIp.isTrusted(request)).isFalse();
+        }
+        var missing = signed("1.2.3.4");
+        missing.removeHeader("X-Tramo-Timestamp");
+        assertThat(clientIp.isTrusted(missing)).isFalse();
+    }
+
+    @Test
+    void publicCacheRequestsDoNotConsumeClientBuckets() throws Exception {
+        var chain = mock(FilterChain.class);
+        var limiter = mock(RateLimiterService.class);
+        var filter = new RateLimitFilter(limiter, new ClientIp(KEY));
+        var request = signed("public-cache", Instant.now().getEpochSecond(), "GET", "/api/public/content/blog");
+        var response = new MockHttpServletResponse();
+        filter.doFilter(request, response, chain);
+        verify(chain).doFilter(request, response);
+        verifyNoInteractions(limiter);
+        for (String path : new String[]{"/api/public/explore", "/api/auth/login"}) {
+            assertThat(new ClientIp(KEY).isTrusted(signed("public-cache", Instant.now().getEpochSecond(), "GET", path))).isFalse();
+        }
+        request.removeHeader("X-Tramo-Signature");
+        var rejected = new MockHttpServletResponse();
+        filter.doFilter(request, rejected, chain);
+        assertThat(rejected.getStatus()).isEqualTo(401);
+        verifyNoInteractions(limiter);
     }
 
     @Test

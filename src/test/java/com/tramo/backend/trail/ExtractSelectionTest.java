@@ -129,9 +129,9 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         Fixture f = fixture(); var request = request(f, true, UUID.randomUUID()); long count = repository.count();
         items.reorderTrailItems(f.trail, List.of(f.last, f.source), f.user);
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
-        items.updateContent(f.source, "changed", f.user);
+        items.updateContent(f.source, lexicalText("changed"), f.user);
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
-        assertThat(repository.count()).isEqualTo(count); assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo("changed");
+        assertThat(repository.count()).isEqualTo(count); assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(lexicalText("changed"));
     }
     @Test
     void rejectsForeignUserAndProjectAndUnsupportedSelection() throws Exception {
@@ -151,9 +151,9 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         String confirmed = result.path("sourceContent").asText();
         mockMvc.perform(put("/api/item/" + f.source + "/content").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(Map.of("content", confirmed, "expectedContent", confirmed, "extractionEpoch", 1)))).andExpect(status().isNoContent());
         assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(confirmed);
-        items.updateContent(f.source, "other tab", 1, f.user);
+        items.updateContent(f.source, lexicalText("other tab"), 1, f.user);
         mockMvc.perform(put("/api/item/" + f.source + "/content").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(Map.of("content", confirmed, "expectedContent", confirmed, "extractionEpoch", 1)))).andExpect(status().isConflict());
-        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo("other tab");
+        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(lexicalText("other tab"));
     }
     @Test
     void failureAfterCreationRollsBackNewNoteAndAllSourceChanges() throws Exception {

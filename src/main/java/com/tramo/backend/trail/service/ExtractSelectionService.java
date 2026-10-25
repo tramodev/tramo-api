@@ -49,8 +49,8 @@ public class ExtractSelectionService {
 
     @Transactional
     public ExtractSelectionResponse extract(Long projectId, Long sourceId, ExtractSelectionRequest request, User user) {
-        ContentLimits.assertNote(request.extractedContent());
-        ContentLimits.assertNote(request.sourceContent());
+        ContentLimits.assertEditorNote(request.extractedContent());
+        ContentLimits.assertEditorNote(request.sourceContent());
         var project = history.lock(projectId, user);
         jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", request.operationId().toString());
         String fingerprint = hash(projectId + ":" + sourceId + ":" + mapper.writeValueAsString(request));

@@ -46,6 +46,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 @AutoConfigureMockMvc
 public abstract class AbstractIntegrationTest {
 
+    protected static String lexicalText(String text) {
+        return new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("root",
+                java.util.Map.of("type", "root", "version", 1, "children", List.of(
+                        java.util.Map.of("type", "paragraph", "version", 1, "children", List.of(
+                                java.util.Map.of("type", "text", "version", 1, "text", text)))))));
+    }
+
+    protected static String contentRequest(String content) {
+        return new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", content));
+    }
+
     protected static final String TEST_JWT_SECRET = "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=";
     protected static final String TEST_PATREON_WEBHOOK_SECRET = "test-patreon-webhook-secret";
     protected static final String TEST_TOKEN_ENCRYPTION_KEY = "rRbqGbbP1Sfjmqi+lEZKzNlTztGZy1wcqzu9sVEgEAU=";

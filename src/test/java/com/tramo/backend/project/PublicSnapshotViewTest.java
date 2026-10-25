@@ -49,7 +49,7 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"" + content + "\"}"))
+                        .content(contentRequest(lexicalText(content))))
                 .andExpect(status().isNoContent());
     }
 
@@ -82,7 +82,7 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.trails[0].title").value("Chapter one"))
                 .andExpect(jsonPath("$.trails[0].items.length()").value(2))
                 .andExpect(jsonPath("$.trails[0].items[0].title").value("A"))
-                .andExpect(jsonPath("$.trails[0].items[0].content").value("body of A"));
+                .andExpect(jsonPath("$.trails[0].items[0].content").value(lexicalText("body of A")));
     }
 
     @Test
@@ -97,7 +97,7 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.trails[0].items[0].content").value("published body"));
+                .andExpect(jsonPath("$.trails[0].items[0].content").value(lexicalText("published body")));
     }
 
     @Test

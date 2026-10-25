@@ -37,7 +37,7 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
                 {"title":"Has an image"}""");
 
         String content = """
-                {"root":{"children":[{"type":"text","text":"%s"}]}}""".formatted(imageUrl);
+                {"root":{"type":"root","children":[{"type":"text","text":"%s"}]}}""".formatted(imageUrl);
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)

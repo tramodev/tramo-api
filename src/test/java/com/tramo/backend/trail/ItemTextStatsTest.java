@@ -33,7 +33,7 @@ class ItemTextStatsTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
         jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) "
                 + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", foreign, shared);
-        String content = "{\"root\":{\"children\":[{\"text\":\"hello world\"}]}}";
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"hello world\"}]}}";
         mockMvc.perform(put("/api/item/" + shared + "/content").header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of("content", content))))
                 .andExpect(status().isNoContent());

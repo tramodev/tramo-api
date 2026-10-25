@@ -185,7 +185,7 @@ public class ProjectForkService {
             catch (RuntimeException invalid) { continue; }
             if (retargetMentions(root, itemCopies)) {
                 String rewritten = objectMapper.writeValueAsString(root);
-                ContentLimits.assertNote(rewritten);
+                ContentLimits.assertEditorNote(rewritten);
                 content.setContent(rewritten);
             }
         }
@@ -219,7 +219,7 @@ public class ProjectForkService {
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (itemData.content() != null) {
-            ContentLimits.assertNote(itemData.content());
+            ContentLimits.assertEditorNote(itemData.content());
             ItemContent contentCopy = new ItemContent();
             contentCopy.setContent(itemData.content());
             contentCopy.setUpdatedDate(new Date());

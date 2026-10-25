@@ -370,7 +370,7 @@ public class ItemService {
 
     @Transactional
     public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
-        ContentLimits.assertNote(content);
+        ContentLimits.assertEditorNote(content);
         Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);

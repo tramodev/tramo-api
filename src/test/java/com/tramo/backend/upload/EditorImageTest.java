@@ -176,7 +176,7 @@ class EditorImageTest extends AbstractIntegrationTest {
         User owner = createUser("writer");
         Project project = createProject(owner, "Note", "PRIVATE");
         long item = postForId(owner, "/api/project/" + pid(project) + "/item", "{\"title\":\"Note\"}");
-        updateContent(item, owner, "{\"root\":{\"children\":[{\"type\":\"image\",\"src\":\"https://example.com/private.jpg\"}]}}", 400);
+        updateContent(item, owner, "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\",\"src\":\"https://example.com/private.jpg\"}]}}", 400);
         updateContent(item, owner, content(UUID.randomUUID()), 404);
         String pending = mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(owner))
                 .contentType("application/json").content(request(project))).andExpect(status().isOk())
@@ -663,7 +663,7 @@ class EditorImageTest extends AbstractIntegrationTest {
     }
 
     private String content(UUID image) {
-        return "{\"root\":{\"children\":[{\"type\":\"image\",\"version\":2,\"imageId\":\"" + image + "\"}]}}";
+        return "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\",\"version\":2,\"imageId\":\"" + image + "\"}]}}";
     }
 
     private void updateContent(long item, User owner, String content, int status) throws Exception {
@@ -688,7 +688,7 @@ class EditorImageTest extends AbstractIntegrationTest {
         UUID imageId = upload(project, owner);
         long itemId = saveImage(project, owner, imageId);
         var manual = versions.create(project.getId(), "With image", owner);
-        itemService.updateContent(itemId, "without image", owner);
+        itemService.updateContent(itemId, lexicalText("without image"), owner);
         jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
         assertThat(imageRepository.cleanupCandidates()).isEmpty();
         String body = "{\"imageIds\":[\"" + imageId + "\"],\"versionId\":" + manual.id() + "}";

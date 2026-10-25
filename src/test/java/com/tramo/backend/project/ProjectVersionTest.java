@@ -33,7 +33,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         Trail trail = new Trail(); trail.setTitle("Trail"); trail.setProject(project);
         trail = trailRepository.save(trail);
         Item item = new Item(); item.setTitle("Note"); item.setTitleAlign("center"); item.setProject(project);
-        ItemContent content = new ItemContent(); content.setContent("before"); item.setContent(content);
+        ItemContent content = new ItemContent(); content.setContent(lexicalText("before")); item.setContent(content);
         item = itemRepository.save(item);
         TrailItem membership = new TrailItem(); membership.setTrail(trail); membership.setItem(item); memberships.save(membership);
         return new Fixture(user, project, trail.getId(), item.getId());
@@ -41,7 +41,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     long autoCount(Fixture f) {
         return jdbcTemplate.queryForObject("select count(*) from project_version where project_id = ? and type = 'AUTO'", Long.class, f.project.getId());
     }
-    void edit(Fixture f, String content) { items.updateContent(f.item, content, f.user); }
+    void edit(Fixture f, String content) { items.updateContent(f.item, lexicalText(content), f.user); }
 
     @Test
     void creatingSnapshotRequiresEpochBeforeAndAfterRestore() throws Exception {
@@ -75,16 +75,16 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         String url = "/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore";
         mockMvc.perform(post(url).header("Authorization", bearer(f.user)))
                 .andExpect(status().is(428)).andExpect(jsonPath("$.code").value("PROJECT_EPOCH_REQUIRED"));
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("important work");
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("important work"));
         mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1"))
                 .andExpect(status().isConflict());
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("important work");
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("important work"));
         mockMvc.perform(post(url).header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.restoreEpoch").value(1));
         mockMvc.perform(post(url).header("Authorization", bearer(f.user)))
                 .andExpect(status().is(428));
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1")
-                .contentType("application/json").content("{\"content\":\"stale\",\"extractionEpoch\":0}"))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("stale"), "extractionEpoch", 0))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("restored or extracted")));
     }
 
@@ -93,8 +93,8 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var f = fixture(); edit(f, "after"); edit(f, "later");
         var rows = versions.list(f.project.getId(), null, f.user).versions();
         assertThat(rows).hasSize(1);
-        assertThat(versions.detail(f.project.getId(), rows.get(0).id(), f.user).snapshot().items().get(0).content()).isEqualTo("before");
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("later");
+        assertThat(versions.detail(f.project.getId(), rows.get(0).id(), f.user).snapshot().items().get(0).content()).isEqualTo(lexicalText("before"));
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("later"));
     }
 
     @Test
@@ -113,7 +113,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         edit(f, "two");
         assertThat(autoCount(f)).isEqualTo(2);
         var latest = versions.list(f.project.getId(), null, f.user).versions().get(0);
-        assertThat(versions.detail(f.project.getId(), latest.id(), f.user).snapshot().items().get(0).content()).isEqualTo("one");
+        assertThat(versions.detail(f.project.getId(), latest.id(), f.user).snapshot().items().get(0).content()).isEqualTo(lexicalText("one"));
     }
 
     @Test
@@ -139,7 +139,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
             var second = pool.submit(() -> { gate.await(); edit(f, "second"); return true; });
             gate.countDown(); first.get(15, TimeUnit.SECONDS); second.get(15, TimeUnit.SECONDS);
             assertThat(autoCount(f)).isEqualTo(1);
-            assertThat(items.getContent(f.item, f.user).getContent()).isIn("first", "second");
+            assertThat(items.getContent(f.item, f.user).getContent()).isIn(lexicalText("first"), lexicalText("second"));
         } finally { pool.shutdownNow(); }
     }
 
@@ -177,7 +177,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         metadata.setGraphColors("{}"); projects.update(f.project.getId(), metadata, f.user);
         long epoch = versions.restore(f.project.getId(), manual.id(), f.user);
         assertThat(epoch).isEqualTo(1);
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("before");
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("before"));
         assertThat(trails.getAllForProject(f.project.getId(), f.user)).hasSize(2);
         assertThat(itemRepository.findByProjectId(f.project.getId())).hasSize(1);
         assertThat(memberships.findByItemId(f.item)).hasSize(2);
@@ -195,18 +195,18 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var manual = versions.create(f.project.getId(), null, f.user);
         edit(f, "current shared");
         versions.restore(f.project.getId(), manual.id(), f.user);
-        assertThat(items.getContent(f.item, outsideOwner).getContent()).isEqualTo("current shared");
+        assertThat(items.getContent(f.item, outsideOwner).getContent()).isEqualTo(lexicalText("current shared"));
         var local = itemRepository.findByProjectId(f.project.getId());
         assertThat(local).hasSize(1);
         assertThat(local.get(0).getId()).isNotEqualTo(f.item);
-        assertThat(local.get(0).getContent().getContent()).isEqualTo("before");
+        assertThat(local.get(0).getContent().getContent()).isEqualTo(lexicalText("before"));
         assertThat(items.getAllForTrail(outside.getId(), outsideOwner).get(0).id()).isEqualTo(f.item);
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user))
                 .header("X-Project-Epoch", "0").header("X-Project-Id", pid(f.project))
-                .contentType("application/json").content("{\"content\":\"obsolete from restored project\",\"extractionEpoch\":0}"))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("obsolete from restored project"), "extractionEpoch", 0))))
                 .andExpect(status().isConflict());
-        items.updateContent(f.item, "outside edit", outsideOwner);
-        assertThat(itemRepository.findByProjectId(f.project.getId()).get(0).getContent().getContent()).isEqualTo("before");
+        items.updateContent(f.item, lexicalText("outside edit"), outsideOwner);
+        assertThat(itemRepository.findByProjectId(f.project.getId()).get(0).getContent().getContent()).isEqualTo(lexicalText("before"));
     }
 
     @Test
@@ -236,12 +236,12 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
         versions.restore(f.project.getId(), manual.id(), f.user);
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
-                .contentType("application/json").content("{\"content\":\"stale\",\"expectedContent\":\"before\",\"extractionEpoch\":1}"))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("stale"), "expectedContent", lexicalText("before"), "extractionEpoch", 1))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PROJECT_VERSION_CONFLICT"));
         mockMvc.perform(put("/api/item/" + f.item).header("Authorization", bearer(f.user)).contentType("application/json").content("{\"title\":\"stale\"}"))
                 .andExpect(status().isConflict());
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1")
-                .contentType("application/json").content("{\"content\":\"fresh\",\"expectedContent\":\"before\",\"extractionEpoch\":1}"))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("fresh"), "expectedContent", lexicalText("before"), "extractionEpoch", 1))))
                 .andExpect(status().isNoContent());
     }
     @Test
@@ -261,7 +261,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
         jdbcTemplate.update("update project_version set snapshot = jsonb_set(snapshot::jsonb, '{items,0,content}', to_jsonb(repeat('x', 1048577)))::text where id = ?", manual.id());
         assertThatThrownBy(() -> versions.restore(f.project.getId(), manual.id(), f.user)).isInstanceOf(com.tramo.backend.exception.PayloadTooLargeException.class);
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("before");
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("before"));
         assertThat(versions.list(f.project.getId(), null, f.user).versions()).hasSize(1);
         assertThat(projectRepository.findById(f.project.getId()).orElseThrow().getRestoreEpoch()).isZero();
     }
@@ -296,7 +296,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
             var save = pool.submit(() -> {
                 gate.await();
                 return mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
-                        .contentType("application/json").content("{\"content\":\"concurrent\",\"expectedContent\":\"before\",\"extractionEpoch\":0}"))
+                        .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("concurrent"), "expectedContent", lexicalText("before"), "extractionEpoch", 0))))
                         .andReturn().getResponse().getStatus();
             });
             var restore = pool.submit(() -> {
@@ -308,7 +308,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
             gate.countDown();
             assertThat(save.get(15, TimeUnit.SECONDS)).isIn(204, 409);
             assertThat(restore.get(15, TimeUnit.SECONDS)).isEqualTo(200);
-            assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo("before");
+            assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("before"));
             assertThat(projectRepository.findById(f.project.getId()).orElseThrow().getRestoreEpoch()).isEqualTo(1);
         } finally { pool.shutdownNow(); }
     }
@@ -320,7 +320,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/project/" + pid(f.project) + "/trail/order").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
                 .contentType("application/json").content("{\"trailIds\":[" + f.trail + "]}")).andExpect(status().isConflict());
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.item + "/extract").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
-                .contentType("application/json").content("{\"operationId\":\"" + UUID.randomUUID() + "\",\"title\":\"Extract\",\"expectedContent\":\"before\",\"sourceContent\":\"{}\",\"extractedContent\":\"{}\",\"extractionEpoch\":1,\"appendToTrail\":false}"))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("operationId", UUID.randomUUID(), "title", "Extract", "expectedContent", lexicalText("before"), "sourceContent", lexicalText("source"), "extractedContent", lexicalText("selection"), "extractionEpoch", 1, "appendToTrail", false))))
                 .andExpect(status().isConflict());
     }
 
@@ -329,8 +329,8 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         var f = fixture();
         ItemRequestDTO request = new ItemRequestDTO(); request.setTitle("Target");
         Long target = items.create(f.trail, request, f.user).getId();
-        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + target + "\",\"children\":[]}]}}";
-        edit(f, content);
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-idea:" + target + "\",\"children\":[]}]}}";
+        items.updateContent(f.item, content, f.user);
         var manual = versions.create(f.project.getId(), "Links", f.user);
         items.delete(f.item, f.user); items.delete(target, f.user);
         versions.restore(f.project.getId(), manual.id(), f.user);

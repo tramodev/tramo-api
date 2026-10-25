@@ -74,7 +74,7 @@ public class ProjectStartService {
         entityManager.find(User.class, user.getId(), LockModeType.PESSIMISTIC_WRITE);
         var existing = draftCommits.findByUserIdAndClientRequestId(user.getId(), request.clientRequestId());
         if (existing.isPresent()) return draftResult(existing.get());
-        ContentLimits.assertNote(request.item().content());
+        ContentLimits.assertEditorNote(request.item().content());
         if (java.util.stream.Stream.of(request.project().title(), request.trail().title(), request.item().title()).noneMatch(this::visibleText)
                 && !meaningfulContent(request.item().content())) throw new RequestValidationException(RequestErrorCode.EDITOR_CONTENT_INVALID);
         var project = new Project();

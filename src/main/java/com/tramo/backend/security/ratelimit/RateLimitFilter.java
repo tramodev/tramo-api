@@ -49,6 +49,11 @@ public class RateLimitFilter implements Filter {
             return;
         }
 
+        if (clientIp.isPublicCacheRequest(req) && clientIp.isTrusted(req)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         String ip = clientIp.from(req);
         String path = req.getRequestURI();
 

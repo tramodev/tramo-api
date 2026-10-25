@@ -26,7 +26,7 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
 
     private DraftCommitRequest request(UUID id, String content) {
         return new DraftCommitRequest(id, new DraftCommitRequest.NamedEntity("My project"),
-                new DraftCommitRequest.NamedEntity("My trail"), new DraftCommitRequest.DraftItem("My note", "left", content));
+                new DraftCommitRequest.NamedEntity("My trail"), new DraftCommitRequest.DraftItem("My note", "left", lexicalText(content)));
     }
 
     @Test
@@ -41,10 +41,10 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
             assertThat(second.get()).isEqualTo(result);
             assertThat(itemService.getAllForTrail(result.trailId(), owner).get(0).titleAlign()).isEqualTo("left");
             assertThat(projectRepository.count()).isEqualTo(1);
-            assertThat(itemService.getContent(result.itemId(), owner).getContent()).isEqualTo("first");
-            itemService.updateContent(result.itemId(), "latest", owner);
+            assertThat(itemService.getContent(result.itemId(), owner).getContent()).isEqualTo(lexicalText("first"));
+            itemService.updateContent(result.itemId(), lexicalText("latest"), owner);
             assertThat(starter.commitDraft(request(request.clientRequestId(), "stale"), owner)).isEqualTo(result);
-            assertThat(itemService.getContent(result.itemId(), owner).getContent()).isEqualTo("latest");
+            assertThat(itemService.getContent(result.itemId(), owner).getContent()).isEqualTo(lexicalText("latest"));
             var other = createUser("draftother");
             assertThat(starter.commitDraft(request, other).projectId()).isNotEqualTo(result.projectId());
         } finally {
@@ -84,7 +84,7 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
         var owner = createUser("draftdefaults");
         var empty = new DraftCommitRequest.NamedEntity(" ");
         var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty,
-                new DraftCommitRequest.DraftItem("", "right", "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"Written\"}]}}"));
+                new DraftCommitRequest.DraftItem("", "right", "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"Written\"}]}}"));
         var result = starter.commitDraft(request, owner);
         assertThat(result.projectTitle()).isEqualTo("Untitled project");
         assertThat(result.trailTitle()).isEqualTo("My first trail");
@@ -100,7 +100,7 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
     void emptyBodiesAndInvisibleTitlesDoNotCreateProjects() {
         var owner = createUser("draftempty");
         var empty = new DraftCommitRequest.NamedEntity("\u200b");
-        for (String content : java.util.List.of("", "{\"root\":{\"children\":[]}}", "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"\u200b\"}]}}")) {
+        for (String content : java.util.List.of("", "{\"root\":{\"type\":\"root\",\"children\":[]}}", "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"\u200b\"}]}}")) {
             var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty, new DraftCommitRequest.DraftItem("", "left", content));
             assertThatThrownBy(() -> starter.commitDraft(request, owner)).isInstanceOf(IllegalArgumentException.class);
         }
