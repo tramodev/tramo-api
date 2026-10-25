@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 
@@ -23,11 +24,18 @@ import javax.crypto.SecretKey;
 @Service
 public class JwtService {
 
-    @Value("${app.jwt.secret}")
-    private String secretKey;
+    private final SecretKey key;
+    private final JwtParser parser;
+    private final long accessTokenTtlMs;
 
-    @Value("${app.jwt.access-token-ttl-ms:900000}")
-    private long accessTokenTtlMs;
+    public JwtService(@Value("${app.jwt.secret}") String secret,
+                      @Value("${app.jwt.access-token-ttl-ms:900000}") long accessTokenTtlMs) {
+        this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
+        if (accessTokenTtlMs <= 0) throw new IllegalArgumentException("Access token TTL must be positive");
+        this.accessTokenTtlMs = accessTokenTtlMs;
+        this.parser = Jwts.parser().verifyWith(key)
+                .requireIssuer("tramo-api").requireAudience("tramo-web").build();
+    }
 
     public String getToken(User user) {
         Map<String, Object> claims = new HashMap<>();
@@ -44,20 +52,13 @@ public class JwtService {
         return Jwts
                 .builder()
                 .claims(extraClaims)
+                .issuer("tramo-api")
+                .audience().add("tramo-web").and()
                 .subject(username)
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + accessTokenTtlMs))
-                .signWith(getKey())
+                .signWith(key)
                 .compact();
-    }
-
-    private SecretKey getKey() {
-        byte[] keyBytes= Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
-    }
-
-    public String getUsernameFromToken(String token) {
-        return getClaim(token, Claims::getSubject);
     }
 
     public Long getUserIdFromToken(String token) {
@@ -71,10 +72,6 @@ public class JwtService {
         }
     }
 
-    public boolean isTokenValid(String token) {
-        return !isTokenExpired(token);
-    }
-
     public boolean isSessionValid(String token, User user) {
         try {
             String version = getClaim(token, claims -> claims.get("sessionVersion", String.class));
@@ -86,11 +83,7 @@ public class JwtService {
 
     private Claims getAllClaims(String token)
     {
-        return Jwts
-                .parser()
-                .verifyWith(getKey())
-                .build()
-                .parseSignedClaims(token)
+        return parser.parseSignedClaims(token)
                 .getPayload();
     }
 
@@ -98,16 +91,6 @@ public class JwtService {
     {
         final Claims claims=getAllClaims(token);
         return claimsResolver.apply(claims);
-    }
-
-    private Date getExpiration(String token)
-    {
-        return getClaim(token, Claims::getExpiration);
-    }
-
-    private boolean isTokenExpired(String token)
-    {
-        return getExpiration(token).before(new Date());
     }
 
 }

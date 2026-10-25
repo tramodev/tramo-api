@@ -99,8 +99,9 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequestDTO loginRequest) {
-        return ResponseEntity.ok(sessionService.login(loginRequest));
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequestDTO loginRequest,
+                                             HttpServletRequest request) {
+        return ResponseEntity.ok(sessionService.login(loginRequest, clientIp.from(request)));
     }
 
     @PostMapping("/refresh")

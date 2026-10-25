@@ -62,6 +62,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
+        registry.add("app.auth.refresh-derivation-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.security.token-encryption-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.google.client-id", () -> "test-client-id");
         registry.add("app.patreon.client-id", () -> "test-patreon-client-id");

@@ -9,6 +9,7 @@ import com.tramo.backend.auth.entity.RefreshToken;
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.exception.InvalidTokenException;
 import com.tramo.backend.security.jwt.JwtService;
+import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,8 @@ import java.time.Instant;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.security.MessageDigest;
+import java.util.UUID;
 
 @Service
 public class SessionService {
@@ -36,19 +40,31 @@ public class SessionService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenRepository refreshTokenRepository;
     private final IdentityRateLimiter identityRateLimiter;
+    private final CaptchaVerifier captchaVerifier;
+    private final NotificationService notifications;
     private final byte[] refreshDerivationKey;
 
     public SessionService(UserRepository userRepository, JwtService jwtService,
                           AuthenticationManager authenticationManager,
                           RefreshTokenRepository refreshTokenRepository,
                           IdentityRateLimiter identityRateLimiter,
-                          @Value("${app.jwt.secret}") String secret) {
+                          CaptchaVerifier captchaVerifier, NotificationService notifications,
+                          @Value("${app.auth.refresh-derivation-key}") String refreshSecret,
+                          @Value("${app.jwt.secret}") String jwtSecret) {
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
         this.refreshTokenRepository = refreshTokenRepository;
         this.identityRateLimiter = identityRateLimiter;
-        this.refreshDerivationKey = Base64.getDecoder().decode(secret);
+        this.captchaVerifier = captchaVerifier;
+        this.notifications = notifications;
+        this.refreshDerivationKey = Base64.getDecoder().decode(refreshSecret);
+        if (refreshDerivationKey.length < 32) {
+            throw new IllegalArgumentException("Refresh derivation key must contain at least 32 bytes");
+        }
+        if (MessageDigest.isEqual(refreshDerivationKey, Base64.getDecoder().decode(jwtSecret))) {
+            throw new IllegalArgumentException("JWT and refresh derivation keys must be different");
+        }
     }
 
     public AuthResponse issueSession(User user) {
@@ -69,17 +85,15 @@ public class SessionService {
         refreshTokenRepository.save(rt);
     }
 
-    public AuthResponse login(LoginRequestDTO request) {
-        if (request.getUsername() != null && !request.getUsername().isBlank()) {
-            identityRateLimiter.check("login", request.getUsername(), 10, 10);
+    public AuthResponse login(LoginRequestDTO request, String clientIp) {
+        identityRateLimiter.checkLogin(request.getUsername(), clientIp, request.getCaptchaToken(), captchaVerifier);
+        try {
+            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(
+                    request.getUsername(), request.getPassword()));
+        } catch (BadCredentialsException failure) {
+            identityRateLimiter.recordLoginFailure(request.getUsername(), clientIp);
+            throw failure;
         }
-
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getUsername(),
-                        request.getPassword()
-                )
-        );
 
         User user = userRepository.findByUsernameIgnoreCase(request.getUsername())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
@@ -119,6 +133,9 @@ public class SessionService {
                 return issueSession(user, replacement);
             }
             refreshTokenRepository.deleteByUserId(user.getId());
+            user.setSessionVersion(UUID.randomUUID());
+            userRepository.save(user);
+            notifications.revokeSessionsAfterCommit(user.getId());
             throw new InvalidTokenException("Invalid refresh token");
         }
 

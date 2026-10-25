@@ -42,6 +42,13 @@ public class RateLimitFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
 
+        if (clientIp.requiresSignature(req) && !clientIp.isTrusted(req)) {
+            res.setStatus(401);
+            res.setContentType("application/json");
+            res.getWriter().write("{\"status\":401,\"message\":\"Invalid backend request\"}");
+            return;
+        }
+
         String ip = clientIp.from(req);
         String path = req.getRequestURI();
 

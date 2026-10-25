@@ -97,6 +97,32 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void successfulLoginsDoNotTriggerCaptcha() throws Exception {
+        createUser("successful");
+        for (int i = 0; i < 7; i++) login("successful", "Passw0rd123!").andExpect(status().isOk());
+        verify(captchaVerifier, never()).verify(anyString(), anyString());
+    }
+
+    @Test
+    void loginVerifiesCaptchaBeforeAllowingAnAttackedAccount() throws Exception {
+        createUser("attacked");
+        for (int i = 0; i < 5; i++) login("attacked", "wrong-password").andExpect(status().isUnauthorized());
+        login("attacked", "Passw0rd123!").andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CAPTCHA_REQUIRED"));
+        org.mockito.Mockito.doThrow(new com.tramo.backend.exception.CaptchaVerificationException("failed"))
+                .when(captchaVerifier).verify("invalid", "login");
+        mockMvc.perform(post("/api/auth/login").with(uniqueIp()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"attacked","password":"Passw0rd123!","captchaToken":"invalid"}"""))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CAPTCHA_REQUIRED"));
+        mockMvc.perform(post("/api/auth/login").with(uniqueIp()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"attacked","password":"Passw0rd123!","captchaToken":"valid"}"""))
+                .andExpect(status().isOk());
+        verify(captchaVerifier).verify("valid", "login");
+    }
+
+    @Test
     void verifyEmailActivatesAccountAndReturnsTokens() throws Exception {
         User user = createUser("fresh", "fresh@example.com", false, false, Role.USER);
         EmailVerificationToken token = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));

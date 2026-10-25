@@ -165,6 +165,7 @@ public class GlobalExceptionHandler {
                 "Captcha verification failed",
                 LocalDateTime.now()
         );
+        error.setCode("CAPTCHA_REQUIRED");
         return handled(ex, error, HttpStatus.FORBIDDEN);
     }
 

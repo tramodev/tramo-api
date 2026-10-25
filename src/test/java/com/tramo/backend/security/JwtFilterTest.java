@@ -21,7 +21,7 @@ class JwtFilterTest extends AbstractIntegrationTest {
 
     private String signedToken(User user, String base64Secret, long expiresInMs) {
         long now = System.currentTimeMillis();
-        return Jwts.builder()
+        return Jwts.builder().issuer("tramo-api").audience().add("tramo-web").and()
                 .subject(user.getUsername())
                 .claim("id", user.getId())
                 .claim("role", user.getRole().name())
@@ -84,7 +84,7 @@ class JwtFilterTest extends AbstractIntegrationTest {
     @Test
     void signedTokenWithoutExpirationIsRejected() throws Exception {
         User user = createUser("noexpiry");
-        String token = Jwts.builder().subject(user.getUsername()).claim("id", user.getId())
+        String token = Jwts.builder().issuer("tramo-api").audience().add("tramo-web").and().subject(user.getUsername()).claim("id", user.getId())
                 .signWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(TEST_JWT_SECRET))).compact();
         mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());

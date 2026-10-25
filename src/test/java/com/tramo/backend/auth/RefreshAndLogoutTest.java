@@ -38,6 +38,9 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     @Autowired
     SessionService sessionService;
 
+    @Autowired
+    com.tramo.backend.notification.service.NotificationService notifications;
+
     private String issueRefreshToken(User user, Instant expiresAt) {
         String rawToken = OpaqueToken.generate();
         RefreshToken token = new RefreshToken();
@@ -80,7 +83,11 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     @Test
     void reusingRotatedTokenDropsTheWholeChain() throws Exception {
         User user = createUser("reuser");
+        String accessToken = jwtService.getToken(user);
+        java.util.UUID sessionVersion = user.getSessionVersion();
+        notifications.subscribe(user);
         String token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
 
         String newToken = refresh(token)
                 .andExpect(status().isOk())
@@ -93,6 +100,12 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
         refresh(token).andExpect(status().isUnauthorized());
 
         refresh(newToken).andExpect(status().isUnauthorized());
+        assertThat(refreshTokenRepository.findAll()).isEmpty();
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getSessionVersion()).isNotEqualTo(sessionVersion);
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+        var emitters = (java.util.Map<?, ?>) org.springframework.test.util.ReflectionTestUtils.getField(notifications, "emitters");
+        assertThat(emitters.containsKey(user.getId())).isFalse();
     }
 
     @Test

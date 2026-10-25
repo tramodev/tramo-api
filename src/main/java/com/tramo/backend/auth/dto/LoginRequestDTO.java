@@ -3,6 +3,7 @@
 package com.tramo.backend.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,4 +20,7 @@ public class LoginRequestDTO {
 
     @NotBlank(message = "PASSWORD_REQUIRED")
     private String password;
+
+    @Size(max = 8192)
+    private String captchaToken;
 }

@@ -21,7 +21,7 @@ class RateLimitTest extends AbstractIntegrationTest {
                         .with(remoteAddr(ip))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"username":"%s","password":"Whatever123!"}""".formatted(username)))
+                                {"username":"%s","password":"Whatever123!","captchaToken":"test-captcha"}""".formatted(username)))
                 .andReturn();
     }
 
@@ -49,16 +49,23 @@ class RateLimitTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void loginIdentityBucketPersistsAcrossRotatingIps() throws Exception {
-        String username = uniqueUsername();
+    void failedLoginsRequireCaptchaInsteadOfBlockingOtherIps() throws Exception {
+        createUser("victim");
         for (int i = 0; i < 10; i++) {
-            assertThat(attemptLogin("172.16.1." + i, username).getResponse().getStatus())
-                    .as("attempt %d from a fresh IP should not be rate limited yet", i + 1)
-                    .isEqualTo(401);
+            assertThat(attemptLogin("172.16.1." + i, "VICTIM").getResponse().getStatus()).isEqualTo(401);
         }
-        assertThat(attemptLogin("172.16.1.99", username).getResponse().getStatus())
-                .as("shared identity bucket should be exhausted despite every attempt using a fresh IP")
-                .isEqualTo(429);
+        mockMvc.perform(post("/api/auth/login").with(remoteAddr("172.16.1.99"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"victim","password":"Passw0rd123!"}"""))
+                .andExpect(status().isForbidden())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("CAPTCHA_REQUIRED"));
+        mockMvc.perform(post("/api/auth/login").with(remoteAddr("172.16.1.99"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"victim","password":"Passw0rd123!","captchaToken":"valid-captcha"}"""))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(captchaVerifier).verify("valid-captcha", "login");
     }
 
     @Test
