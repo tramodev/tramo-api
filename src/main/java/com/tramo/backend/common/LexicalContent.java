@@ -43,7 +43,8 @@ public final class LexicalContent {
             boolean internal = "link".equals(type) && "#".equals(url.asText())
                     && rel.matches("(?:tramo-idea:|mypath-idea:)[0-9]+|tramo-extraction:[0-9a-fA-F-]{36}");
             if (!internal) {
-                URI uri = URI.create(url.asText());
+                URI uri = URI.create(url.asText().strip()
+                        .replace(" ", "%20").replace("{", "%7B").replace("}", "%7D"));
                 if (uri.getScheme() == null || !SCHEMES.contains(uri.getScheme().toLowerCase(Locale.ROOT))) throw invalid();
             }
         }
