@@ -596,4 +596,17 @@ class NotificationTest extends AbstractIntegrationTest {
         }
     }
 
+
+    @Test
+    void deletingReadOnlyNotificationRoutesReturns405() throws Exception {
+        User owner = createUser("notificationreadonly");
+        for (String path : List.of("unread-count", "stream")) {
+            mockMvc.perform(delete("/api/notifications/" + path).header("Authorization", bearer(owner)))
+                    .andExpect(status().isMethodNotAllowed())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                            .string("Allow", org.hamcrest.Matchers.containsString("GET")))
+                    .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+        }
+    }
+
 }
