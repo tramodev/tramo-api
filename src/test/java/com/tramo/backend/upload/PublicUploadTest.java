@@ -183,10 +183,28 @@ class PublicUploadTest extends AbstractIntegrationTest {
     void confirmationRequiresTheOwnerAndAnUploadedFile() throws Exception {
         User owner = createUser("publicowner"), stranger = createUser("publicstranger");
         UUID id = begin(owner, "avatar");
-        complete(stranger, id).andExpect(status().isForbidden());
+        complete(stranger, id).andExpect(status().isNotFound());
         complete(owner, id).andExpect(status().isNotFound());
         mockMvc.perform(post("/api/uploads/" + id + "/complete")).andExpect(status().isUnauthorized());
         verify(s3Client, never()).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
+    void foreignAndMissingUploadsHaveTheSameNotFoundResponseInEveryState() throws Exception {
+        User owner = createUser("hiddenuploadowner"), stranger = createUser("hiddenuploadstranger");
+        UUID id = begin(owner, "avatar");
+        clearInvocations(s3Client);
+        for (String state : List.of("PENDING", "READY", "DELETING")) {
+            jdbcTemplate.update("UPDATE public_upload SET state = ? WHERE id = ?", state, id);
+            for (UUID requested : List.of(id, UUID.randomUUID())) {
+                complete(stranger, requested)
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                        .andExpect(jsonPath("$.message").value("Resource not found"));
+            }
+            assertThat(uploads.findById(id).orElseThrow().getState()).isEqualTo(state);
+        }
+        verifyNoInteractions(s3Client);
     }
 
     @Test

@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -136,7 +135,7 @@ public class PublicUploadService {
 
     private PublicUpload owned(UUID id, User user) {
         PublicUpload upload = uploads.findById(id).orElseThrow(this::missing);
-        if (!upload.getOwnerId().equals(user.getId())) throw new AccessDeniedException("Not allowed to confirm this upload");
+        if (!upload.getOwnerId().equals(user.getId())) throw missing();
         return upload;
     }
 
