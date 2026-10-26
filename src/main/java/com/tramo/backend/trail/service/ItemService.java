@@ -37,7 +37,6 @@ import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -485,7 +484,7 @@ public class ItemService {
                 : trailItemRepository.findByItemId(id).stream()
                         .anyMatch(pi -> pi.getTrail().getProject().getOwner().getId().equals(requester.getId()));
         if (!owns) {
-            throw new AccessDeniedException("Not allowed to access this item");
+            throw new ResourceNotFoundException("Item not found");
         }
         return item;
     }
@@ -494,7 +493,7 @@ public class ItemService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         if (!project.getOwner().getId().equals(requester.getId())) {
-            throw new AccessDeniedException("Not allowed to access this project");
+            throw new ResourceNotFoundException("Project not found");
         }
         return project;
     }

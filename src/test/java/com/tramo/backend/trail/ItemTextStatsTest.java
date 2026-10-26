@@ -44,7 +44,7 @@ class ItemTextStatsTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.words").value(2));
         var stranger = createUser("statsstranger");
         mockMvc.perform(get("/api/project/" + pid(project) + "/text-stats").header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/item/" + shared).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/project/" + pid(project) + "/text-stats").header("Authorization", bearer(owner)))

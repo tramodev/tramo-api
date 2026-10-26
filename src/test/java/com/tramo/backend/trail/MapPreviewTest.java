@@ -49,6 +49,6 @@ class MapPreviewTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/map-preview")
                         .header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 }

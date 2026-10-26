@@ -92,6 +92,6 @@ class ItemSearchTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/item/search?q=cuarzo")
                         .header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 }

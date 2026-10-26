@@ -23,7 +23,6 @@ import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -170,7 +169,7 @@ public class TrailService {
         Trail trail = trailRepository.findByIdWithProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
         if (!trail.getProject().getOwner().getId().equals(requester.getId())) {
-            throw new AccessDeniedException("Not allowed to access this trail");
+            throw new ResourceNotFoundException("Trail not found");
         }
         return trail;
     }

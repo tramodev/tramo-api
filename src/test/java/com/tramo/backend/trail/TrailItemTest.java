@@ -109,7 +109,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         long trailId = createTrail(owner, project, "Guarded trail");
 
         mockMvc.perform(get("/api/trail/" + trailId).header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(put("/api/trail/" + trailId)
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -120,6 +120,22 @@ class TrailItemTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/project/" + pid(project) + "/trail").header("Authorization", bearer(intruder)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void foreignAndMissingTrailsAndContentHaveTheSameNotFoundResponse() throws Exception {
+        User owner = createUser("hiddenowner");
+        User stranger = createUser("hiddenstranger");
+        Project project = createProject(owner, "Hidden", "private");
+        long trailId = createTrail(owner, project, "Hidden trail");
+        long itemId = createItem(owner, trailId, "Hidden note");
+        for (String path : java.util.List.of("/api/trail/" + trailId, "/api/item/" + itemId + "/content",
+                "/api/trail/" + Long.MAX_VALUE, "/api/item/" + Long.MAX_VALUE + "/content")) {
+            mockMvc.perform(get(path).header("Authorization", bearer(stranger)))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("Resource not found"));
+        }
     }
 
     @Test
@@ -313,7 +329,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         long itemId = createItem(owner, trailId, "Locked item");
 
         mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -516,7 +532,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                                 {"title":"Sneaky"}"""))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/project/" + pid(project) + "/item").header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
