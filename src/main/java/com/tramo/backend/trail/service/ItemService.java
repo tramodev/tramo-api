@@ -24,7 +24,7 @@ import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
-import com.tramo.backend.project.repository.ProjectRepository;
+import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.subscription.service.SubscriptionService;
@@ -62,7 +62,7 @@ public class ItemService {
     private final TrailItemRepository trailItemRepository;
     private final TrailService trailService;
     private final TrailRepository trailRepository;
-    private final ProjectRepository projectRepository;
+    private final AccessGuard accessGuard;
     private final R2Client r2Client;
     private final PendingImageDeletionRepository pendingImageDeletionRepository;
     private final ItemImageReferenceRepository itemImageReferenceRepository;
@@ -74,7 +74,7 @@ public class ItemService {
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         TrailService trailService,
-                        TrailRepository trailRepository, ProjectRepository projectRepository,
+                        TrailRepository trailRepository, AccessGuard accessGuard,
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
                         ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages,
@@ -83,7 +83,7 @@ public class ItemService {
         this.trailItemRepository = trailItemRepository;
         this.trailService = trailService;
         this.trailRepository = trailRepository;
-        this.projectRepository = projectRepository;
+        this.accessGuard = accessGuard;
         this.r2Client = r2Client;
         this.pendingImageDeletionRepository = pendingImageDeletionRepository;
         this.itemImageReferenceRepository = itemImageReferenceRepository;
@@ -151,14 +151,14 @@ public class ItemService {
     }
 
     public List<ItemResponseDTO> getItemsForProject(Long projectId, User requester) {
-        getOwnedProject(projectId, requester);
+        accessGuard.getOwnedProject(projectId, requester);
         return itemRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     public Map<String, MapItemPreviewDTO> getMapPreviews(Long projectId, User requester) {
-        getOwnedProject(projectId, requester);
+        accessGuard.getOwnedProject(projectId, requester);
         List<Item> items = itemRepository.findForExport(projectId);
         Set<Long> itemIds = items.stream().map(Item::getId).collect(Collectors.toSet());
         Map<String, MapItemPreviewDTO> previews = new LinkedHashMap<>();
@@ -213,7 +213,7 @@ public class ItemService {
     }
 
     public List<Long> searchItemIds(Long projectId, String q, User requester) {
-        getOwnedProject(projectId, requester);
+        accessGuard.getOwnedProject(projectId, requester);
         String needle = q == null ? "" : q.trim().toLowerCase();
         if (needle.length() < MIN_SEARCH_LENGTH) {
             return List.of();
@@ -225,7 +225,7 @@ public class ItemService {
     }
 
     public ProjectTextStatsDTO getProjectTextStats(Long projectId, User requester) {
-        getOwnedProject(projectId, requester);
+        accessGuard.getOwnedProject(projectId, requester);
         var items = itemRepository.findTextStatsByProjectId(projectId);
         return new ProjectTextStatsDTO(
                 items.stream().mapToLong(ItemTextStatsDTO::words).sum(),
@@ -487,15 +487,6 @@ public class ItemService {
             throw new ResourceNotFoundException("Item not found");
         }
         return item;
-    }
-
-    private Project getOwnedProject(Long projectId, User requester) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        if (!project.getOwner().getId().equals(requester.getId())) {
-            throw new ResourceNotFoundException("Project not found");
-        }
-        return project;
     }
 
     private ItemResponseDTO toResponse(Item item) {
