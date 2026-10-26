@@ -13,6 +13,7 @@ import com.tramo.backend.moderation.repository.CommentReportRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.tag.service.TagService;
+import com.tramo.backend.upload.repository.EditorImageRepository;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.entity.Trail;
@@ -61,6 +62,7 @@ public class ProjectService {
     private final CommentRepository commentRepository;
     private final CommentReportRepository commentReportRepository;
     private final UploadRecordRepository uploadRecordRepository;
+    private final EditorImageRepository editorImageRepository;
     private final ProjectSnapshotRepository projectSnapshotRepository;
     private final TagService tagService;
     private final ImageDeletionQueue imageDeletionQueue;
@@ -79,7 +81,7 @@ public class ProjectService {
                            ItemImageReferenceRepository itemImageReferenceRepository, NotificationService notificationService,
                            ProjectReportRepository projectReportRepository, CommentRepository commentRepository,
                            CommentReportRepository commentReportRepository,
-                           UploadRecordRepository uploadRecordRepository,
+                           UploadRecordRepository uploadRecordRepository, EditorImageRepository editorImageRepository,
                            ProjectSnapshotRepository projectSnapshotRepository,
                            TagService tagService,
                            ImageDeletionQueue imageDeletionQueue,
@@ -96,6 +98,7 @@ public class ProjectService {
         this.imageDeletionQueue = imageDeletionQueue;
         this.tagService = tagService;
         this.uploadRecordRepository = uploadRecordRepository;
+        this.editorImageRepository = editorImageRepository;
         this.projectSnapshotRepository = projectSnapshotRepository;
         this.projectRepository = projectRepository;
         this.trailRepository = trailRepository;
@@ -319,6 +322,8 @@ public class ProjectService {
         commentRepository.deleteByProjectId(id);
         projectRepository.clearForkedFromReferences(id);
         projectRepository.delete(project);
+        projectRepository.flush();
+        editorImageRepository.deleteUnreferencedByProjectId(id);
     }
 
 

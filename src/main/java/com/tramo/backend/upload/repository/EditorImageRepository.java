@@ -166,6 +166,13 @@ public class EditorImageRepository {
                 new org.springframework.jdbc.core.namedparam.MapSqlParameterSource().addValue("ids", ids).addValue("projectId", projectId, java.sql.Types.BIGINT).addValue("itemId", itemId), UUID.class);
     }
 
+    public void deleteUnreferencedByProjectId(Long projectId) {
+        jdbc.update("DELETE FROM editor_image i USING upload_record u WHERE u.id = i.upload_record_id AND u.project_id = ? " +
+                "AND NOT EXISTS (SELECT 1 FROM editor_image_item_reference r WHERE r.image_id = i.id) " +
+                "AND NOT EXISTS (SELECT 1 FROM editor_image_version_reference r WHERE r.image_id = i.id) " +
+                "AND NOT EXISTS (SELECT 1 FROM editor_image_snapshot_reference r WHERE r.image_id = i.id)", projectId);
+    }
+
     public List<UUID> cleanupCandidates() {
         return jdbc.queryForList("SELECT id FROM editor_image_object WHERE state = 'DELETING' OR " +
                 "(created_at < CURRENT_TIMESTAMP - INTERVAL '24 hours' AND state IN ('PENDING', 'COPYING')) OR " +

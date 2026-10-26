@@ -188,6 +188,33 @@ class EditorImageTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void deletingProjectReleasesImageUploadsWithoutWaitingForPurge() throws Exception {
+        User owner = createUser("deleteimages");
+        Project project = createProject(owner, "Delete", "PRIVATE", "Description", null);
+        UUID image = upload(project, owner);
+        saveImage(project, owner, image);
+        publish.publish(project.getId(), owner);
+        UUID abandoned = pending(project, owner);
+        Project other = createProject(owner, "Keep", "PRIVATE");
+        UUID kept = upload(other, owner);
+        saveImage(other, owner, kept);
+
+        mockMvc.perform(delete("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        assertThat(imageRepository.findAll(List.of(image, abandoned))).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record WHERE project_id = ?",
+                Integer.class, project.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record WHERE project_id = ?",
+                Integer.class, other.getId())).isEqualTo(1);
+        resolve(other, owner, kept, false, null, 200);
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+        images.purge();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM editor_image_object", Integer.class)).isEqualTo(1);
+        resolve(other, owner, kept, false, null, 200);
+    }
+
+    @Test
     void forkHasIndependentReferencesAndRetainsPhysicalObject() throws Exception {
         User owner = createUser("original");
         User forker = createUser("forker");
@@ -201,8 +228,8 @@ class EditorImageTest extends AbstractIntegrationTest {
         assertThat(copy).isNotEqualTo(original);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM editor_image_object", Integer.class)).isEqualTo(1);
         mockMvc.perform(delete("/api/project/" + pid(source)).header("Authorization", bearer(owner))).andExpect(status().isNoContent());
-        jdbcTemplate.update("UPDATE editor_image SET last_used_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
-        jdbcTemplate.update("UPDATE editor_image_object SET created_at = CURRENT_TIMESTAMP - INTERVAL '2 days'");
+        assertThat(imageRepository.findAll(List.of(original))).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record WHERE user_id = ?", Integer.class, owner.getId())).isZero();
         images.purge();
         resolve(projectRepository.findById(forkId).orElseThrow(), forker, copy, false, null, 200);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM editor_image_object", Integer.class)).isEqualTo(1);
@@ -272,6 +299,9 @@ class EditorImageTest extends AbstractIntegrationTest {
         resolve(target, null, image, true, null, 200);
         mockMvc.perform(delete("/api/project/" + pid(original)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
+        resolve(target, null, image, true, null, 200);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record WHERE user_id = ?", Integer.class, owner.getId())).isEqualTo(1);
+        images.purge();
         resolve(target, null, image, true, null, 200);
         updateContent(item, owner, content(image), 204);
     }
