@@ -10,6 +10,9 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BadgeConcurrencyTest extends AbstractIntegrationTest {
     @Autowired BadgeService badges;
@@ -36,7 +39,7 @@ class BadgeConcurrencyTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void forkProgressBelongsToOriginalAuthor() {
+    void forkProgressBelongsToOriginalAuthor() throws Exception {
         var author = createUser("forkauthor");
         var forker = createUser("forkactor");
         var source = createProject(author, "Original", "published", "d", null);
@@ -47,5 +50,41 @@ class BadgeConcurrencyTest extends AbstractIntegrationTest {
         }
         assertThat(badges.getProfileStats(author).getForksCount()).isEqualTo(25);
         assertThat(badges.getProfileStats(forker).getForksCount()).isZero();
+        var remix = badges.buildBadges(badges.getProfileStats(author), author).stream()
+                .filter(badge -> badge.getCode().equals("remix_king")).findFirst().orElseThrow();
+        assertThat(remix.getProgress()).isEqualTo(1);
+        assertThat(remix.isEarned()).isFalse();
+        transactions.executeWithoutResult(status -> badges.checkAndAwardBadges(author));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM user_badge WHERE user_id = ? AND badge_code = 'remix_king'",
+                Long.class, author.getId())).isZero();
+        for (String path : List.of("/api/profile/stats", "/api/public/users/" + author.getUsername())) {
+            mockMvc.perform(get(path).header("Authorization", bearer(author)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.stats.forksCount").value(25))
+                    .andExpect(jsonPath("$.badges[?(@.code=='remix_king')].progress").value(1))
+                    .andExpect(jsonPath("$.badges[?(@.code=='remix_king')].earned").value(false));
+        }
+    }
+
+    @Test
+    void remixKingRequiresTwentyFiveDistinctForkersAcrossProjects() {
+        var author = createUser("remixauthor");
+        var first = createProject(author, "First", "unlisted");
+        var second = createProject(author, "Second", "unlisted");
+        for (int i = 0; i < 25; i++) {
+            var forker = createUser("remixforker" + i);
+            for (var source : List.of(first, second)) {
+                var fork = createProject(forker, "Fork", "private");
+                fork.setForkedFrom(source);
+                projectRepository.save(fork);
+            }
+            var remix = badges.buildBadges(badges.getProfileStats(author), author).stream()
+                    .filter(badge -> badge.getCode().equals("remix_king")).findFirst().orElseThrow();
+            assertThat(remix.getProgress()).isEqualTo(i + 1);
+            assertThat(remix.isEarned()).isEqualTo(i == 24);
+        }
+        transactions.executeWithoutResult(status -> badges.checkAndAwardBadges(author));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM user_badge WHERE user_id = ? AND badge_code = 'remix_king'",
+                Long.class, author.getId())).isEqualTo(1);
     }
 }

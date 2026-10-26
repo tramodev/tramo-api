@@ -128,7 +128,7 @@ public class ProfileService {
     @Transactional
     public ProfileStatsBundleDTO getProfileStatsBundle(User user) {
         ProfileStatsDTO stats = badgeService.getProfileStats(user);
-        List<BadgeDTO> badges = badgeService.buildBadges(stats, subscriptionService.isSupporter(user));
+        List<BadgeDTO> badges = badgeService.buildBadges(stats, user);
         badgeService.awardNewlyEarnedBadges(user, badges);
         return new ProfileStatsBundleDTO(stats, badges);
     }
@@ -145,7 +145,7 @@ public class ProfileService {
 
         Integer publicAge = Boolean.FALSE.equals(target.getShowAge()) ? null : computeAge(target.getBirthDate());
         return new PublicProfileDTO(target.getUsername(), target.getBio(), publicAge, target.getLocation(), target.getWebsite(), target.getImageUrl(), target.getBannerUrl(), target.getCreatedAt(),
-                stats, badgeService.buildBadges(stats, subscriptionService.isSupporter(target)), target.getSelectedBadge(), following, self, blocked,
+                stats, badgeService.buildBadges(stats, target), target.getSelectedBadge(), following, self, blocked,
                 target.getShowUpvotes() == null || target.getShowUpvotes());
     }
 }

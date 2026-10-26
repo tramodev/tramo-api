@@ -54,7 +54,9 @@ public class BadgeService {
         return new ProfileStatsDTO(trailsPublished, upvotesReceived, totalViews, forksCount, followersCount, followingCount);
     }
 
-    List<BadgeDTO> buildBadges(ProfileStatsDTO stats, boolean supporter) {
+    List<BadgeDTO> buildBadges(ProfileStatsDTO stats, User user) {
+        boolean supporter = subscriptionService.isSupporter(user);
+        long distinctForkers = projectRepository.countDistinctForkersByOwnerId(user.getId());
         List<BadgeDTO> badges = new ArrayList<>();
         badges.add(badge(SubscriptionService.SUPPORTER_BADGE_CODE, "Supporter", "Support Tramo with a subscription", supporter ? 1 : 0, 1));
         badges.add(badge("first_publish", "First Publish", "Publish your first trail", stats.getTrailsPublished(), 1));
@@ -63,13 +65,9 @@ public class BadgeService {
         badges.add(badge("crowd_favorite", "Crowd Favorite", "Earn 100 upvotes", stats.getUpvotesReceived(), 100));
         badges.add(badge("on_the_map", "On the Map", "Reach 1,000 total views", stats.getTotalViews(), ON_THE_MAP_VIEW_THRESHOLD));
         badges.add(badge("trendsetter", "Trendsetter", "Reach 10,000 total views", stats.getTotalViews(), TRENDSETTER_VIEW_THRESHOLD));
-        badges.add(badge("forked_once", "Forked Once", "Get forked by another user", stats.getForksCount(), 1));
-        badges.add(badge("remix_king", "Remix King", "Get forked 25 times", stats.getForksCount(), 25));
+        badges.add(badge("forked_once", "Forked Once", "Get forked by another user", distinctForkers, 1));
+        badges.add(badge("remix_king", "Remix King", "Get forked by 25 different users", distinctForkers, 25));
         return badges;
-    }
-
-    List<BadgeDTO> buildBadges(ProfileStatsDTO stats, User user) {
-        return buildBadges(stats, subscriptionService.isSupporter(user));
     }
 
     private BadgeDTO badge(String code, String name, String description, long progress, long target) {
@@ -92,7 +90,7 @@ public class BadgeService {
 
     void checkAndAwardBadges(User user) {
         ProfileStatsDTO stats = getProfileStats(user);
-        awardNewlyEarnedBadges(user, buildBadges(stats, subscriptionService.isSupporter(user)));
+        awardNewlyEarnedBadges(user, buildBadges(stats, user));
     }
 
     boolean crossedViewBadgeThreshold(long before, long after) {
