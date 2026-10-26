@@ -115,7 +115,7 @@ public class CommentService {
         boolean isProjectOwner = comment.getProject().getOwner().getId().equals(requester.getId());
         boolean isAdmin = requester.getRole() == Role.ADMIN;
         if (!isAuthor && !isProjectOwner && !isAdmin) {
-            throw new AccessDeniedException("Not allowed to delete this comment");
+            throw new ResourceNotFoundException("Comment not found");
         }
         comment.setDeleted(true);
         comment.setContent(null);

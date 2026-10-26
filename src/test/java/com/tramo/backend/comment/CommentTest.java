@@ -106,7 +106,7 @@ class CommentTest extends AbstractIntegrationTest {
                 {"content":"My comment"}""");
 
         mockMvc.perform(delete("/api/comment/" + commentId).header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(delete("/api/comment/" + commentId).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
@@ -157,6 +157,46 @@ class CommentTest extends AbstractIntegrationTest {
                         .content("""
                                 {"content":"Can I see this?"}"""))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void foreignAndMissingCommentsReturnTheSameNotFoundOnDeletion() throws Exception {
+        User owner = createUser("hiddencommentowner");
+        User author = createUser("hiddencommentauthor");
+        User stranger = createUser("hiddencommentstranger");
+        Project project = createProject(owner, "Hidden comments", "published");
+        long commentId = postForId(author, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Keep me\"}");
+        for (String visibility : java.util.List.of("published", "private")) {
+            jdbcTemplate.update("UPDATE project SET visibility = ? WHERE id = ?", visibility, project.getId());
+            for (Long id : java.util.List.of(commentId, Long.MAX_VALUE)) {
+                mockMvc.perform(delete("/api/comment/" + id).header("Authorization", bearer(stranger)))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                        .andExpect(jsonPath("$.message").value("Resource not found"));
+            }
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT deleted FROM comment WHERE id = ?", Boolean.class, commentId)).isFalse();
+        assertThat(jdbcTemplate.queryForObject("SELECT content FROM comment WHERE id = ?", String.class, commentId)).isEqualTo("Keep me");
+    }
+
+    @Test
+    void authorOwnerAndAdminCanStillDeleteCommentsAfterProjectBecomesPrivate() throws Exception {
+        User owner = createUser("privatecommentowner");
+        User author = createUser("privatecommentauthor");
+        User admin = createAdmin("privatecommentadmin");
+        Project project = createProject(owner, "Private comments", "published");
+        var allowed = java.util.List.of(author, owner, admin);
+        var ids = new java.util.ArrayList<Long>();
+        for (User user : allowed) {
+            ids.add(postForId(author, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Remove me\"}"));
+        }
+        jdbcTemplate.update("UPDATE project SET visibility = 'private' WHERE id = ?", project.getId());
+        for (int i = 0; i < allowed.size(); i++) {
+            mockMvc.perform(delete("/api/comment/" + ids.get(i)).header("Authorization", bearer(allowed.get(i))))
+                    .andExpect(status().isNoContent());
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM comment WHERE project_id = ? AND deleted = true",
+                Long.class, project.getId())).isEqualTo(3);
     }
 
     @Test
