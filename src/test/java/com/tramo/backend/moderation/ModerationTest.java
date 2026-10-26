@@ -316,6 +316,50 @@ class ModerationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void commentReportsRequireTheProjectToRemainViewable() throws Exception {
+        User owner = createUser("hiddencommentreportowner");
+        User reporter = createUser("hiddencommentreporter");
+        Project project = createProject(owner, "Comments", "published");
+        long commentId = postForId(owner, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Comment\"}");
+        jdbcTemplate.update("UPDATE project SET visibility = 'private' WHERE id = ?", project.getId());
+        for (Long id : java.util.List.of(commentId, Long.MAX_VALUE)) {
+            mockMvc.perform(post("/api/comment/" + id + "/report")
+                            .header("Authorization", bearer(reporter))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("Resource not found"));
+        }
+        assertThat(commentReportRepository.count()).isZero();
+        jdbcTemplate.update("UPDATE project SET visibility = 'unlisted' WHERE id = ?", project.getId());
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/comment/" + commentId + "/report")
+                            .header("Authorization", bearer(reporter))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                    .andExpect(status().isOk());
+        }
+        assertThat(commentReportRepository.count()).isEqualTo(1);
+        jdbcTemplate.update("UPDATE project SET visibility = 'private' WHERE id = ?", project.getId());
+        mockMvc.perform(post("/api/comment/" + commentId + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                .andExpect(status().isNotFound());
+        assertThat(commentReportRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void cannotReportOwnComment() throws Exception {
+        User owner = createUser("owncommentreporter");
+        Project project = createProject(owner, "Comments", "published");
+        long commentId = postForId(owner, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Comment\"}");
+        mockMvc.perform(post("/api/comment/" + commentId + "/report")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                .andExpect(status().isForbidden());
+        assertThat(commentReportRepository.count()).isZero();
+    }
+
+    @Test
     void upheldCommentReportRoundTripsAndIsExcludedFromOpenList() throws Exception {
         User author = createUser("commentauthor");
         User reporter = createUser("commentreporter");

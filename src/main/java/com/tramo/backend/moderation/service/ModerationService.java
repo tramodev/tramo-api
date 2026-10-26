@@ -104,6 +104,7 @@ public class ModerationService {
         if (comment.getAuthor() != null && comment.getAuthor().getId().equals(reporter.getId())) {
             throw new AccessDeniedException("Cannot report your own comment");
         }
+        accessGuard.assertViewable(comment.getProject(), reporter);
         if (commentReportRepository.existsByCommentIdAndReporterIdAndStatus(commentId, reporter.getId(), ReportStatus.OPEN)) {
             return;
         }
