@@ -186,6 +186,7 @@ public class ProjectFeedMapper {
 
     private ForkFeedItemDTO toForkFeedItem(Project project, String ownerUsername, FeedContext ctx) {
         Project source = project.getForkedFrom();
+        if (source != null && !privacyPolicy.isProjectViewable(source, null)) source = null;
         ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         return new ForkFeedItemDTO(
                 projectIdCodec.encode(project.getId()),
@@ -204,7 +205,7 @@ public class ProjectFeedMapper {
                 ctx.commentCounts().getOrDefault(project.getId(), 0L),
                 project.isFeatured(),
                 source != null ? projectIdCodec.encode(source.getId()) : null,
-                project.getForkedFromTitle(),
+                source != null ? project.getForkedFromTitle() : null,
                 source != null ? source.getOwner().getUsername() : null
         );
     }

@@ -55,7 +55,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void forkAttributionNeverReadsPrivateSourceTitle() throws Exception {
+    void forkAttributionHidesPrivateSources() throws Exception {
         User owner = createUser("sourceowner");
         User forker = createUser("forkowner");
         Project source = createProject(owner, "Public source", "private", "Description", null);
@@ -63,7 +63,10 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
         String forkId = postForProjectId(forker, "/api/project/" + pid(source) + "/fork", "{}");
         jdbcTemplate.update("update project set title = 'PRIVATE SOURCE TITLE', visibility = 'private' where id = ?", source.getId());
         mockMvc.perform(get("/api/project/" + forkId).header("Authorization", bearer(forker)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.forkedFromTitle").value("Public source"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromTitle").isEmpty())
+                .andExpect(jsonPath("$.forkedFromProjectId").isEmpty())
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").isEmpty());
         mockMvc.perform(post("/api/project/" + forkId + "/publish").header("Authorization", bearer(forker)))
                 .andExpect(status().isOk());
         String body = mockMvc.perform(get("/api/public/project/" + forkId)).andExpect(status().isOk())
@@ -81,8 +84,18 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
                     .andExpect(jsonPath(forkPath + ".forkedFromTitle").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())))
                     .andExpect(jsonPath(forkPath + ".forkedFromOwnerUsername").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())));
         }
+        mockMvc.perform(get("/api/profile/forks").header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].forkedFromProjectId").isEmpty())
+                .andExpect(jsonPath("$.content[0].forkedFromTitle").isEmpty())
+                .andExpect(jsonPath("$.content[0].forkedFromOwnerUsername").isEmpty());
         jdbcTemplate.update("update project set visibility = 'unlisted' where id = ?", source.getId());
         mockMvc.perform(get("/api/public/project/" + forkId)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromProjectId").value(pid(source)))
+                .andExpect(jsonPath("$.forkedFromTitle").value("Public source"))
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").value(owner.getUsername()));
+        mockMvc.perform(get("/api/project/" + forkId).header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.forkedFromProjectId").value(pid(source)))
                 .andExpect(jsonPath("$.forkedFromTitle").value("Public source"))
                 .andExpect(jsonPath("$.forkedFromOwnerUsername").value(owner.getUsername()));
@@ -215,7 +228,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void blockedAndDeletedSourcesDoNotChangeHistoricalAttribution() throws Exception {
+    void privateAndDeletedSourcesHideAttribution() throws Exception {
         User owner = createUser("blockedsource");
         User other = createUser("blockedforker");
         Project source = createProject(owner, "Public attribution", "private", "Description", null);
@@ -225,11 +238,17 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
                 owner.getId(), other.getId());
         jdbcTemplate.update("update project set title = 'PRIVATE BLOCKED TITLE', visibility = 'private' where id = ?", source.getId());
         mockMvc.perform(get("/api/project/" + fork).header("Authorization", bearer(other)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.forkedFromTitle").value("Public attribution"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromTitle").isEmpty())
+                .andExpect(jsonPath("$.forkedFromProjectId").isEmpty())
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").isEmpty());
         mockMvc.perform(delete("/api/project/" + pid(source)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/project/" + fork).header("Authorization", bearer(other)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.forkedFromTitle").value("Public attribution"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromTitle").isEmpty())
+                .andExpect(jsonPath("$.forkedFromProjectId").isEmpty())
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").isEmpty());
         mockMvc.perform(post("/api/project/" + fork + "/publish").header("Authorization", bearer(other)))
                 .andExpect(status().isOk());
         assertThat(mockMvc.perform(get("/api/public/project/" + fork)).andExpect(status().isOk())

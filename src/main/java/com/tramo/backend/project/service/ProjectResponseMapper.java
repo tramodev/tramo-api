@@ -9,6 +9,7 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.tag.entity.Tag;
 import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.upload.repository.UploadRecordRepository;
+import com.tramo.backend.user.service.PrivacyPolicy;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -25,15 +26,17 @@ public class ProjectResponseMapper {
     private final UploadRecordRepository uploadRecordRepository;
     private final ProjectIdCodec projectIdCodec;
     private final ProjectThumbnailResolver thumbnailResolver;
+    private final PrivacyPolicy privacyPolicy;
 
     public ProjectResponseMapper(ProjectRepository projectRepository, ItemRepository itemRepository,
                                   UploadRecordRepository uploadRecordRepository, ProjectIdCodec projectIdCodec,
-                                  ProjectThumbnailResolver thumbnailResolver) {
+                                  ProjectThumbnailResolver thumbnailResolver, PrivacyPolicy privacyPolicy) {
         this.projectRepository = projectRepository;
         this.itemRepository = itemRepository;
         this.uploadRecordRepository = uploadRecordRepository;
         this.projectIdCodec = projectIdCodec;
         this.thumbnailResolver = thumbnailResolver;
+        this.privacyPolicy = privacyPolicy;
     }
 
     ProjectResponseDTO toResponse(Project project) {
@@ -52,6 +55,7 @@ public class ProjectResponseMapper {
 
     ProjectResponseDTO toResponse(Project project, long storageBytes, List<String> tagNames, ThumbnailResolution thumbnail) {
         Project source = project.getForkedFrom();
+        if (source != null && !privacyPolicy.isProjectViewable(source, null)) source = null;
         return new ProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
                 project.getRestoreEpoch(),
@@ -66,7 +70,7 @@ public class ProjectResponseMapper {
                 latestOf(project.getModifiedDate(), project.getLastEditedDate()),
                 storageBytes,
                 source != null ? projectIdCodec.encode(source.getId()) : null,
-                project.getForkedFromTitle(),
+                source != null ? project.getForkedFromTitle() : null,
                 source != null ? source.getOwner().getUsername() : null
         );
     }
