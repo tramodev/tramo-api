@@ -177,7 +177,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "Secret", "private");
 
         mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -251,7 +251,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"Hacked"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getTitle())
                 .isEqualTo("Untouchable");
@@ -404,7 +404,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "Protected", "private");
 
         mockMvc.perform(delete("/api/project/" + pid(project)).header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         assertThat(projectRepository.findById(project.getId())).isPresent();
     }
@@ -677,7 +677,7 @@ class ProjectCrudTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"type":"NONE"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -719,6 +719,6 @@ class ProjectCrudTest extends AbstractIntegrationTest {
         Project project = createProject(owner, "Guarded", "private", "A description", null);
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/images").header("Authorization", bearer(other)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 }

@@ -94,6 +94,6 @@ class TrailReorderTest extends AbstractIntegrationTest {
         long first = createItem(owner, trailId, "First");
 
         reorder(stranger, trailId, """
-                {"itemIds":[%d]}""".formatted(first), 403);
+                {"itemIds":[%d]}""".formatted(first), 404);
     }
 }

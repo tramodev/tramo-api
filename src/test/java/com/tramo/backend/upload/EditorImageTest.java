@@ -124,14 +124,14 @@ class EditorImageTest extends AbstractIntegrationTest {
         User stranger = createUser("stranger");
         Project project = createProject(owner, "Private", "PRIVATE");
         mockMvc.perform(post("/api/uploads/editor-images/presign").header("Authorization", bearer(stranger))
-                .contentType("application/json").content(request(project))).andExpect(status().isForbidden());
+                .contentType("application/json").content(request(project))).andExpect(status().isNotFound());
         UUID id = upload(project, owner);
         clearInvocations(s3Client);
         mockMvc.perform(post("/api/uploads/editor-images/" + id + "/complete").header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
         verify(s3Client, never()).copyObject(any(CopyObjectRequest.class));
         mockMvc.perform(post("/api/uploads/editor-images/" + id + "/complete").header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -144,7 +144,7 @@ class EditorImageTest extends AbstractIntegrationTest {
         String response = resolve(project, owner, id, false, null, 200);
         assertThat((String) JsonPath.read(response, "$.images[0].url")).contains("X-Amz-Expires=300").doesNotContain("r2.dev");
         resolve(project, null, id, true, null, 404);
-        resolve(project, createUser("other"), id, false, null, 403);
+        resolve(project, createUser("other"), id, false, null, 404);
         Project unrelated = createProject(owner, "Other", "PRIVATE");
         resolve(unrelated, owner, id, false, null, 404);
         resolve(project, owner, UUID.randomUUID(), false, null, 404);

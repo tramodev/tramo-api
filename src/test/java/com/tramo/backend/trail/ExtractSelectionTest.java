@@ -137,7 +137,7 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
     void rejectsForeignUserAndProjectAndUnsupportedSelection() throws Exception {
         Fixture f = fixture(); var request = request(f, false, UUID.randomUUID()); long count = repository.count();
         User stranger = createUser("extractstranger");
-        mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(stranger)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(stranger)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isNotFound());
         Project elsewhere = createProject(f.user, "Elsewhere", "PRIVATE");
         mockMvc.perform(post("/api/project/" + pid(elsewhere) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
         var unsupported = new ExtractSelectionRequest(request.operationId(), request.title(), request.expectedContent(), 0, request.sourceContent(), "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\"}]}}", null, null, false, null);

@@ -8,7 +8,6 @@ import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
 import com.tramo.backend.user.service.PrivacyPolicy;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -27,7 +26,7 @@ public class AccessGuard {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         if (!project.getOwner().getId().equals(requester.getId())) {
-            throw new AccessDeniedException("Not allowed to access this project");
+            throw new ResourceNotFoundException("Project not found");
         }
         return project;
     }

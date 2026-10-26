@@ -76,7 +76,7 @@ class ProjectTrailReorderTest extends AbstractIntegrationTest {
     @Test
     void deniesReorderingAnotherOwnersProject() throws Exception {
         Fixture f = fixture();
-        reorder(f, createUser("trailstranger"), List.of(f.third, f.second, f.first), 403);
+        reorder(f, createUser("trailstranger"), List.of(f.third, f.second, f.first), 404);
         assertThat(trails.findByProjectId(f.project.getId())).extracting(Trail::getId).containsExactly(f.first, f.second, f.third);
     }
 

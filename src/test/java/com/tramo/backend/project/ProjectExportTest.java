@@ -159,7 +159,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         Fixture f = fixture(); UUID id = image(f, false);
         itemService.updateContent(f.shared, imageContent(id), f.owner);
         User stranger = createUser("stranger");
-        mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(stranger))).andExpect(status().isNotFound());
         verify(s3Client, never()).getObject(any(GetObjectRequest.class));
         when(s3Client.getObject(any(GetObjectRequest.class))).thenThrow(NoSuchKeyException.builder().statusCode(404).build());
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(f.owner)))

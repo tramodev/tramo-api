@@ -100,7 +100,7 @@ class ProjectStartTest extends AbstractIntegrationTest {
         assertThat(starter.start(project.getId(), trail.getId(), owner)).isEqualTo(result);
         assertThat(trails.count()).isEqualTo(1);
         var stranger = createUser("strangerstarter");
-        assertThatThrownBy(() -> starter.start(project.getId(), null, stranger)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThatThrownBy(() -> starter.start(project.getId(), null, stranger)).isInstanceOf(com.tramo.backend.exception.ResourceNotFoundException.class);
     }
 
     @Test

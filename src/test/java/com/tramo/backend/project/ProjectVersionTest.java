@@ -224,8 +224,8 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     void ownershipAndVersionProjectAreChecked() throws Exception {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
         User stranger = createUser("historystanger");
-        mockMvc.perform(get("/api/project/" + pid(f.project) + "/history").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore").header("X-Project-Epoch", "0").header("Authorization", bearer(stranger))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/project/" + pid(f.project) + "/history").header("Authorization", bearer(stranger))).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/project/" + pid(f.project) + "/history/" + manual.id() + "/restore").header("X-Project-Epoch", "0").header("Authorization", bearer(stranger))).andExpect(status().isNotFound());
         var other = createProject(f.user, "Other", "PRIVATE");
         mockMvc.perform(get("/api/project/" + pid(other) + "/history/" + manual.id()).header("Authorization", bearer(f.user))).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/public/project/" + pid(f.project) + "/versions/" + manual.id())).andExpect(status().is4xxClientError());

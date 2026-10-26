@@ -57,7 +57,7 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/editor")
                         .header("Authorization", bearer(other)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     private long createTrail(User owner, Project project, String title) throws Exception {

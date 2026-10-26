@@ -237,7 +237,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         setVisibility(owner, project, "published");
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/versions").header("Authorization", bearer(stranger)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -352,7 +352,7 @@ class SnapshotTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
                         .header("Authorization", bearer(other)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -391,6 +391,6 @@ class SnapshotTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/versions")
                         .header("Authorization", bearer(other)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 }

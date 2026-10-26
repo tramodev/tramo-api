@@ -88,7 +88,7 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void createTrailUnderOthersProjectIsForbidden() throws Exception {
+    void createTrailUnderOthersProjectReturnsNotFound() throws Exception {
         User owner = createUser("trailowner");
         User intruder = createUser("trailintruder");
         Project project = createProject(owner, "NotYours", "private");
@@ -98,7 +98,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"Sneaky"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -115,11 +115,11 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"Hijacked"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/trail/" + trailId).header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/project/" + pid(project) + "/trail").header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -299,7 +299,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.storageImageBytes").value(0))
                 .andExpect(jsonPath("$.storageTextBytes").value(0));
         mockMvc.perform(get("/api/project/" + pid(project) + "/storage").header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/project/" + pid(project) + "/storage"))
                 .andExpect(status().isUnauthorized());
     }
@@ -318,15 +318,15 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(contentRequest(lexicalText("stolen"))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(put("/api/item/" + itemId)
                         .header("Authorization", bearer(intruder))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"Stolen"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/item/" + itemId).header("Authorization", bearer(intruder)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -514,7 +514,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":"Sneaky"}"""))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/project/" + pid(project) + "/item").header("Authorization", bearer(intruder)))
                 .andExpect(status().isForbidden());
     }
