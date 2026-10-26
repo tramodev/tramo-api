@@ -139,6 +139,49 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void foreignResourcesReturnNotFoundAcrossTrailRoutes() throws Exception {
+        User owner = createUser("routeowner");
+        User stranger = createUser("routestranger");
+        Project project = createProject(owner, "Hidden", "private");
+        long trailId = createTrail(owner, project, "Hidden trail");
+        long itemId = createItem(owner, trailId, "Hidden note");
+        Project ownProject = createProject(stranger, "Own", "private");
+        long ownTrailId = createTrail(stranger, ownProject, "Own trail");
+        long ownItemId = createItem(stranger, ownTrailId, "Own note");
+        String projectPath = "/api/project/" + pid(project);
+        String trailPath = "/api/trail/" + trailId;
+        String itemPath = "/api/item/" + itemId;
+        String ownExtractPath = "/api/project/" + pid(ownProject) + "/item/";
+        String content = lexicalText("Selection");
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        var foreignTrailRequest = new com.tramo.backend.trail.dto.ExtractSelectionRequest(java.util.UUID.randomUUID(),
+                "Extracted", content, 0, content, content, trailId, java.util.List.of(ownItemId), false, null);
+        var foreignItemRequest = new com.tramo.backend.trail.dto.ExtractSelectionRequest(java.util.UUID.randomUUID(),
+                "Extracted", content, 0, content, content, ownTrailId, java.util.List.of(ownItemId), false, null);
+        for (var request : java.util.List.of(
+                get(trailPath), put(trailPath).content("{\"title\":\"Changed\"}"), delete(trailPath),
+                get(trailPath + "/item"), get(trailPath + "/content"),
+                put(trailPath + "/item/order").content("{\"itemIds\":[" + itemId + "]}"),
+                post(trailPath + "/item").content("{\"title\":\"New note\"}"),
+                post(trailPath + "/item/" + ownItemId), delete(trailPath + "/item/" + ownItemId),
+                put(itemPath).content("{\"title\":\"Changed\"}"), delete(itemPath), get(itemPath + "/content"),
+                put(itemPath + "/content").content(contentRequest(content)),
+                get(projectPath + "/item"), get(projectPath + "/item/search?q=selection"),
+                get(projectPath + "/map-preview"), get(projectPath + "/text-stats"),
+                get(projectPath + "/trail"), post(projectPath + "/trail").content("{\"title\":\"New trail\"}"),
+                put(projectPath + "/trail/order").content("{\"trailIds\":[" + trailId + "]}"),
+                post(projectPath + "/item").content("{\"title\":\"New note\"}"),
+                get(projectPath + "/item/" + itemId + "/extract"),
+                post(ownExtractPath + ownItemId + "/extract").content(mapper.writeValueAsString(foreignTrailRequest)),
+                post(ownExtractPath + itemId + "/extract").content(mapper.writeValueAsString(foreignItemRequest)))) {
+            mockMvc.perform(request.header("Authorization", bearer(stranger)).contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("Resource not found"));
+        }
+    }
+
+    @Test
     void unknownTrailIs404() throws Exception {
         User user = createUser("trailseeker");
         mockMvc.perform(get("/api/trail/424242").header("Authorization", bearer(user)))
