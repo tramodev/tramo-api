@@ -20,6 +20,7 @@ import com.tramo.backend.moderation.repository.ModerationLogRepository;
 import com.tramo.backend.moderation.repository.ProjectReportRepository;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectVisibility;
+import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
@@ -48,6 +49,7 @@ public class ModerationService {
     private final ProjectIdCodec projectIdCodec;
     private final RefreshTokenRepository refreshTokenRepository;
     private final NotificationService notifications;
+    private final AccessGuard accessGuard;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
                               CommentReportRepository commentReportRepository,
@@ -57,7 +59,8 @@ public class ModerationService {
                               CommentService commentService,
                               UserRepository userRepository,
                               ProjectIdCodec projectIdCodec,
-                              RefreshTokenRepository refreshTokenRepository, NotificationService notifications) {
+                              RefreshTokenRepository refreshTokenRepository, NotificationService notifications,
+                              AccessGuard accessGuard) {
         this.projectReportRepository = projectReportRepository;
         this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
@@ -68,6 +71,7 @@ public class ModerationService {
         this.projectIdCodec = projectIdCodec;
         this.refreshTokenRepository = refreshTokenRepository;
         this.notifications = notifications;
+        this.accessGuard = accessGuard;
     }
 
     @Transactional
@@ -78,6 +82,7 @@ public class ModerationService {
         if (project.getOwner().getId().equals(reporter.getId())) {
             throw new AccessDeniedException("Cannot report your own project");
         }
+        accessGuard.assertViewable(project, reporter);
         if (projectReportRepository.existsByProjectIdAndReporterIdAndStatus(projectId, reporter.getId(), ReportStatus.OPEN)) {
             return;
         }

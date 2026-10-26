@@ -85,6 +85,39 @@ class ModerationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void privateAndMissingProjectsCannotBeReported() throws Exception {
+        User owner = createUser("hiddenreportowner");
+        User reporter = createUser("hiddenreporter");
+        Project project = createProject(owner, "Private", "private");
+        for (String id : java.util.List.of(pid(project), projectIdCodec.encode(1_000_000_000L))) {
+            mockMvc.perform(post("/api/project/" + id + "/report")
+                            .header("Authorization", bearer(reporter))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("Resource not found"));
+        }
+        assertThat(projectReportRepository.count()).isZero();
+    }
+
+    @Test
+    void existingReportDoesNotBypassProjectVisibility() throws Exception {
+        User owner = createUser("existingreportowner");
+        User reporter = createUser("existingreporter");
+        Project project = createProject(owner, "Unlisted", "unlisted");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                .andExpect(status().isOk());
+        jdbcTemplate.update("UPDATE project SET visibility = 'private' WHERE id = ?", project.getId());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/report")
+                        .header("Authorization", bearer(reporter))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
+                .andExpect(status().isNotFound());
+        assertThat(projectReportRepository.count()).isEqualTo(1);
+    }
+
+    @Test
     void reportRequiresReason() throws Exception {
         User owner = createUser("owner5");
         User reporter = createUser("reporter5");
