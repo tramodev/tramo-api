@@ -254,6 +254,9 @@ public class NotificationService {
             syncFollows(recipient);
         } else if (NotificationTypes.COMMENT.equals(type) && project != null) {
             syncComments(recipient, project);
+        } else if (NotificationTypes.FORK.equals(type) && project != null) {
+            notificationRepository.syncForks(recipient.getId(), project.getId());
+            publishUnreadCount(recipient);
         } else {
             publishUnreadCount(recipient);
         }

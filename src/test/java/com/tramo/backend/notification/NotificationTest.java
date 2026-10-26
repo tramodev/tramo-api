@@ -98,6 +98,28 @@ class NotificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void repeatedForksCountDistinctUnreadUsers() throws Exception {
+        User owner = createUser("forkcountowner");
+        User first = createUser("forkcountfirst");
+        User second = createUser("forkcountsecond");
+        Project project = publishedProject(owner, "Fork count");
+        for (User actor : List.of(first, first, second, first)) {
+            postForProjectId(actor, "/api/project/" + pid(project) + "/fork", "");
+        }
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.type=='FORK')].count").value(2))
+                .andExpect(jsonPath("$.content[?(@.type=='FORK')].latestActorUsername").value("forkcountfirst"));
+        mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+        postForProjectId(second, "/api/project/" + pid(project) + "/fork", "");
+        mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.type=='FORK' && @.read==false)].count").value(1))
+                .andExpect(jsonPath("$.content[?(@.type=='FORK' && @.read==false)].latestActorUsername").value("forkcountsecond"));
+    }
+
+    @Test
     void votingOnOwnProjectDoesNotNotifySelf() throws Exception {
         User owner = createUser("notifself");
         Project project = publishedProject(owner, "Mine");

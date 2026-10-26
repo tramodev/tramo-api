@@ -63,6 +63,16 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     void syncComments(@Param("recipientId") Long recipientId, @Param("projectId") Long projectId);
 
     @Modifying(flushAutomatically = true)
+    @Query(value = "UPDATE notification SET count = (SELECT COUNT(DISTINCT p.user_id) FROM project p "
+            + "WHERE p.forked_from_id = :projectId AND p.user_id <> :recipientId "
+            + "AND p.creation_date >= notification.created_date), "
+            + "actor_id = (SELECT p.user_id FROM project p WHERE p.forked_from_id = :projectId "
+            + "AND p.user_id <> :recipientId AND p.creation_date >= notification.created_date "
+            + "ORDER BY p.creation_date DESC, p.id DESC LIMIT 1) "
+            + "WHERE recipient_id = :recipientId AND project_id = :projectId AND type = 'FORK' AND read = false", nativeQuery = true)
+    void syncForks(@Param("recipientId") Long recipientId, @Param("projectId") Long projectId);
+
+    @Modifying(flushAutomatically = true)
     @Query("DELETE FROM Notification n WHERE n.recipient.id = :recipientId AND n.type = :type "
             + "AND (:projectId IS NULL OR n.project.id = :projectId) AND n.read = false AND n.count = 0")
     void deleteEmptyActivity(@Param("recipientId") Long recipientId, @Param("type") String type,
