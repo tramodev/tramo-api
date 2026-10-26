@@ -72,6 +72,14 @@ public class RateLimitFilter implements Filter {
             }
         }
 
+        if ("POST".equals(req.getMethod()) && path.matches("/api/project/[^/]+/fork")) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User user) {
+                Bucket bucket = rateLimiterService.resolveBucket("user:fork:" + user.getId(), 10, 10, Duration.ofMinutes(1));
+                if (!tryConsumeOrReject(bucket, res)) return;
+            }
+        }
+
         if (path.startsWith("/api/auth/")) {
             Bucket bucket = switch (path) {
                 case "/api/auth/login" -> rateLimiterService.resolveBucket(

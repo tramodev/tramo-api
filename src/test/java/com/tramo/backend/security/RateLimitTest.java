@@ -204,6 +204,27 @@ class RateLimitTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void forksHaveTheirOwnPerUserBucketAcrossSourcesAndIps() throws Exception {
+        User owner = createUser("forkbucketowner");
+        User forker = createUser("forkbucketuser");
+        User other = createUser("forkbucketother");
+        Project source = createProject(owner, "Original", "published", "Description", null);
+        Project second = createProject(owner, "Second", "published", "Description", null);
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/project/" + pid(source) + "/fork")
+                            .with(remoteAddr("172.16.8." + i)).header("Authorization", bearer(forker)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/api/project/" + pid(second) + "/fork").header("Authorization", bearer(forker)))
+                .andExpect(status().is(429))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().exists("Retry-After"));
+        mockMvc.perform(post("/api/project/" + pid(source) + "/fork").header("Authorization", bearer(other)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(source) + "/bookmark").header("Authorization", bearer(forker)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void draftCommitsHaveTheirOwnTightBucket() throws Exception {
         var user = createUser("draftbucket");
         for (int i = 0; i < 10; i++) {

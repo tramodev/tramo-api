@@ -106,6 +106,10 @@ public class ProjectForkService {
             throw new AccessDeniedException("Forking is disabled for this project");
         }
 
+        var recent = projectRepository.findFirstByOwnerIdAndForkedFromIdAndCreationDateAfterOrderByIdDesc(
+                requester.getId(), sourceProjectId, new Date(System.currentTimeMillis() - 10_000));
+        if (recent.isPresent()) return responseMapper.toResponse(recent.get());
+
         ProjectSnapshotData published = source.getVisibility() == ProjectVisibility.PUBLISHED ? projectSnapshotRepository
                 .findLatestPublishByProjectId(sourceProjectId)
                 .map(snapshot -> snapshotLimits.read(snapshot.getContent()))

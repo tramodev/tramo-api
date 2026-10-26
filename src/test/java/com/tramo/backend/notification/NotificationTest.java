@@ -33,6 +33,9 @@ class NotificationTest extends AbstractIntegrationTest {
     @Autowired
     ExploreService exploreService;
 
+    @Autowired
+    com.tramo.backend.notification.service.NotificationService notificationService;
+
     
     
     
@@ -104,7 +107,7 @@ class NotificationTest extends AbstractIntegrationTest {
         User second = createUser("forkcountsecond");
         Project project = publishedProject(owner, "Fork count");
         for (User actor : List.of(first, first, second, first)) {
-            postForProjectId(actor, "/api/project/" + pid(project) + "/fork", "");
+            recordFork(project, actor);
         }
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
@@ -112,11 +115,18 @@ class NotificationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.content[?(@.type=='FORK')].latestActorUsername").value("forkcountfirst"));
         mockMvc.perform(post("/api/notifications/read").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
-        postForProjectId(second, "/api/project/" + pid(project) + "/fork", "");
+        recordFork(project, second);
         mockMvc.perform(get("/api/notifications").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.type=='FORK' && @.read==false)].count").value(1))
                 .andExpect(jsonPath("$.content[?(@.type=='FORK' && @.read==false)].latestActorUsername").value("forkcountsecond"));
+    }
+
+    private void recordFork(Project source, User actor) {
+        Project fork = createProject(actor, "Fork", "private");
+        fork.setForkedFrom(source);
+        projectRepository.save(fork);
+        notificationService.recordEvent(source.getOwner(), "FORK", source, actor, fork.getCreationDate());
     }
 
     @Test
