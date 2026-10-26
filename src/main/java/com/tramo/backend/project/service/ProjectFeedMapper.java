@@ -153,7 +153,8 @@ public class ProjectFeedMapper {
                 ? project.getLastPublishedDate() : null;
         ThumbnailResolution thumbnail = ctx.thumbnailByProjectId().getOrDefault(project.getId(), ThumbnailResolution.EMPTY);
         Project source = project.getForkedFrom();
-        if (source != null && blockRelated.contains(source.getOwner().getUsername())) {
+        if (source != null && (!privacyPolicy.isProjectViewable(source, null)
+                || blockRelated.contains(source.getOwner().getUsername()))) {
             source = null;
         }
         return new ProjectFeedItemDTO(

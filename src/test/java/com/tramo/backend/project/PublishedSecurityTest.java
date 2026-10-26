@@ -67,8 +67,25 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/project/" + forkId + "/publish").header("Authorization", bearer(forker)))
                 .andExpect(status().isOk());
         String body = mockMvc.perform(get("/api/public/project/" + forkId)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromProjectId").isEmpty())
+                .andExpect(jsonPath("$.forkedFromTitle").isEmpty())
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").isEmpty())
                 .andReturn().getResponse().getContentAsString();
-        assertThat(body).contains("Public source").doesNotContain("PRIVATE SOURCE TITLE");
+        assertThat(body).doesNotContain("PRIVATE SOURCE TITLE", owner.getUsername());
+        for (var entry : java.util.Map.of("/api/public/explore", "feed",
+                "/api/public/users/" + forker.getUsername() + "/published", "content").entrySet()) {
+            String forkPath = "$." + entry.getValue() + "[?(@.id=='" + forkId + "')]";
+            mockMvc.perform(get(entry.getKey())).andExpect(status().isOk())
+                    .andExpect(jsonPath(forkPath, org.hamcrest.Matchers.hasSize(1)))
+                    .andExpect(jsonPath(forkPath + ".forkedFromProjectId").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())))
+                    .andExpect(jsonPath(forkPath + ".forkedFromTitle").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())))
+                    .andExpect(jsonPath(forkPath + ".forkedFromOwnerUsername").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())));
+        }
+        jdbcTemplate.update("update project set visibility = 'unlisted' where id = ?", source.getId());
+        mockMvc.perform(get("/api/public/project/" + forkId)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.forkedFromProjectId").value(pid(source)))
+                .andExpect(jsonPath("$.forkedFromTitle").value("Public source"))
+                .andExpect(jsonPath("$.forkedFromOwnerUsername").value(owner.getUsername()));
     }
 
     @Test

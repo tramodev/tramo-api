@@ -64,17 +64,21 @@ public class PrivacyPolicy {
     }
 
     public void assertProjectViewable(Project project, User requester) {
+        if (!isProjectViewable(project, requester)) {
+            throw new ResourceNotFoundException("Project not found");
+        }
+    }
+
+    public boolean isProjectViewable(Project project, User requester) {
         ProjectVisibility visibility = project.getVisibility();
         if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
-            throw new ResourceNotFoundException("Project not found");
+            return false;
         }
         boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
         if (isOwner) {
-            return;
+            return true;
         }
-        if (project.getOwner().isBanned() || blockedBy(project.getOwner(), requester)) {
-            throw new ResourceNotFoundException("Project not found");
-        }
+        return !project.getOwner().isBanned() && !blockedBy(project.getOwner(), requester);
     }
 
     public boolean canComment(User owner, User requester) {

@@ -119,6 +119,9 @@ public class PublicProjectService {
         List<PublicItemDTO> looseItems = data.looseItems().stream().map(item -> toPublicItem(item, snapshotOpt.isEmpty())).toList();
 
         Project publicSource = project.getForkedFrom();
+        if (publicSource != null && !privacyPolicy.isProjectViewable(publicSource, requester)) {
+            publicSource = null;
+        }
         return new PublicProjectResponseDTO(
                 projectIdCodec.encode(project.getId()),
                 data.title(),
@@ -138,7 +141,7 @@ public class PublicProjectService {
                         .orElse(0L),
                 project.getVisibility().toJson(),
                 publicSource != null ? projectIdCodec.encode(publicSource.getId()) : null,
-                project.getForkedFromTitle(),
+                publicSource != null ? project.getForkedFromTitle() : null,
                 publicSource != null ? publicSource.getOwner().getUsername() : null,
                 privacyPolicy.canFork(project.getOwner()),
                 privacyPolicy.canComment(project.getOwner(), requester)
