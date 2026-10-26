@@ -106,11 +106,11 @@ public class ProjectForkService {
             throw new AccessDeniedException("Forking is disabled for this project");
         }
 
-        ProjectSnapshotData published = projectSnapshotRepository
+        ProjectSnapshotData published = source.getVisibility() == ProjectVisibility.PUBLISHED ? projectSnapshotRepository
                 .findLatestPublishByProjectId(sourceProjectId)
                 .map(snapshot -> snapshotLimits.read(snapshot.getContent()))
-                .orElse(null);
-        if (published == null && (source.getFirstPublishedDate() != null || source.getVisibility() == ProjectVisibility.PUBLISHED)) {
+                .orElse(null) : null;
+        if (published == null && source.getVisibility() == ProjectVisibility.PUBLISHED) {
             throw new ResourceNotFoundException("Published version unavailable; owner must publish again");
         }
         if (published == null) published = snapshotCapture.capture(sourceProjectId);

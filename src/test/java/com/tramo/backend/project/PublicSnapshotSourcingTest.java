@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,6 +84,7 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
     @Test
     void legacyPublishedProjectWithoutSnapshotDoesNotExposeLiveData() throws Exception {
         User owner = createUser("snapsrcowner4");
+        User forker = createUser("snapsrcforker4");
         
         
         Project project = createProject(owner, "Legacy Published", "published", "Legacy description", "tag");
@@ -91,6 +93,8 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
         renameProject(owner, project, "Legacy Edited After Backfill");
 
         mockMvc.perform(get("/api/public/project/" + pid(project)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(forker)))
                 .andExpect(status().isNotFound());
         org.assertj.core.api.Assertions.assertThat(mockMvc.perform(get("/api/public/explore"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())

@@ -8,6 +8,8 @@ import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.snapshot.ProjectSnapshotData;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.ObjectMapper;
 
@@ -147,6 +149,48 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/item/" + forkedItemId + "/content").header("Authorization", bearer(forker)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").value(lexicalText("Published content")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void forkOfPreviouslyPublishedUnlistedProjectUsesVisibleLiveContent(boolean missingSnapshot) throws Exception {
+        User owner = createUser("unlistedauthor");
+        User forker = createUser("unlistedforker");
+        Project project = seedProject(owner, "Published title");
+        long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
+                {"title":"Trail"}""");
+        long itemId = postForId(owner, "/api/trail/" + trailId + "/item", """
+                {"title":"Note"}""");
+        setVisibility(owner, project, "published");
+        setVisibility(owner, project, "unlisted");
+        if (missingSnapshot) {
+            jdbcTemplate.update("delete from project_snapshot where project_id = ?", project.getId());
+        }
+        mockMvc.perform(put("/api/project/" + pid(project))
+                        .header("Authorization", bearer(owner))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Visible title"}"""))
+                .andExpect(status().isOk());
+        String content = lexicalText("Visible unlisted edit");
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content(contentRequest(content)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/public/project/" + pid(project)).header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Visible title"))
+                .andExpect(jsonPath("$.trails[0].items[0].content").value(content));
+        String forkId = postForProjectId(forker, "/api/project/" + pid(project) + "/fork", "");
+        mockMvc.perform(get("/api/project/" + forkId).header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Visible title"));
+        mockMvc.perform(get("/api/item/" + firstItemIdOfFork(forkId, forker) + "/content")
+                        .header("Authorization", bearer(forker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value(content));
     }
 
     private long firstItemIdOfFork(String forkId, User forker) throws Exception {
