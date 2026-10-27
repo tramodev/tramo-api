@@ -285,7 +285,8 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         assertThat(page.versions()).hasSize(20);
         assertThat(versions.list(f.project.getId(), page.nextCursor(), f.user).versions()).hasSize(2);
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/history").header("Authorization", bearer(f.user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.versions[0].snapshot").doesNotExist());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.versions[0].authorUsername").value(f.user.getUsername()))
+                .andExpect(jsonPath("$.versions[0].snapshot").doesNotExist());
     }
 
     @Test

@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ProjectVersionRepository extends JpaRepository<ProjectVersion, Long> {
-    @Query("select new com.tramo.backend.project.dto.ProjectVersionSummaryDTO(v.id, v.createdAt, v.type, v.name) "
+    @Query("select new com.tramo.backend.project.dto.ProjectVersionSummaryDTO(v.id, v.createdAt, v.type, v.name, v.project.owner.username) "
             + "from ProjectVersion v where v.project.id = :projectId and (:beforeId is null or v.id < :beforeId) order by v.id desc")
     List<ProjectVersionSummaryDTO> summaries(Long projectId, Long beforeId, Pageable pageable);
     @Query("select v.stateHash from ProjectVersion v where v.project.id = :projectId order by v.id desc")

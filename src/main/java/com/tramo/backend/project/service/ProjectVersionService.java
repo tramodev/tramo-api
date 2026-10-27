@@ -62,13 +62,13 @@ public class ProjectVersionService {
     public Detail detail(Long id, Long versionId, User user) {
         access.getOwnedProject(id, user);
         ProjectVersion version = version(id, versionId);
-        return new Detail(summary(version), capture.read(version.getSnapshot()));
+        return new Detail(summary(version, user), capture.read(version.getSnapshot()));
     }
 
     @Transactional
     public ProjectVersionSummaryDTO create(Long id, String name, User user) {
         Project project = capture.lock(id, user);
-        return summary(capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.MANUAL, name));
+        return summary(capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.MANUAL, name), user);
     }
 
     @Transactional
@@ -159,7 +159,7 @@ public class ProjectVersionService {
         return versions.findByIdAndProjectId(versionId, id).orElseThrow(() -> new ResourceNotFoundException("Version not found"));
     }
 
-    private ProjectVersionSummaryDTO summary(ProjectVersion version) {
-        return new ProjectVersionSummaryDTO(version.getId(), version.getCreatedAt(), version.getType(), version.getName());
+    private ProjectVersionSummaryDTO summary(ProjectVersion version, User user) {
+        return new ProjectVersionSummaryDTO(version.getId(), version.getCreatedAt(), version.getType(), version.getName(), user.getUsername());
     }
 }
