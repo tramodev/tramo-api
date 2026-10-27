@@ -19,7 +19,7 @@ public class SnapshotProcessing {
 
     public SnapshotProcessing(NamedParameterJdbcTemplate jdbc, SnapshotLimits limits,
                               PlatformTransactionManager transactions,
-                              @Value("${app.snapshot.processing-bytes:8388608}") int processingBytes) {
+                              @Value("${app.snapshot.processing-bytes:33554432}") int processingBytes) {
         if (processingBytes < limits.maxBytes()) {
             throw new IllegalArgumentException("Snapshot processing budget must fit one maximum-size snapshot");
         }
