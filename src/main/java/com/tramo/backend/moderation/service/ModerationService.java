@@ -43,6 +43,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.Locale;
 import java.time.LocalDateTime;
 import java.sql.Timestamp;
 import java.util.List;
@@ -159,6 +160,8 @@ public class ModerationService {
     @Transactional
     public void dismissReport(Long reportId, String type, User admin) {
         requireAdmin(admin);
+        type = type == null ? "" : type.toUpperCase(Locale.ROOT);
+        if (!List.of("PROJECT", "COMMENT").contains(type)) throw new RequestValidationException(RequestErrorCode.BAD_REQUEST);
         if ("COMMENT".equals(type)) {
             CommentReport report = commentReportRepository.findById(reportId)
                     .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
@@ -169,7 +172,6 @@ public class ModerationService {
             logAction(admin, "DISMISS_REPORT", "COMMENT_REPORT", reportId, null);
             return;
         }
-        if (!"PROJECT".equals(type)) throw new RequestValidationException(RequestErrorCode.INVALID_VALUE);
         ProjectReport report = projectReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
         em.refresh(report.getProject(), LockModeType.PESSIMISTIC_WRITE);

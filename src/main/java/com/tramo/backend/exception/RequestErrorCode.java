@@ -69,6 +69,7 @@ public enum RequestErrorCode {
     COMMENTS_POLICY_INVALID("commentsPolicy must be 'everyone', 'following', or 'noone'"),
     UPLOAD_KIND_INVALID("kind must be avatar, thumbnail, or banner"),
     CONTENT_HASH_INVALID("contentHash must be a 64-char lowercase hex SHA-256 digest"),
+    BAD_REQUEST("Invalid request parameter"),
     INVALID_REQUEST("Invalid request"),
     INVALID_VALUE("Invalid value"),
     NOTIFICATION_TYPE_INVALID("Unknown notification type"),
