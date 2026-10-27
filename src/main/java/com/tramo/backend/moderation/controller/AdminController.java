@@ -15,6 +15,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Locale;
+import java.beans.PropertyEditorSupport;
+import org.springframework.web.bind.WebDataBinder;
 import jakarta.validation.Valid;
 import com.tramo.backend.project.dto.PageResponseDTO;
 import com.tramo.backend.moderation.dto.ModerationLogDTO;
@@ -30,6 +33,16 @@ public class AdminController {
     public AdminController(ModerationService moderationService, ProjectIdCodec projectIdCodec) {
         this.moderationService = moderationService;
         this.projectIdCodec = projectIdCodec;
+    }
+
+    @InitBinder
+    public void bindReportFilter(WebDataBinder binder) {
+        binder.registerCustomEditor(ReportFilterType.class, new PropertyEditorSupport() {
+            @Override
+            public void setAsText(String text) {
+                setValue(ReportFilterType.valueOf(text.toUpperCase(Locale.ROOT)));
+            }
+        });
     }
 
     @GetMapping("/reports")

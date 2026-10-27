@@ -148,6 +148,10 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(5)).andExpect(jsonPath("$.hasMore").value(false));
         mockMvc.perform(get("/api/admin/reports").param("type", "COMMENT").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
+        mockMvc.perform(get("/api/admin/reports").param("type", "project").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(20));
+        mockMvc.perform(get("/api/admin/reports").param("type", "comment").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
         moderation.unpublishProject(project.getId(), admin, "Reviewed");
         mockMvc.perform(get("/api/admin/reports").param("status", "UPHELD").param("size", "1").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.hasMore").value(true));
