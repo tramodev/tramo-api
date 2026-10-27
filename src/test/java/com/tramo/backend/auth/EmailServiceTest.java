@@ -87,4 +87,23 @@ class EmailServiceTest {
         assertThatCode(() -> emailService.sendPasswordResetEmail(user("dave", "dave@example.com"), "tok"))
                 .doesNotThrowAnyException();
     }
+    @Test
+    void moderationEmailContainsTheNoticeAndHonorsDisabledMail() {
+        emailService.sendModerationEmail("alice@example.com", "alice", "Your account has been banned. Reason: Abuse");
+        var captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getTo()).containsExactly("alice@example.com");
+        assertThat(captor.getValue().getText()).contains("alice", "Your account has been banned. Reason: Abuse");
+        org.mockito.Mockito.clearInvocations(mailSender);
+        ReflectionTestUtils.setField(emailService, "mailEnabled", false);
+        emailService.sendModerationEmail("alice@example.com", "alice", "Notice");
+        org.mockito.Mockito.verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void failedModerationEmailDoesNotFailTheCommittedAction() {
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(SimpleMailMessage.class));
+        assertThatCode(() -> emailService.sendModerationEmail("alice@example.com", "alice", "Notice")).doesNotThrowAnyException();
+    }
+
 }

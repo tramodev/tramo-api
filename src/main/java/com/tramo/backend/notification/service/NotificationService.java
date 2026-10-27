@@ -228,6 +228,21 @@ public class NotificationService {
     }
 
     @Transactional
+    public void recordModeration(User recipient, Project project, User admin, String message) {
+        if (recipient == null) return;
+        Notification notification = new Notification();
+        notification.setRecipient(recipient);
+        notification.setProject(project);
+        notification.setLatestActor(admin);
+        notification.setType(NotificationTypes.MODERATION);
+        notification.setMessage(message);
+        notification.setCreatedDate(new Date());
+        notification.setUpdatedDate(notification.getCreatedDate());
+        notificationRepository.save(notification);
+        publishUnreadCount(recipient);
+    }
+
+    @Transactional
     public void recordEvent(User recipient, String type, Project project, User actor, Date eventDate) {
         if (recipient.getId().equals(actor.getId())) return;
         if (muted(recipient, type)) return;
@@ -349,7 +364,8 @@ public class NotificationService {
                         n.getLatestActor() != null ? n.getLatestActor().getUsername() : null,
                         n.getCount(),
                         n.isRead(),
-                        n.getUpdatedDate()
+                        n.getUpdatedDate(),
+                        n.getMessage()
                 ))
                 .toList();
         return new PageResponseDTO<>(items, result.hasNext());

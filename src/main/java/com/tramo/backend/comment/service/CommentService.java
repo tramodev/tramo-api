@@ -5,9 +5,9 @@ package com.tramo.backend.comment.service;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.comment.dto.CommentDTO;
+import com.tramo.backend.comment.dto.CommentPageDTO;
 import com.tramo.backend.comment.dto.CommentRequestDTO;
 import com.tramo.backend.comment.entity.Comment;
-import com.tramo.backend.project.dto.PageResponseDTO;
 import org.springframework.data.domain.Page;
 import com.tramo.backend.common.Pagination;
 import com.tramo.backend.comment.repository.CommentRepository;
@@ -83,12 +83,19 @@ public class CommentService {
         return toDto(comment, author);
     }
 
-    public PageResponseDTO<CommentDTO> getForProject(Long projectId, User requester, int page, int size) {
+    public CommentPageDTO getForProject(Long projectId, User requester, int page, int size, Long focusId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
         boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());
         if (!isOwner) {
             assertViewable(project, requester);
+        }
+        Pagination.page(page, size);
+        if (focusId != null) {
+            Comment focus = commentRepository.findById(focusId).orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
+            if (!focus.getProject().getId().equals(projectId)) throw new ResourceNotFoundException("Comment not found");
+            while (focus.getParent() != null) focus = focus.getParent();
+            page = (int) (commentRepository.countRootsBefore(projectId, focus.getCreatedDate(), focus.getId()) / size);
         }
         Page<Comment> roots = commentRepository.findRootsByProjectId(projectId, Pagination.page(page, size));
         List<Long> rootIds = roots.getContent().stream().map(Comment::getId).toList();
@@ -104,7 +111,7 @@ public class CommentService {
             if (hiddenAuthor(reply, blockRelated)) continue;
             thread.add(toDto(reply, requester));
         }
-        return new PageResponseDTO<>(thread, roots.hasNext());
+        return new CommentPageDTO(thread, roots.hasNext(), page);
     }
 
     @Transactional

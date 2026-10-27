@@ -3,7 +3,7 @@
 package com.tramo.backend.comment.controller;
 
 import com.tramo.backend.comment.dto.CommentDTO;
-import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.comment.dto.CommentPageDTO;
 import com.tramo.backend.comment.dto.CommentRequestDTO;
 import com.tramo.backend.comment.service.CommentService;
 import com.tramo.backend.common.ProjectIdCodec;
@@ -30,11 +30,12 @@ public class CommentController {
     }
 
     @GetMapping("/api/public/project/{projectId}/comments")
-    public ResponseEntity<PageResponseDTO<CommentDTO>> getForProject(@PathVariable String projectId,
+    public ResponseEntity<CommentPageDTO> getForProject(@PathVariable String projectId,
                                                             @RequestParam(defaultValue = "0") int page,
                                                             @RequestParam(defaultValue = "20") int size,
+                                                            @RequestParam(required = false) Long focusId,
                                                             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(commentService.getForProject(projectIdCodec.decode(projectId), user, page, size));
+        return ResponseEntity.ok(commentService.getForProject(projectIdCodec.decode(projectId), user, page, size, focusId));
     }
 
     @PostMapping("/api/project/{projectId}/comments")

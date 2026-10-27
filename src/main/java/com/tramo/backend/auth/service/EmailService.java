@@ -54,6 +54,20 @@ public class EmailService {
         }
     }
 
+    public void sendModerationEmail(String email, String username, String notice) {
+        if (!mailEnabled) {
+            log.info("event=moderation_email_skipped code=MAIL_DISABLED");
+            return;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(email);
+        message.setSubject("Tramo moderation notice");
+        message.setText("Hi " + username + ",\n\n" + notice);
+        try { mailSender.send(message); }
+        catch (MailException failure) { SafeLog.failure(log, "moderation_email_failed", "MAIL_SEND_FAILED", failure); }
+    }
+
     public void sendPasswordResetEmail(User user, String token) {
         String resetLink = frontendUrl + "/reset-password?token=" + token;
 

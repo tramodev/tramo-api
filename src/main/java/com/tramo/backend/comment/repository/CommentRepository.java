@@ -15,12 +15,16 @@ import java.util.List;
 
 @Repository
 public interface CommentRepository extends JpaRepository<Comment, Long> {
-    @Query(value = "SELECT c FROM Comment c LEFT JOIN FETCH c.author WHERE c.project.id = :projectId AND c.parent IS NULL ORDER BY c.createdDate ASC",
+    @Query(value = "SELECT c FROM Comment c LEFT JOIN FETCH c.author WHERE c.project.id = :projectId AND c.parent IS NULL ORDER BY c.createdDate ASC, c.id ASC",
             countQuery = "SELECT COUNT(c) FROM Comment c WHERE c.project.id = :projectId AND c.parent IS NULL")
     Page<Comment> findRootsByProjectId(@Param("projectId") Long projectId, Pageable pageable);
 
-    @Query("SELECT c FROM Comment c LEFT JOIN FETCH c.author LEFT JOIN FETCH c.parent WHERE c.parent.id IN :parentIds ORDER BY c.createdDate ASC")
+    @Query("SELECT c FROM Comment c LEFT JOIN FETCH c.author LEFT JOIN FETCH c.parent WHERE c.parent.id IN :parentIds ORDER BY c.createdDate ASC, c.id ASC")
     List<Comment> findRepliesByParentIdIn(@Param("parentIds") List<Long> parentIds);
+
+    @Query("SELECT COUNT(c) FROM Comment c WHERE c.project.id = :projectId AND c.parent IS NULL "
+            + "AND (c.createdDate < :createdDate OR (c.createdDate = :createdDate AND c.id < :id))")
+    long countRootsBefore(Long projectId, java.util.Date createdDate, Long id);
 
     @Query("SELECT c.id FROM Comment c WHERE c.project.id = :projectId")
     List<Long> findIdsByProjectId(@Param("projectId") Long projectId);

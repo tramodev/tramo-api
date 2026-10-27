@@ -136,9 +136,9 @@ class CommentTest extends AbstractIntegrationTest {
 
         String body = mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.type=='COMMENT')].commentContent").value(org.hamcrest.Matchers.contains("Spam or something")))
+                .andExpect(jsonPath("$.content[?(@.type=='COMMENT')].commentContent").value(org.hamcrest.Matchers.contains("Spam or something")))
                 .andReturn().getResponse().getContentAsString();
-        long reportId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$[0].id")).longValue();
+        long reportId = ((Number) com.jayway.jsonpath.JsonPath.read(body, "$.content[0].id")).longValue();
 
         mockMvc.perform(post("/api/admin/reports/" + reportId + "/dismiss?type=COMMENT")
                         .header("Authorization", bearer(admin)))

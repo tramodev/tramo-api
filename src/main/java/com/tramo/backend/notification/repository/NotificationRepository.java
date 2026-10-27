@@ -20,9 +20,9 @@ import java.util.Optional;
 
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
-    String VISIBLE = "n.recipient.id = :recipientId AND NOT EXISTS (SELECT b.id FROM BlockedUser b "
+    String VISIBLE = "n.recipient.id = :recipientId AND (n.type = 'MODERATION' OR NOT EXISTS (SELECT b.id FROM BlockedUser b "
             + "WHERE (b.blocker.id = :recipientId AND b.blocked = n.latestActor) "
-            + "OR (b.blocked.id = :recipientId AND b.blocker = n.latestActor))";
+            + "OR (b.blocked.id = :recipientId AND b.blocker = n.latestActor)))";
 
     @Query(value = "SELECT n FROM Notification n LEFT JOIN FETCH n.project LEFT JOIN FETCH n.latestActor WHERE " + VISIBLE + " ORDER BY n.updatedDate DESC, n.id DESC",
             countQuery = "SELECT COUNT(n) FROM Notification n WHERE " + VISIBLE)

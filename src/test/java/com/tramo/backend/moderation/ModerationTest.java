@@ -78,10 +78,10 @@ class ModerationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].projectTitle").value("Sketchy"))
-                .andExpect(jsonPath("$[0].reporterUsername").value("reporter"))
-                .andExpect(jsonPath("$[0].reason").value("spam"))
-                .andExpect(jsonPath("$[0].status").value("OPEN"));
+                .andExpect(jsonPath("$.content[0].projectTitle").value("Sketchy"))
+                .andExpect(jsonPath("$.content[0].reporterUsername").value("reporter"))
+                .andExpect(jsonPath("$.content[0].reason").value("spam"))
+                .andExpect(jsonPath("$.content[0].status").value("OPEN"));
     }
 
     @Test
@@ -191,7 +191,7 @@ class ModerationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(jsonPath("$.content").isEmpty());
     }
 
     @Test
@@ -381,7 +381,7 @@ class ModerationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$.content.length()").value(1));
 
         report.setStatus(ReportStatus.UPHELD);
         commentReportRepository.save(report);
@@ -391,7 +391,7 @@ class ModerationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(jsonPath("$.content").isEmpty());
     }
 
     @Test
@@ -427,6 +427,6 @@ class ModerationTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(jsonPath("$.content").isEmpty());
     }
 }

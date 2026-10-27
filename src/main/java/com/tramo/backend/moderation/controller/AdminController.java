@@ -14,6 +14,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import jakarta.validation.Valid;
+import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.moderation.entity.ReportStatus;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -28,8 +31,16 @@ public class AdminController {
     }
 
     @GetMapping("/reports")
-    public ResponseEntity<List<ReportDTO>> listReports() {
-        return ResponseEntity.ok(moderationService.listOpenReports());
+    public ResponseEntity<PageResponseDTO<ReportDTO>> listReports(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "ALL") String type,
+            @RequestParam(defaultValue = "OPEN") ReportStatus status, @AuthenticationPrincipal User admin) {
+        return ResponseEntity.ok(moderationService.listReports(admin, page, size, type, status));
+    }
+
+    @PostMapping("/projects/{id}/allow-publishing")
+    public ResponseEntity<Void> allowPublishing(@PathVariable String id, @AuthenticationPrincipal User admin) {
+        moderationService.allowPublishing(projectIdCodec.decode(id), admin);
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/reports/{id}/dismiss")
@@ -41,19 +52,19 @@ public class AdminController {
     }
 
     @PostMapping("/comment-reports/{id}/uphold")
-    public ResponseEntity<Void> upholdCommentReport(@PathVariable Long id, @RequestBody(required = false) ModerationActionRequestDTO request,
+    public ResponseEntity<Void> upholdCommentReport(@PathVariable Long id, @Valid @RequestBody(required = false) ModerationActionRequestDTO request,
                                                       @AuthenticationPrincipal User admin) {
         moderationService.upholdCommentReport(id, admin, request != null ? request.getReason() : null);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/users")
-    public ResponseEntity<List<AdminUserDTO>> searchUsers(@RequestParam(required = false) String q) {
-        return ResponseEntity.ok(moderationService.searchUsers(q));
+    public ResponseEntity<List<AdminUserDTO>> searchUsers(@RequestParam(required = false) String q, @AuthenticationPrincipal User admin) {
+        return ResponseEntity.ok(moderationService.searchUsers(q, admin));
     }
 
     @PostMapping("/users/{id}/ban")
-    public ResponseEntity<Void> banUser(@PathVariable Long id, @RequestBody(required = false) ModerationActionRequestDTO request,
+    public ResponseEntity<Void> banUser(@PathVariable Long id, @Valid @RequestBody(required = false) ModerationActionRequestDTO request,
                                          @AuthenticationPrincipal User admin) {
         moderationService.banUser(id, admin, request != null ? request.getReason() : null);
         return ResponseEntity.ok().build();
@@ -66,7 +77,7 @@ public class AdminController {
     }
 
     @PostMapping("/projects/{id}/unpublish")
-    public ResponseEntity<Void> unpublishProject(@PathVariable String id, @RequestBody(required = false) ModerationActionRequestDTO request,
+    public ResponseEntity<Void> unpublishProject(@PathVariable String id, @Valid @RequestBody(required = false) ModerationActionRequestDTO request,
                                                    @AuthenticationPrincipal User admin) {
         moderationService.unpublishProject(projectIdCodec.decode(id), admin, request != null ? request.getReason() : null);
         return ResponseEntity.ok().build();

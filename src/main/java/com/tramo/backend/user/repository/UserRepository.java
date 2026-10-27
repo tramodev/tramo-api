@@ -39,8 +39,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.email = :email")
     Optional<User> findByEmailForUpdate(@Param("email") String email);
-    @Query("SELECT u FROM User u WHERE :q = '' OR LOWER(u.username) LIKE LOWER(CONCAT('%', :q, '%')) "
-            + "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%')) ORDER BY u.id ASC")
+    @Query("SELECT u FROM User u WHERE :q = '' OR LOWER(u.username) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!' "
+            + "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!' ORDER BY u.id ASC")
     List<User> searchByUsernameOrEmail(@Param("q") String q, Pageable pageable);
     Optional<User> findByPatreonUserId(String patreonUserId);
     List<User> findByVisibilityTrueAndBannedFalse();

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 public final class NotificationTypes {
+    public static final String MODERATION = "MODERATION";
     public static final String UPVOTE = "UPVOTE";
     public static final String COMMENT = "COMMENT";
     public static final String FORK = "FORK";

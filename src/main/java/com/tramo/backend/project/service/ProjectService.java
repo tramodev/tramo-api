@@ -39,6 +39,7 @@ import com.tramo.backend.user.entity.User;
 import jakarta.transaction.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Date;
 import java.util.List;
@@ -190,6 +191,8 @@ public class ProjectService {
         boolean firstPublish = false;
         Date firstPublishTimestamp = null;
         if (request.getVisibility() != null) {
+            if (project.isModerationBlocked() && request.getVisibility() != ProjectVisibility.PRIVATE)
+                throw new AccessDeniedException("Publishing is blocked by moderation");
             if (request.getVisibility() == ProjectVisibility.PUBLISHED
                     && (project.getDescription() == null || project.getDescription().isBlank())) {
                 throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);

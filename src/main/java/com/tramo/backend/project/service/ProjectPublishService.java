@@ -25,6 +25,7 @@ import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.FollowRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.Date;
 import java.util.List;
@@ -70,6 +71,7 @@ public class ProjectPublishService {
     @Transactional
     public ProjectResponseDTO publish(Long id, User requester) {
         Project project = history.lock(id, requester);
+        if (project.isModerationBlocked()) throw new AccessDeniedException("Publishing is blocked by moderation");
         if (project.getDescription() == null || project.getDescription().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
         }

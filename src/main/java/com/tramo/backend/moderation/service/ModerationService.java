@@ -3,6 +3,17 @@
 package com.tramo.backend.moderation.service;
 
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
+import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.common.Pagination;
+import com.tramo.backend.exception.RequestValidationException;
+import com.tramo.backend.exception.RequestErrorCode;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import com.tramo.backend.user.Role;
+import com.tramo.backend.auth.service.EmailService;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.comment.entity.Comment;
 import com.tramo.backend.comment.repository.CommentRepository;
@@ -29,16 +40,15 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
 import java.util.Date;
+import java.time.LocalDateTime;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 @Service
 public class ModerationService {
     private static final int ADMIN_SEARCH_LIMIT = 50;
-    private static final int OPEN_REPORTS_LIMIT = 100;
     private final ProjectReportRepository projectReportRepository;
     private final CommentReportRepository commentReportRepository;
     private final ModerationLogRepository moderationLogRepository;
@@ -50,6 +60,8 @@ public class ModerationService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final NotificationService notifications;
     private final AccessGuard accessGuard;
+    private final EntityManager em;
+    private final EmailService emailService;
 
     public ModerationService(ProjectReportRepository projectReportRepository,
                               CommentReportRepository commentReportRepository,
@@ -60,7 +72,7 @@ public class ModerationService {
                               UserRepository userRepository,
                               ProjectIdCodec projectIdCodec,
                               RefreshTokenRepository refreshTokenRepository, NotificationService notifications,
-                              AccessGuard accessGuard) {
+                              AccessGuard accessGuard, EntityManager em, EmailService emailService) {
         this.projectReportRepository = projectReportRepository;
         this.commentReportRepository = commentReportRepository;
         this.moderationLogRepository = moderationLogRepository;
@@ -72,10 +84,13 @@ public class ModerationService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.notifications = notifications;
         this.accessGuard = accessGuard;
+        this.em = em;
+        this.emailService = emailService;
     }
 
     @Transactional
     public void submitReport(Long projectId, User reporter, String reason) {
+        validateReason(reason);
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
@@ -98,6 +113,7 @@ public class ModerationService {
 
     @Transactional
     public void submitCommentReport(Long commentId, User reporter, String reason) {
+        validateReason(reason);
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found"));
 
@@ -118,68 +134,61 @@ public class ModerationService {
         commentReportRepository.save(report);
     }
 
-    public List<ReportDTO> listOpenReports() {
-        Stream<ReportDTO> projectReports = projectReportRepository.findOpenRows(ReportStatus.OPEN, PageRequest.of(0, OPEN_REPORTS_LIMIT)).stream()
-                .map(r -> new ReportDTO(
-                        (Long) r[0],
-                        "PROJECT",
-                        projectIdCodec.encode((Long) r[1]),
-                        (String) r[2],
-                        null,
-                        null,
-                        (String) r[3],
-                        (String) r[4],
-                        ((ReportStatus) r[5]).name(),
-                        (Date) r[6]
-                ));
-        Stream<ReportDTO> commentReports = commentReportRepository.findOpenRows(ReportStatus.OPEN, PageRequest.of(0, OPEN_REPORTS_LIMIT)).stream()
-                .map(r -> new ReportDTO(
-                        (Long) r[0],
-                        "COMMENT",
-                        projectIdCodec.encode((Long) r[1]),
-                        (String) r[2],
-                        (Long) r[3],
-                        (String) r[4],
-                        (String) r[5],
-                        (String) r[6],
-                        ((ReportStatus) r[7]).name(),
-                        (Date) r[8]
-                ));
-        return Stream.concat(projectReports, commentReports)
-                .sorted(Comparator.comparing(ReportDTO::getCreatedDate).reversed())
-                .limit(OPEN_REPORTS_LIMIT)
-                .toList();
+    public PageResponseDTO<ReportDTO> listReports(User admin, int page, int size, String type, ReportStatus status) {
+        requireAdmin(admin);
+        if (!List.of("ALL", "PROJECT", "COMMENT").contains(type)) throw new RequestValidationException(RequestErrorCode.INVALID_VALUE);
+        var rows = projectReportRepository.findReportRows(type, status.name(), Pagination.page(page, size));
+        var reports = rows.getContent().stream().map(r -> new ReportDTO(
+                ((Number) r[0]).longValue(), (String) r[1], projectIdCodec.encode(((Number) r[2]).longValue()),
+                (String) r[3], r[4] == null ? null : ((Number) r[4]).longValue(), (String) r[5],
+                (String) r[6], (String) r[7], (String) r[8], Timestamp.valueOf((LocalDateTime) r[9]))).toList();
+        return new PageResponseDTO<>(reports, rows.hasNext());
     }
 
     @Transactional
     public void dismissReport(Long reportId, String type, User admin) {
+        requireAdmin(admin);
         if ("COMMENT".equals(type)) {
             CommentReport report = commentReportRepository.findById(reportId)
                     .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
+            em.refresh(report.getComment(), LockModeType.PESSIMISTIC_WRITE);
+            em.refresh(report);
+            if (report.getStatus() != ReportStatus.OPEN) return;
             report.setStatus(ReportStatus.DISMISSED);
             logAction(admin, "DISMISS_REPORT", "COMMENT_REPORT", reportId, null);
             return;
         }
+        if (!"PROJECT".equals(type)) throw new RequestValidationException(RequestErrorCode.INVALID_VALUE);
         ProjectReport report = projectReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
+        em.refresh(report.getProject(), LockModeType.PESSIMISTIC_WRITE);
+        em.refresh(report);
+        if (report.getStatus() != ReportStatus.OPEN) return;
         report.setStatus(ReportStatus.DISMISSED);
         logAction(admin, "DISMISS_REPORT", "REPORT", reportId, null);
     }
 
     @Transactional
     public void upholdCommentReport(Long reportId, User admin, String reason) {
+        requireAdmin(admin);
+        validateReason(reason);
         CommentReport report = commentReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
         Comment comment = report.getComment();
-        commentService.delete(comment.getId(), admin);
-
+        em.refresh(comment, LockModeType.PESSIMISTIC_WRITE);
+        em.refresh(report);
+        if (report.getStatus() != ReportStatus.OPEN) return;
         commentReportRepository.updateStatusByCommentId(comment.getId(), ReportStatus.OPEN, ReportStatus.UPHELD);
-
+        if (comment.isDeleted()) return;
+        commentService.delete(comment.getId(), admin);
+        notifyUser(comment.getAuthor(), null, admin,
+                message("A moderator deleted your comment on " + comment.getProject().getTitle() + ".", reason));
         logAction(admin, "UPHOLD_REPORT", "COMMENT_REPORT", reportId, reason);
     }
 
-    public List<AdminUserDTO> searchUsers(String query) {
-        String q = query == null ? "" : query.trim();
+    public List<AdminUserDTO> searchUsers(String query, User admin) {
+        requireAdmin(admin);
+        String q = query == null ? "" : query.trim().replace("!", "!!").replace("%", "!%").replace("_", "!_");
         return userRepository.searchByUsernameOrEmail(q, PageRequest.of(0, ADMIN_SEARCH_LIMIT)).stream()
                 .map(u -> new AdminUserDTO(u.getId(), u.getUsername(), u.getEmail(), u.getRole().name(), u.isBanned()))
                 .toList();
@@ -187,38 +196,81 @@ public class ModerationService {
 
     @Transactional
     public void banUser(Long userId, User admin, String reason) {
-        User target = userRepository.findById(userId)
+        requireAdmin(admin);
+        validateReason(reason);
+        User target = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (target.getId().equals(admin.getId())) {
-            throw new AccessDeniedException("Cannot ban yourself");
-        }
+        if (target.getId().equals(admin.getId()) || target.getRole() == Role.ADMIN) throw new AccessDeniedException("Cannot ban an administrator");
+        if (target.isBanned()) return;
         target.setBanned(true);
         target.setSessionVersion(UUID.randomUUID());
         userRepository.save(target);
         refreshTokenRepository.deleteByUserId(userId);
+        notifyUser(target, null, admin, message("Your account has been banned.", reason));
         notifications.revokeSessionsAfterCommit(userId);
         logAction(admin, "BAN", "USER", userId, reason);
     }
 
     @Transactional
     public void unbanUser(Long userId, User admin) {
-        User target = userRepository.findById(userId)
+        requireAdmin(admin);
+        User target = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (!target.isBanned()) return;
         target.setBanned(false);
         userRepository.save(target);
+        notifyUser(target, null, admin, "Your account has been unbanned.");
         logAction(admin, "UNBAN", "USER", userId, null);
     }
 
     @Transactional
     public void unpublishProject(Long projectId, User admin, String reason) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        requireAdmin(admin);
+        validateReason(reason);
+        Project project = em.find(Project.class, projectId, LockModeType.PESSIMISTIC_WRITE);
+        if (project == null) throw new ResourceNotFoundException("Project not found");
+        if (project.isModerationBlocked()) return;
         project.setVisibility(ProjectVisibility.PRIVATE);
+        project.setModerationBlocked(true);
         projectRepository.save(project);
-
         projectReportRepository.updateStatusByProjectId(projectId, ReportStatus.OPEN, ReportStatus.UPHELD);
-
+        notifyUser(project.getOwner(), project, admin,
+                message("A moderator unpublished " + project.getTitle() + ". Publishing is blocked until a moderator allows it.", reason));
         logAction(admin, "UNPUBLISH_PROJECT", "PROJECT", projectId, reason);
+    }
+
+    @Transactional
+    public void allowPublishing(Long projectId, User admin) {
+        requireAdmin(admin);
+        Project project = em.find(Project.class, projectId, LockModeType.PESSIMISTIC_WRITE);
+        if (project == null) throw new ResourceNotFoundException("Project not found");
+        if (!project.isModerationBlocked()) return;
+        project.setModerationBlocked(false);
+        notifyUser(project.getOwner(), project, admin, "A moderator allowed publishing " + project.getTitle() + " again.");
+        logAction(admin, "ALLOW_PUBLISHING", "PROJECT", projectId, null);
+    }
+
+    private void notifyUser(User recipient, Project project, User admin, String notice) {
+        if (recipient == null) return;
+        notifications.recordModeration(recipient, project, admin, notice);
+        String email = recipient.getEmail();
+        String username = recipient.getUsername();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() { emailService.sendModerationEmail(email, username, notice); }
+        });
+    }
+
+    private void requireAdmin(User admin) {
+        if (admin == null || admin.getRole() != Role.ADMIN) throw new AccessDeniedException("Administrator access required");
+    }
+
+    private void validateReason(String reason) {
+        if (reason != null && reason.length() > 255) throw new RequestValidationException(RequestErrorCode.VALUE_SIZE_INVALID);
+    }
+
+    private String message(String action, String reason) {
+        return reason == null || reason.isBlank() ? action : action + " Reason: " + reason;
     }
 
     private void logAction(User admin, String action, String targetType, Long targetId, String reason) {

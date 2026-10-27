@@ -32,6 +32,8 @@ public class Project {
     private java.util.UUID startRequestId;
     @Column(nullable = false)
     private boolean example;
+    @Column(nullable = false)
+    private boolean moderationBlocked;
     private String title;
     private String description;
     @Column(columnDefinition = "TEXT")

@@ -22,4 +22,5 @@ public class NotificationDTO {
     private int count;
     private boolean read;
     private Date updatedDate;
+    private String message;
 }

@@ -483,4 +483,29 @@ class QueryCountTest extends AbstractIntegrationTest {
 
         assertThat(large).isEqualTo(small);
     }
+    @Test
+    void moderationPagesDoNotAddQueriesForMoreReportsOrLogEntries() throws Exception {
+        var admin = createAdmin("qcmodadmin"); var owner = createUser("qcmodowner"); var reporter = createUser("qcmodreporter");
+        var project = createProject(owner, "Moderated", "published");
+        for (int index = 0; index < 12; index++) {
+            jdbcTemplate.update("INSERT INTO project_report (id, project_id, reporter_id, reason, status, created_date) VALUES (nextval('project_report_seq'), ?, ?, 'Review', 'OPEN', now())", project.getId(), reporter.getId());
+        }
+        for (String path : java.util.List.of("/api/admin/reports")) {
+            long small = queryCount(() -> mockMvc.perform(get(path).param("size", "1").header("Authorization", bearer(admin))).andExpect(status().isOk()));
+            long large = queryCount(() -> mockMvc.perform(get(path).param("size", "20").header("Authorization", bearer(admin))).andExpect(status().isOk()));
+            assertThat(large).isEqualTo(small);
+        }
+    }
+
+    @Test
+    void focusedCommentPageQueriesDoNotScaleWithRootPageSize() throws Exception {
+        var owner = createUser("qcfocusowner"); var project = createProject(owner, "Focused comments", "published");
+        long commentId = 0;
+        for (int index = 0; index < 12; index++) commentId = postForId(owner, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Comment\"}");
+        String path = "/api/public/project/" + pid(project) + "/comments?focusId=" + commentId;
+        long small = queryCount(() -> mockMvc.perform(get(path).param("size", "1")).andExpect(status().isOk()));
+        long large = queryCount(() -> mockMvc.perform(get(path).param("size", "20")).andExpect(status().isOk()));
+        assertThat(large).isLessThanOrEqualTo(small);
+    }
+
 }

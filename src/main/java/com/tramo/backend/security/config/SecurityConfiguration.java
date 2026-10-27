@@ -61,6 +61,7 @@ public class SecurityConfiguration {
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()
                                 .requestMatchers("/api/webhooks/**").permitAll()
+                                .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                                 .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

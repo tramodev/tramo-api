@@ -32,6 +32,9 @@ public class Notification {
 
     private String type;
 
+    @Column(columnDefinition = "TEXT")
+    private String message;
+
     @ManyToOne
     @JoinColumn(name = "project_id")
     private Project project;
