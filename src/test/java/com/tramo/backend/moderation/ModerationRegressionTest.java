@@ -42,6 +42,7 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
             assertThat(userRepository.findById(target.getId()).orElseThrow().isBanned()).isFalse();
         }
         assertThatThrownBy(() -> moderation.banUser(other.getId(), user, null)).isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> moderation.listLog(user, 0, 20)).isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
@@ -150,6 +151,10 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
         moderation.unpublishProject(project.getId(), admin, "Reviewed");
         mockMvc.perform(get("/api/admin/reports").param("status", "UPHELD").param("size", "1").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.hasMore").value(true));
+        mockMvc.perform(get("/api/admin/moderation-log").header("Authorization", bearer(owner))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/moderation-log").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].adminUsername").value(admin.getUsername()))
+                .andExpect(jsonPath("$.content[0].targetId").value(pid(project))).andExpect(jsonPath("$.content[0].publishingBlocked").value(true));
         for (String query : List.of("?page=-1", "?size=101", "?status=UNKNOWN", "?type=UNKNOWN")) {
             mockMvc.perform(get("/api/admin/reports" + query).header("Authorization", bearer(admin))).andExpect(status().isBadRequest());
         }

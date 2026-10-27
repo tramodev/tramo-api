@@ -4,6 +4,7 @@ package com.tramo.backend.moderation.service;
 
 import com.tramo.backend.auth.repository.RefreshTokenRepository;
 import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.moderation.dto.ModerationLogDTO;
 import com.tramo.backend.common.Pagination;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.RequestErrorCode;
@@ -143,6 +144,16 @@ public class ModerationService {
                 (String) r[3], r[4] == null ? null : ((Number) r[4]).longValue(), (String) r[5],
                 (String) r[6], (String) r[7], (String) r[8], Timestamp.valueOf((LocalDateTime) r[9]))).toList();
         return new PageResponseDTO<>(reports, rows.hasNext());
+    }
+
+    public PageResponseDTO<ModerationLogDTO> listLog(User admin, int page, int size) {
+        requireAdmin(admin);
+        var rows = moderationLogRepository.findRows(Pagination.page(page, size));
+        var entries = rows.getContent().stream().map(r -> new ModerationLogDTO(
+                (Long) r[0], (String) r[1], (String) r[2], (String) r[3],
+                "PROJECT".equals(r[3]) ? projectIdCodec.encode((Long) r[4]) : String.valueOf(r[4]),
+                (String) r[5], (Date) r[6], (Boolean) r[7])).toList();
+        return new PageResponseDTO<>(entries, rows.hasNext());
     }
 
     @Transactional

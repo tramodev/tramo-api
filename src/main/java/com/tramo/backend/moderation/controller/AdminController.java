@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import jakarta.validation.Valid;
 import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.moderation.dto.ModerationLogDTO;
 import com.tramo.backend.moderation.entity.ReportStatus;
 
 @RestController
@@ -35,6 +36,12 @@ public class AdminController {
             @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "ALL") String type,
             @RequestParam(defaultValue = "OPEN") ReportStatus status, @AuthenticationPrincipal User admin) {
         return ResponseEntity.ok(moderationService.listReports(admin, page, size, type, status));
+    }
+
+    @GetMapping("/moderation-log")
+    public ResponseEntity<PageResponseDTO<ModerationLogDTO>> listLog(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size, @AuthenticationPrincipal User admin) {
+        return ResponseEntity.ok(moderationService.listLog(admin, page, size));
     }
 
     @PostMapping("/projects/{id}/allow-publishing")

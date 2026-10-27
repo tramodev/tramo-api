@@ -489,8 +489,9 @@ class QueryCountTest extends AbstractIntegrationTest {
         var project = createProject(owner, "Moderated", "published");
         for (int index = 0; index < 12; index++) {
             jdbcTemplate.update("INSERT INTO project_report (id, project_id, reporter_id, reason, status, created_date) VALUES (nextval('project_report_seq'), ?, ?, 'Review', 'OPEN', now())", project.getId(), reporter.getId());
+            jdbcTemplate.update("INSERT INTO moderation_log (id, admin_id, action, target_type, target_id, created_date) VALUES (nextval('moderation_log_seq'), ?, 'UNPUBLISH_PROJECT', 'PROJECT', ?, now())", admin.getId(), project.getId());
         }
-        for (String path : java.util.List.of("/api/admin/reports")) {
+        for (String path : java.util.List.of("/api/admin/reports", "/api/admin/moderation-log")) {
             long small = queryCount(() -> mockMvc.perform(get(path).param("size", "1").header("Authorization", bearer(admin))).andExpect(status().isOk()));
             long large = queryCount(() -> mockMvc.perform(get(path).param("size", "20").header("Authorization", bearer(admin))).andExpect(status().isOk()));
             assertThat(large).isEqualTo(small);
