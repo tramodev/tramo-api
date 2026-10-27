@@ -68,12 +68,12 @@ public class PublicProjectController {
     @GetMapping("/explore")
     public ResponseEntity<ExploreBundleDTO> getExploreBundle(
             @RequestParam(required = false) String q,
-            @RequestParam(required = false, defaultValue = "recent") String sort,
+            @RequestParam(required = false) String sort,
             @RequestParam(required = false, defaultValue = "0") int page,
             @RequestParam(required = false, defaultValue = "10") int size,
             @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(exploreService.getExploreBundle(q, sort, page, size, cursor, user));
+        return ResponseEntity.ok(exploreService.getExploreBundle(q, sort == null ? "recent" : sort, page, size, cursor, user));
     }
 
     @GetMapping("/tags")

@@ -65,7 +65,7 @@ class ExploreCursorTest extends AbstractIntegrationTest {
 
     @Test
     void invalidSortAndCursorReturnBadRequest() throws Exception {
-        for (String query : List.of("sort=invalid", "cursor=invalid", "cursor=", "cursor=" + "x".repeat(300))) {
+        for (String query : List.of("sort=", "sort=invalid", "cursor=invalid", "cursor=", "cursor=" + "x".repeat(300))) {
             mockMvc.perform(get("/api/public/explore?" + query)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"));
         }
         var owner = createUser("cursormismatch");
