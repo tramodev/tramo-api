@@ -42,7 +42,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH
-            + "ORDER BY p.lastPublishedDate DESC",
+            + "ORDER BY p.lastPublishedDate DESC, p.id DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH)
@@ -52,7 +52,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH
-            + "ORDER BY p.lastPublishedDate DESC",
+            + "ORDER BY p.lastPublishedDate DESC, p.id DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false AND p.owner.id IN :ownerIds " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH)
@@ -62,7 +62,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query(value = "SELECT p.id FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH
-            + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.lastPublishedDate) DESC",
+            + "GROUP BY p.id ORDER BY COUNT(v) DESC, MAX(p.lastPublishedDate) DESC, p.id DESC",
             countQuery = "SELECT COUNT(p) FROM Project p "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH)

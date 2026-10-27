@@ -4,6 +4,8 @@ package com.tramo.backend.project;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectVisibility;
+import org.springframework.data.domain.PageRequest;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 import java.util.Date;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -89,6 +93,28 @@ class ProjectFeedOrderingTest extends AbstractIntegrationTest {
         Date modifiedAfter = modifiedDate(project);
 
         assertThat(modifiedAfter).isAfter(modifiedBefore);
+    }
+
+    @Test
+    void equalPublishDatesKeepAllFeedPagesInStableOrder() {
+        User owner = createUser("feedties");
+        List<Long> expected = new ArrayList<>();
+        for (int index = 0; index < 12; index++) {
+            Project project = createProject(owner, "Tied " + index, "published", "Description", null);
+            project.setLastPublishedDate(new Date(1_700_000_000_000L));
+            projectRepository.save(project);
+            expected.add(0, project.getId());
+        }
+        for (int page = 0; page < 3; page++) {
+            var request = PageRequest.of(page, 5);
+            var expectedPage = expected.subList(page * 5, Math.min(expected.size(), (page + 1) * 5));
+            assertThat(projectRepository.findPublishedRecent(ProjectVisibility.PUBLISHED, "", null, request)
+                    .getContent().stream().map(Project::getId).toList()).containsExactlyElementsOf(expectedPage);
+            assertThat(projectRepository.findPublishedRecentByOwners(ProjectVisibility.PUBLISHED, List.of(owner.getId()), "", null, request)
+                    .getContent().stream().map(Project::getId).toList()).containsExactlyElementsOf(expectedPage);
+            assertThat(projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, "", null, request)
+                    .getContent()).containsExactlyElementsOf(expectedPage);
+        }
     }
 
 }
