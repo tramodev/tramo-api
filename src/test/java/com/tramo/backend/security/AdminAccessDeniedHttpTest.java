@@ -82,7 +82,8 @@ class AdminAccessDeniedHttpTest extends AbstractIntegrationTest {
     void rejectedPathsReturnStandardBadRequestJson() throws Exception {
         var user = createUser("rejectedpathuser");
         var mapper = new ObjectMapper();
-        for (String path : List.of("/api/admin/../admin/reports", "/api/admin/reports;x=1")) {
+        for (String path : List.of("/api/admin/../admin/reports", "/api/admin/reports;x=1",
+                "/api/admin/reports%2Fextra", "/api/admin/reports%00", "/api/admin/reports%5Cextra")) {
             var response = signedRequest("GET", path, user);
             assertThat(response.statusCode()).as(path).isEqualTo(400);
             assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith("application/json");
