@@ -43,13 +43,20 @@ public class AdminController {
                 setValue(ReportFilterType.valueOf(text.toUpperCase(Locale.ROOT)));
             }
         });
+        binder.registerCustomEditor(ReportStatus.class, new PropertyEditorSupport() {
+            @Override
+            public void setAsText(String text) {
+                setValue(ReportStatus.valueOf(text.toUpperCase(Locale.ROOT)));
+            }
+        });
     }
 
     @GetMapping("/reports")
     public ResponseEntity<PageResponseDTO<ReportDTO>> listReports(@RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "ALL") ReportFilterType type,
-            @RequestParam(defaultValue = "OPEN") ReportStatus status, @AuthenticationPrincipal User admin) {
-        return ResponseEntity.ok(moderationService.listReports(admin, page, size, type, status));
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) ReportFilterType type,
+            @RequestParam(required = false) ReportStatus status, @AuthenticationPrincipal User admin) {
+        return ResponseEntity.ok(moderationService.listReports(admin, page, size,
+                type == null ? ReportFilterType.ALL : type, status == null ? ReportStatus.OPEN : status));
     }
 
     @GetMapping("/moderation-log")

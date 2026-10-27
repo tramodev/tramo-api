@@ -229,10 +229,28 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
     void invalidReportFiltersUseTheSameErrorContract() throws Exception {
         var admin = createAdmin("filteradmin");
         for (String filter : List.of("type", "status")) {
-            mockMvc.perform(get("/api/admin/reports").param(filter, "FOO").header("Authorization", bearer(admin)))
-                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"))
-                    .andExpect(jsonPath("$.message").value("Invalid request parameter"))
-                    .andExpect(jsonPath("$.timestamp").isNotEmpty());
+            for (String value : List.of("FOO", "", " ")) {
+                mockMvc.perform(get("/api/admin/reports").param(filter, value).header("Authorization", bearer(admin)))
+                        .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                        .andExpect(jsonPath("$.message").value("Invalid request parameter"))
+                        .andExpect(jsonPath("$.timestamp").isNotEmpty());
+            }
+        }
+    }
+
+    @Test
+    void reportStatusesIgnoreCaseAndOmittedFiltersKeepDefaults() throws Exception {
+        var admin = createAdmin("statusadmin");
+        var owner = createUser("statusowner");
+        var reporter = createUser("statusreporter");
+        var project = createProject(owner, "Status filters", "published");
+        report(project, reporter);
+        mockMvc.perform(get("/api/admin/reports").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1));
+        for (String status : List.of("open", "Open", "OPEN", "Upheld", "upheld", "dismissed", "Dismissed")) {
+            mockMvc.perform(get("/api/admin/reports").param("status", status).header("Authorization", bearer(admin)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(status.equalsIgnoreCase("open") ? 1 : 0));
         }
     }
 
