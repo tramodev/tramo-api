@@ -39,6 +39,26 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             + "OR LOWER(CAST(sql('json_extract_path_text(cast(? as json), ''description'')', s.content) AS String)) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '!' "
             + "OR LOWER(CAST(sql('json_extract_path_text(cast(? as json), ''tags'')', s.content) AS String)) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '!'))) ";
 
+    @Query("SELECT p.id AS id, COUNT(v) AS voteCount, p.lastPublishedDate AS publishedAt "
+            + "FROM Project p LEFT JOIN ProjectVote v ON v.project = p "
+            + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED + PUBLISHED_SEARCH
+            + "AND (:following = false OR p.owner.id IN :ownerIds) GROUP BY p.id, p.lastPublishedDate "
+            + "HAVING :beforeId IS NULL OR (:hot = true AND COUNT(v) < :beforeVotes) "
+            + "OR ((:hot = false OR COUNT(v) = :beforeVotes) AND "
+            + "((CAST(:beforeDate AS timestamp) IS NULL AND (p.lastPublishedDate IS NOT NULL OR p.id < :beforeId)) "
+            + "OR (CAST(:beforeDate AS timestamp) IS NOT NULL AND (p.lastPublishedDate < :beforeDate "
+            + "OR (p.lastPublishedDate = :beforeDate AND p.id < :beforeId))))) "
+            + "ORDER BY CASE WHEN :hot = true THEN COUNT(v) ELSE 0 END DESC, p.lastPublishedDate DESC, p.id DESC")
+    org.springframework.data.domain.Slice<ExploreRow> findExplorePage(ProjectVisibility visibility, String query, Long viewerId,
+            boolean following, List<Long> ownerIds, boolean hot, Long beforeId, java.util.Date beforeDate,
+            long beforeVotes, Pageable pageable);
+
+    interface ExploreRow {
+        Long getId();
+        long getVoteCount();
+        java.util.Date getPublishedAt();
+    }
+
     @Query(value = "SELECT p FROM Project p JOIN FETCH p.owner LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner "
             + "WHERE p.visibility = :visibility AND p.owner.banned = false " + NOT_BLOCK_RELATED
             + PUBLISHED_SEARCH

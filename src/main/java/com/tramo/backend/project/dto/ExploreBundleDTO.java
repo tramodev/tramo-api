@@ -14,6 +14,7 @@ import java.util.List;
 public class ExploreBundleDTO {
     private List<ProjectFeedItemDTO> feed;
     private boolean hasMore;
+    private String nextCursor;
     private ProjectFeedItemDTO featured;
     private List<TagCountDTO> hotTopics;
     private List<AuthorCountDTO> activeAuthors;

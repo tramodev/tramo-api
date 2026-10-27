@@ -4,6 +4,16 @@ package com.tramo.backend.project.service;
 
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.common.Pagination;
+import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.exception.RequestValidationException;
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.ResourceNotFoundException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Date;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.sql.Timestamp;
 import com.tramo.backend.project.dto.AuthorCountDTO;
 import com.tramo.backend.project.dto.ExploreBundleDTO;
 import com.tramo.backend.project.dto.ProjectFeedItemDTO;
@@ -48,10 +58,11 @@ public class ExploreService {
     private final ProjectFeedMapper feedMapper;
     private final PrivacyPolicy privacyPolicy;
     private final TagService tagService;
+    private final ProjectIdCodec projectIdCodec;
 
     public ExploreService(ProjectRepository projectRepository, ProjectVoteRepository projectVoteRepository,
                            FollowRepository followRepository, NotificationService notificationService,
-                           ProjectFeedMapper feedMapper, PrivacyPolicy privacyPolicy, TagService tagService) {
+                           ProjectFeedMapper feedMapper, PrivacyPolicy privacyPolicy, TagService tagService, ProjectIdCodec projectIdCodec) {
         this.projectRepository = projectRepository;
         this.projectVoteRepository = projectVoteRepository;
         this.followRepository = followRepository;
@@ -59,9 +70,13 @@ public class ExploreService {
         this.feedMapper = feedMapper;
         this.privacyPolicy = privacyPolicy;
         this.tagService = tagService;
+        this.projectIdCodec = projectIdCodec;
     }
 
-    public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, User requester) {
+    public ExploreBundleDTO getExploreBundle(String query, String sort, int page, int size, String cursor, User requester) {
+        if (!List.of("recent", "hot", "following").contains(sort)) throw new RequestValidationException(RequestErrorCode.BAD_REQUEST);
+        Position after = parseCursor(cursor, sort);
+        if (after != null && page != 0) throw new RequestValidationException(RequestErrorCode.BAD_REQUEST);
         String q = query == null ? "" : query.trim().toLowerCase();
         if (q.length() < 3 && !q.contains("%") && !q.contains("_")) q = "";
         q = q.replace("!", "!!").replace("%", "!%").replace("_", "!_");
@@ -69,32 +84,19 @@ public class ExploreService {
         Long viewerId = requester == null ? null : requester.getId();
         Set<String> blockRelated = privacyPolicy.blockRelatedUsernames(requester);
 
-        List<Project> pageProjects;
-        boolean hasMore;
-        if ("hot".equals(sort)) {
-            Page<Long> idPage = projectRepository.findPublishedHotIds(ProjectVisibility.PUBLISHED, q, viewerId, pageable);
-            List<Long> ids = idPage.getContent();
-            Map<Long, Project> byId = ids.isEmpty()
-                    ? Map.of()
-                    : projectRepository.findAllByIdInWithFetch(ids).stream()
-                        .collect(Collectors.toMap(Project::getId, p -> p));
-            pageProjects = ids.stream().map(byId::get).toList();
-            hasMore = idPage.hasNext();
-        } else if ("following".equals(sort)) {
-            List<Long> followedIds = requester == null ? List.of() : followRepository.findFollowedIds(requester.getId());
-            if (followedIds.isEmpty()) {
-                pageProjects = List.of();
-                hasMore = false;
-            } else {
-                Page<Project> projectPage = projectRepository.findPublishedRecentByOwners(ProjectVisibility.PUBLISHED, followedIds, q, viewerId, pageable);
-                pageProjects = projectPage.getContent();
-                hasMore = projectPage.hasNext();
-            }
-        } else {
-            Page<Project> projectPage = projectRepository.findPublishedRecent(ProjectVisibility.PUBLISHED, q, viewerId, pageable);
-            pageProjects = projectPage.getContent();
-            hasMore = projectPage.hasNext();
-        }
+        boolean following = "following".equals(sort);
+        List<Long> owners = following && requester != null ? followRepository.findFollowedIds(requester.getId()) : List.of();
+        var rows = projectRepository.findExplorePage(ProjectVisibility.PUBLISHED, q, viewerId, following,
+                owners.isEmpty() ? List.of(-1L) : owners, "hot".equals(sort),
+                after == null ? null : after.id(), after == null ? null : after.date(), after == null ? 0 : after.votes(), pageable);
+        List<Long> ids = rows.getContent().stream().map(ProjectRepository.ExploreRow::getId).toList();
+        Map<Long, Project> byId = ids.isEmpty() ? Map.of() : projectRepository.findAllByIdInWithFetch(ids).stream()
+                .collect(Collectors.toMap(Project::getId, project -> project));
+        List<Project> pageProjects = ids.stream().map(byId::get)
+                .filter(project -> project != null && project.getVisibility() == ProjectVisibility.PUBLISHED
+                        && !project.getOwner().isBanned() && !blockRelated.contains(project.getOwner().getUsername())).toList();
+        boolean hasMore = rows.hasNext();
+        String nextCursor = hasMore && !rows.isEmpty() ? encodeCursor(rows.getContent().get(rows.getNumberOfElements() - 1), sort) : null;
 
         FeedContext ctx = feedMapper.publishedContextFor(pageProjects, requester);
         List<ProjectFeedItemDTO> feed = pageProjects.stream()
@@ -106,7 +108,7 @@ public class ExploreService {
         List<TagCountDTO> hotTopics = List.of();
         List<AuthorCountDTO> activeAuthors = List.of();
         List<ProjectFeedItemDTO> trendingProjects = List.of();
-        if (page == 0) {
+        if (page == 0 && cursor == null) {
             if (!"following".equals(sort)) {
                 featured = projectRepository.findByFeaturedTrue()
                         .filter(project -> project.getVisibility() == ProjectVisibility.PUBLISHED)
@@ -127,7 +129,31 @@ public class ExploreService {
                         .toList();
         }
 
-        return new ExploreBundleDTO(feed, hasMore, featured, hotTopics, activeAuthors, trendingProjects);
+        return new ExploreBundleDTO(feed, hasMore, nextCursor, featured, hotTopics, activeAuthors, trendingProjects);
+    }
+
+    private record Position(Long id, Date date, long votes) {}
+
+    private Position parseCursor(String cursor, String sort) {
+        if (cursor == null) return null;
+        try {
+            if (cursor.length() > 256) throw new IllegalArgumentException();
+            String[] parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\\|", -1);
+            if (parts.length != 4 || !parts[0].equals(sort)) throw new IllegalArgumentException();
+            long votes = Long.parseLong(parts[3]);
+            Long id = projectIdCodec.decode(parts[1]);
+            Instant date = parts[2].equals("-") ? null : Instant.parse(parts[2]);
+            if (votes < 0 || (date != null && (date.getEpochSecond() < 0 || date.getEpochSecond() > 253402300799L))) throw new IllegalArgumentException();
+            return new Position(id, date == null ? null : Timestamp.from(date), votes);
+        } catch (IllegalArgumentException | DateTimeParseException | ResourceNotFoundException invalid) {
+            throw new RequestValidationException(RequestErrorCode.BAD_REQUEST);
+        }
+    }
+
+    private String encodeCursor(ProjectRepository.ExploreRow row, String sort) {
+        String value = sort + "|" + projectIdCodec.encode(row.getId()) + "|"
+                + (row.getPublishedAt() == null ? "-" : row.getPublishedAt().toInstant()) + "|" + row.getVoteCount();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     public List<TagCountDTO> getHotTopics(int limit) {

@@ -264,7 +264,7 @@ class QueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void explorePageTwoQueryCountDoesNotScaleWithTotalFeedSize() throws Exception {
+    void exploreCursorQueryCountDoesNotScaleWithTotalFeedSize() throws Exception {
         
         
         
@@ -274,14 +274,17 @@ class QueryCountTest extends AbstractIntegrationTest {
             seedPublishedProject(author, "Page " + i, 1, 1, fan);
         }
 
-        long small = queryCount(() -> mockMvc.perform(get("/api/public/explore?page=1&size=10"))
+        String first = mockMvc.perform(get("/api/public/explore?size=10"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String cursor = new ObjectMapper().readTree(first).get("nextCursor").asText();
+        long small = queryCount(() -> mockMvc.perform(get("/api/public/explore").param("size", "10").param("cursor", cursor))
                 .andExpect(status().isOk()));
 
         for (int i = 0; i < 8; i++) {
             seedPublishedProject(author, "Page extra " + i, 1, 1, fan);
         }
 
-        long large = queryCount(() -> mockMvc.perform(get("/api/public/explore?page=1&size=10"))
+        long large = queryCount(() -> mockMvc.perform(get("/api/public/explore").param("size", "10").param("cursor", cursor))
                 .andExpect(status().isOk()));
 
         assertThat(large).isEqualTo(small);
