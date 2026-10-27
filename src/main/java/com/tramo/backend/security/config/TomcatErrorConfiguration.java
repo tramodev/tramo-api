@@ -27,6 +27,7 @@ public class TomcatErrorConfiguration {
                     if (response.getStatus() != 400) {
                         super.report(request, response, failure);
                     } else if (response.getContentWritten() == 0 && response.setErrorReported()) {
+                        response.setHeader("Content-Disposition", "inline;filename=error.json");
                         resolver.resolveException(request, response, null, new RequestRejectedException("Invalid request path"));
                     }
                 }

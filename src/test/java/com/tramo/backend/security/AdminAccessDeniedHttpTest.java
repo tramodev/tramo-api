@@ -12,6 +12,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
+import java.net.Socket;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -78,6 +79,22 @@ class AdminAccessDeniedHttpTest extends AbstractIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
         assertThat(response.body()).contains("Invalid backend request");
     }
+    @Test
+    void invalidPercentEscapesReturnBadRequestJsonBeforeAuthentication() throws Exception {
+        for (String path : List.of("/api/admin/reports%u002F", "/api/admin/reports%", "/api/admin/reports%GG")) {
+            try (var socket = new Socket("localhost", port)) {
+                socket.setSoTimeout(10000);
+                socket.getOutputStream().write(("GET " + path + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                String response = new String(socket.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                assertThat(response).as(path).startsWith("HTTP/1.1 400")
+                        .containsIgnoringCase("Content-Type: application/json")
+                        .contains("\"code\":\"BAD_REQUEST\"", "\"message\":\"Invalid request path\"", "\"timestamp\":")
+                        .containsIgnoringCase("X-Tracking-Id:");
+            }
+        }
+    }
+
     @Test
     void rejectedPathsReturnStandardBadRequestJson() throws Exception {
         var user = createUser("rejectedpathuser");
