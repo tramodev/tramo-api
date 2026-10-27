@@ -23,6 +23,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.moderation.dto.AdminUserDTO;
 import com.tramo.backend.moderation.dto.ReportDTO;
+import com.tramo.backend.moderation.dto.ReportFilterType;
 import com.tramo.backend.moderation.entity.CommentReport;
 import com.tramo.backend.moderation.entity.ModerationLog;
 import com.tramo.backend.moderation.entity.ProjectReport;
@@ -135,10 +136,9 @@ public class ModerationService {
         commentReportRepository.save(report);
     }
 
-    public PageResponseDTO<ReportDTO> listReports(User admin, int page, int size, String type, ReportStatus status) {
+    public PageResponseDTO<ReportDTO> listReports(User admin, int page, int size, ReportFilterType type, ReportStatus status) {
         requireAdmin(admin);
-        if (!List.of("ALL", "PROJECT", "COMMENT").contains(type)) throw new RequestValidationException(RequestErrorCode.INVALID_VALUE);
-        var rows = projectReportRepository.findReportRows(type, status.name(), Pagination.page(page, size));
+        var rows = projectReportRepository.findReportRows(type.name(), status.name(), Pagination.page(page, size));
         var reports = rows.getContent().stream().map(r -> new ReportDTO(
                 ((Number) r[0]).longValue(), (String) r[1], projectIdCodec.encode(((Number) r[2]).longValue()),
                 (String) r[3], r[4] == null ? null : ((Number) r[4]).longValue(), (String) r[5],

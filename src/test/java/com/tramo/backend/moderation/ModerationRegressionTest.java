@@ -196,4 +196,47 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(other) + "/comments").param("focusId", Long.toString(reply))).andExpect(status().isNotFound());
     }
 
+    @Test
+    void dismissRequiresAnExplicitTypeWhenReportIdsCollide() throws Exception {
+        var admin = createAdmin("typedadmin"); var owner = createUser("typedowner"); var reporter = createUser("typedreporter");
+        var project = createProject(owner, "Colliding reports", "published");
+        long commentId = postForId(owner, "/api/project/" + pid(project) + "/comments", "{\"content\":\"Comment\"}");
+        jdbcTemplate.update("INSERT INTO project_report (id, project_id, reporter_id, reason, status, created_date) VALUES (103, ?, ?, 'Project reason', 'OPEN', now())", project.getId(), reporter.getId());
+        jdbcTemplate.update("INSERT INTO comment_report (id, comment_id, reporter_id, reason, status, created_date) VALUES (103, ?, ?, 'Comment reason', 'OPEN', now())", commentId, reporter.getId());
+        mockMvc.perform(post("/api/admin/reports/103/dismiss").header("Authorization", bearer(admin)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+        for (String table : List.of("project_report", "comment_report")) {
+            assertThat(jdbcTemplate.queryForObject("SELECT status FROM " + table + " WHERE id = 103", String.class)).isEqualTo("OPEN");
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM moderation_log", Long.class)).isZero();
+        mockMvc.perform(post("/api/admin/reports/103/dismiss").param("type", "COMMENT").header("Authorization", bearer(admin))).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM project_report WHERE id = 103", String.class)).isEqualTo("OPEN");
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM comment_report WHERE id = 103", String.class)).isEqualTo("DISMISSED");
+    }
+
+    @Test
+    void invalidReportFiltersUseTheSameErrorContract() throws Exception {
+        var admin = createAdmin("filteradmin");
+        for (String filter : List.of("type", "status")) {
+            mockMvc.perform(get("/api/admin/reports").param(filter, "FOO").header("Authorization", bearer(admin)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                    .andExpect(jsonPath("$.message").value("Invalid request parameter"))
+                    .andExpect(jsonPath("$.timestamp").isNotEmpty());
+        }
+    }
+
+    @Test
+    void publishingErrorsPreserveThePublicModerationMessage() throws Exception {
+        var admin = createAdmin("blockedmessageadmin"); var owner = createUser("blockedmessageowner");
+        var project = createProject(owner, "Blocked message", "published");
+        moderation.unpublishProject(project.getId(), admin, "Review");
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner)))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Publishing is blocked by moderation"));
+        mockMvc.perform(put("/api/project/" + pid(project)).header("Authorization", bearer(owner)).contentType("application/json").content("{\"visibility\":\"published\"}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Publishing is blocked by moderation"));
+    }
+
 }

@@ -7,6 +7,8 @@ import com.tramo.backend.security.jwt.JwtAuthEntryPoint;
 import com.tramo.backend.security.jwt.JwtAuthFilter;
 import com.tramo.backend.security.ratelimit.RateLimitFilter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +35,9 @@ public class SecurityConfiguration {
     private BirthDateGateFilter birthDateGateFilter;
     @Autowired
     private JwtAuthEntryPoint authEntryPoint;
+    @Autowired
+    @Qualifier("handlerExceptionResolver")
+    private HandlerExceptionResolver exceptionResolver;
 
     @Bean
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
@@ -66,6 +71,7 @@ public class SecurityConfiguration {
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authEntryPoint)
+                        .accessDeniedHandler((request, response, exception) -> exceptionResolver.resolveException(request, response, null, exception))
                 )
                 .sessionManagement(sessionManager->
                         sessionManager

@@ -16,6 +16,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -38,6 +39,7 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private static final Set<String> PUBLIC_MESSAGES = Set.of(
+            "Publishing is blocked by moderation",
             "Invalid refresh token", "Refresh token expired", "Invalid or expired reset link",
             "Invalid or expired verification link", "Invalid Google token", "Google account email is not verified",
             "Animated GIF avatars are a supporter perk. Upgrade to use one.",
@@ -210,7 +212,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.FORBIDDEN.value(),
-                "Access denied",
+                publicMessage(ex, "Access denied"),
                 LocalDateTime.now()
         );
         return handled(ex, error, HttpStatus.FORBIDDEN);
@@ -274,8 +276,8 @@ public class GlobalExceptionHandler {
         return handled(ex, errorResponse, HttpStatus.BAD_REQUEST);
     }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidParameter(MethodArgumentTypeMismatchException ex) {
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class, MissingServletRequestParameterException.class})
+    public ResponseEntity<ErrorResponse> handleInvalidParameter(Exception ex) {
         return handled(ex, new ErrorResponse(400, "Invalid request parameter", LocalDateTime.now()), HttpStatus.BAD_REQUEST);
     }
 

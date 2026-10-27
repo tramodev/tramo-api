@@ -6,6 +6,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.moderation.dto.AdminUserDTO;
 import com.tramo.backend.moderation.dto.ModerationActionRequestDTO;
 import com.tramo.backend.moderation.dto.ReportDTO;
+import com.tramo.backend.moderation.dto.ReportFilterType;
 import com.tramo.backend.moderation.service.ModerationService;
 import com.tramo.backend.user.entity.User;
 import org.springframework.http.ResponseEntity;
@@ -33,7 +34,7 @@ public class AdminController {
 
     @GetMapping("/reports")
     public ResponseEntity<PageResponseDTO<ReportDTO>> listReports(@RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "ALL") String type,
+            @RequestParam(defaultValue = "20") int size, @RequestParam(defaultValue = "ALL") ReportFilterType type,
             @RequestParam(defaultValue = "OPEN") ReportStatus status, @AuthenticationPrincipal User admin) {
         return ResponseEntity.ok(moderationService.listReports(admin, page, size, type, status));
     }
@@ -52,7 +53,7 @@ public class AdminController {
 
     @PostMapping("/reports/{id}/dismiss")
     public ResponseEntity<Void> dismissReport(@PathVariable Long id,
-                                                @RequestParam(defaultValue = "PROJECT") String type,
+                                                @RequestParam String type,
                                                 @AuthenticationPrincipal User admin) {
         moderationService.dismissReport(id, type, admin);
         return ResponseEntity.ok().build();

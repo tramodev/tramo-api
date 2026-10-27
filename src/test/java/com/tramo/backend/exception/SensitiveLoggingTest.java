@@ -257,6 +257,18 @@ class SensitiveLoggingTest {
         assertSafe(logText());
     }
 
+    @Test
+    void accessDeniedDoesNotExposeArbitraryExceptionMessages() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var response = mvc.perform(get("/denied")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Access denied"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty()).andReturn().getResponse();
+        assertSafe(response.getContentAsString());
+        assertSafe(logText());
+    }
+
     private String logText() {
         return logs.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (a, b) -> a + "\n" + b);
     }
@@ -283,6 +295,9 @@ class SensitiveLoggingTest {
         @PostMapping("/validate")
         public void validate(@Valid @RequestBody ResetPasswordRequestDTO request) {
         }
+
+        @GetMapping("/denied")
+        public void denied() { throw new org.springframework.security.access.AccessDeniedException(SECRET); }
 
         @GetMapping("/invalid")
         public void invalid() {

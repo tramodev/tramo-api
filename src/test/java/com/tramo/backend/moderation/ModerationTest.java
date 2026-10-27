@@ -178,7 +178,7 @@ class ModerationTest extends AbstractIntegrationTest {
 
         long reportId = projectReportRepository.findAll().get(0).getId();
 
-        mockMvc.perform(post("/api/admin/reports/" + reportId + "/dismiss")
+        mockMvc.perform(post("/api/admin/reports/" + reportId + "/dismiss?type=PROJECT")
                         .header("Authorization", bearer(admin)))
                 .andExpect(status().isOk());
 
