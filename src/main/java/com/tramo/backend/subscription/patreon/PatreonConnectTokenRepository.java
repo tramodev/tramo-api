@@ -16,6 +16,9 @@ import org.springframework.data.repository.query.Param;
 public interface PatreonConnectTokenRepository extends JpaRepository<PatreonConnectToken, UUID> {
     Optional<PatreonConnectToken> findByToken(String token);
     @Modifying(flushAutomatically = true)
+    @Query("delete from PatreonConnectToken t where t.token = :token and t.user.id = :userId and t.expiresAt > :now")
+    int consume(@Param("token") String token, @Param("userId") Long userId, @Param("now") java.time.Instant now);
+    @Modifying(flushAutomatically = true)
     @Query("delete from PatreonConnectToken t where t.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);
 }

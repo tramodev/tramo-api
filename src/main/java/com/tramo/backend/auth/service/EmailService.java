@@ -10,6 +10,7 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Async;
 
 @Slf4j
 @Service
@@ -29,6 +30,7 @@ public class EmailService {
         this.mailSender = mailSender;
     }
 
+    @Async
     public void sendVerificationEmail(User user, String token) {
         String verificationLink = frontendUrl + "/verify-email?token=" + token;
 
@@ -68,6 +70,7 @@ public class EmailService {
         catch (MailException failure) { SafeLog.failure(log, "moderation_email_failed", "MAIL_SEND_FAILED", failure); }
     }
 
+    @Async
     public void sendPasswordResetEmail(User user, String token) {
         String resetLink = frontendUrl + "/reset-password?token=" + token;
 

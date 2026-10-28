@@ -25,7 +25,7 @@ public class EmailVerificationToken {
     private UUID id;
 
     @Column(unique = true, nullable = false)
-    private String token;
+    private String tokenHash;
 
     @ManyToOne(optional = false)
     private User user;

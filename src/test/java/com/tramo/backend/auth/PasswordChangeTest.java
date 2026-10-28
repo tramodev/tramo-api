@@ -85,6 +85,16 @@ class PasswordChangeTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void samePasswordIsRejectedWithoutRevokingSession() throws Exception {
+        User user = createUser("samepassword");
+        String access = bearer(user);
+        String hash = user.getPassword();
+        changePassword(user, CURRENT, CURRENT).andExpect(status().isBadRequest());
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getPassword()).isEqualTo(hash);
+        mockMvc.perform(get("/api/profile/me").header("Authorization", access)).andExpect(status().isOk());
+    }
+
+    @Test
     void weakNewPasswordIsRejected() throws Exception {
         User user = createUser("pwchange4");
 

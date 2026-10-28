@@ -82,6 +82,9 @@ public class RateLimitFilter implements Filter {
 
         if (path.startsWith("/api/auth/")) {
             Bucket bucket = switch (path) {
+                case "/api/auth/patreon/connect", "/api/auth/patreon/complete" -> rateLimiterService.resolveBucket(
+                        ip + ":patreon", 10, 10, Duration.ofMinutes(1)
+                );
                 case "/api/auth/login" -> rateLimiterService.resolveBucket(
                         ip + ":login", 10, 10, Duration.ofMinutes(1)
                 );

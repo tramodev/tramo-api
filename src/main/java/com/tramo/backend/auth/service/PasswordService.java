@@ -103,6 +103,9 @@ public class PasswordService {
         if (user.getPassword() == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
             throw new RequestValidationException(RequestErrorCode.CURRENT_PASSWORD_INCORRECT);
         }
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new RequestValidationException(RequestErrorCode.NEW_PASSWORD_UNCHANGED);
+        }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);

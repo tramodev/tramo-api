@@ -56,7 +56,7 @@ class PatreonAuthTest extends AbstractIntegrationTest {
         when(patreonClient.fetchIdentity("access-tok"))
                 .thenReturn(new PatreonClient.PatreonIdentity("patreon-123", true));
 
-        mockMvc.perform(get("/api/auth/patreon/callback").param("code", "auth-code").param("state", state))
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user)).param("code", "auth-code").param("state", state))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("patreon=connected")));
 
@@ -78,7 +78,7 @@ class PatreonAuthTest extends AbstractIntegrationTest {
         when(patreonClient.fetchIdentity("access-tok"))
                 .thenReturn(new PatreonClient.PatreonIdentity("patreon-456", false));
 
-        mockMvc.perform(get("/api/auth/patreon/callback").param("code", "auth-code").param("state", state))
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user)).param("code", "auth-code").param("state", state))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "https://www.patreon.com/cw/Tramodev/membership"));
 
@@ -91,8 +91,63 @@ class PatreonAuthTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void publicCallbackOnlyRelaysToTheBrowser() throws Exception {
+        User attacker = createUser("attacker");
+        String state = startConnectFlow(attacker);
+        mockMvc.perform(get("/api/auth/patreon/callback").param("code", "victim-code").param("state", state))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", containsString("/api/auth/patreon/callback?")));
+        assertThat(userRepository.findById(attacker.getId()).orElseThrow().getPatreonUserId()).isNull();
+        org.mockito.Mockito.verify(patreonClient, org.mockito.Mockito.never()).exchangeCode(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void anotherSessionCannotConsumeTheState() throws Exception {
+        User attacker = createUser("stateattacker");
+        User victim = createUser("statevictim");
+        String state = startConnectFlow(attacker);
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(victim))
+                        .param("code", "victim-code").param("state", state))
+                .andExpect(status().isFound()).andExpect(header().string("Location", containsString("patreon=error")));
+        assertThat(userRepository.findById(attacker.getId()).orElseThrow().getPatreonUserId()).isNull();
+        org.mockito.Mockito.verify(patreonClient, org.mockito.Mockito.never()).exchangeCode(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void alreadyLinkedPatreonReturnsAnError() throws Exception {
+        User owner = createUser("linkedowner");
+        owner.setPatreonUserId("patreon-taken");
+        userRepository.save(owner);
+        User other = createUser("linkedother");
+        String state = startConnectFlow(other);
+        when(patreonClient.exchangeCode("code")).thenReturn(new PatreonClient.PatreonTokens("access", "refresh"));
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-taken", true));
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(other))
+                        .param("code", "code").param("state", state))
+                .andExpect(status().isFound()).andExpect(header().string("Location", containsString("patreon=error")));
+        assertThat(userRepository.findById(owner.getId()).orElseThrow().getPatreonUserId()).isEqualTo("patreon-taken");
+        assertThat(userRepository.findById(other.getId()).orElseThrow().getPatreonUserId()).isNull();
+    }
+
+    @Test
+    void stateIsSingleUse() throws Exception {
+        User user = createUser("singleuse");
+        String state = startConnectFlow(user);
+        when(patreonClient.exchangeCode("code")).thenReturn(new PatreonClient.PatreonTokens("access", "refresh"));
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-single", true));
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user))
+                        .param("code", "code").param("state", state))
+                .andExpect(status().isFound()).andExpect(header().string("Location", containsString("patreon=connected")));
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user))
+                        .param("code", "code").param("state", state))
+                .andExpect(status().isFound()).andExpect(header().string("Location", containsString("patreon=error")));
+        org.mockito.Mockito.verify(patreonClient, org.mockito.Mockito.times(1)).exchangeCode("code");
+    }
+
+    @Test
     void callbackRejectsUnknownState() throws Exception {
-        mockMvc.perform(get("/api/auth/patreon/callback").param("code", "auth-code").param("state", "not-a-real-token"))
+        User user = createUser("unknownstate");
+        mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user)).param("code", "auth-code").param("state", "not-a-real-token"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", containsString("patreon=error")));
     }
@@ -116,7 +171,7 @@ class PatreonAuthTest extends AbstractIntegrationTest {
         });
         var executor = Executors.newSingleThreadExecutor();
         try {
-            var callback = executor.submit(() -> mockMvc.perform(get("/api/auth/patreon/callback")
+            var callback = executor.submit(() -> mockMvc.perform(get("/api/auth/patreon/complete").header("Authorization", bearer(user))
                     .param("code", "auth-code").param("state", state)));
             assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
             if ("delete".equals(change)) {
@@ -154,8 +209,7 @@ class PatreonAuthTest extends AbstractIntegrationTest {
 
     @Test
     void callbackRejectsMissingParams() throws Exception {
-        mockMvc.perform(get("/api/auth/patreon/callback"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", containsString("patreon=error")));
+        mockMvc.perform(get("/api/auth/patreon/complete"))
+                .andExpect(status().isUnauthorized());
     }
 }

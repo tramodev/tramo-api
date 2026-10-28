@@ -60,6 +60,33 @@ class RegistrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void registrationTreatsEmailCaseAsOneIdentity() throws Exception {
+        register(registerJson("mailcaseone", "Qa_Alice@qa.local", "Passw0rd123!"))
+                .andExpect(status().isOk());
+        register(registerJson("mailcasetwo", "qa_alice@qa.local", "Passw0rd123!"))
+                .andExpect(status().isOk());
+        assertThat(userRepository.findByUsernameIgnoreCase("mailcasetwo")).isEmpty();
+        assertThat(userRepository.findByEmail("QA_ALICE@QA.LOCAL").orElseThrow().getEmail()).isEqualTo("qa_alice@qa.local");
+    }
+
+    @Test
+    void underageResponseDoesNotRevealWhetherEmailExists() throws Exception {
+        createUser("existingage", "existingage@example.com", true, false, Role.USER);
+        String birthDate = java.time.LocalDate.now().minusYears(12).toString();
+        register(registerJson("newageone", "existingage@example.com", "Passw0rd123!", birthDate))
+                .andExpect(status().isForbidden());
+        register(registerJson("newagetwo", "unknownage@example.com", "Passw0rd123!", birthDate))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsUnicodeEmailBeforeCreatingUser() throws Exception {
+        register(registerJson("unicodeemail", "álîce@example.com", "Passw0rd123!"))
+                .andExpect(status().isBadRequest());
+        assertThat(userRepository.findByUsernameIgnoreCase("unicodeemail")).isEmpty();
+    }
+
+    @Test
     void registerRejectsFailedCaptcha() throws Exception {
         doThrow(new CaptchaVerificationException("Captcha verification failed"))
                 .when(captchaVerifier).verify(anyString(), anyString());
@@ -111,7 +138,7 @@ class RegistrationTest extends AbstractIntegrationTest {
 
         User duplicate = new User();
         duplicate.setUsername("dbconstraintother");
-        duplicate.setEmail("dbconstraint@example.com");
+        duplicate.setEmail("DBCONSTRAINT@EXAMPLE.COM");
         duplicate.setPassword("irrelevant");
         duplicate.setRole(Role.USER);
         duplicate.setVisibility(true);

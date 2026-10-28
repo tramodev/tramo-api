@@ -27,6 +27,8 @@ public class RegisterRequestDTO {
 
     @NotBlank(message = "EMAIL_REQUIRED")
     @Email(message = "EMAIL_INVALID")
+    @Pattern(regexp = "^[\\x21-\\x7E]+$", message = "EMAIL_INVALID")
+    @Size(max = 254, message = "EMAIL_INVALID")
     private String email;
 
     @NotBlank(message = "CAPTCHA_REQUIRED")

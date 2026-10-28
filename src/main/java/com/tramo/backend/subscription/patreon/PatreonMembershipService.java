@@ -25,6 +25,11 @@ public class PatreonMembershipService {
         if (user.getPatreonUserId() == null || user.getEncryptedPatreonAccessToken() == null) {
             return subscriptionService.getStatus(user);
         }
+        apply(user, fetchIdentity(user));
+        return subscriptionService.getStatus(user);
+    }
+
+    public PatreonClient.PatreonIdentity fetchIdentity(User user) {
         String accessToken;
         try {
             accessToken = cipher.convertToEntityAttribute(user.getEncryptedPatreonAccessToken());
@@ -35,11 +40,17 @@ public class PatreonMembershipService {
         if (!user.getPatreonUserId().equals(identity.patreonUserId())) {
             throw new InvalidTokenException("Patreon account does not match the linked account");
         }
+        return identity;
+    }
+
+    public void apply(User user, PatreonClient.PatreonIdentity identity) {
+        if (!identity.patreonUserId().equals(user.getPatreonUserId())) {
+            throw new InvalidTokenException("Patreon account does not match the linked account");
+        }
         if (identity.activePatron()) {
             subscriptionService.activateSupporterSubscription(user, subscriptionService.findOrCreateSupporterPlan());
         } else {
             subscriptionService.deactivateSupporterSubscription(user);
         }
-        return subscriptionService.getStatus(user);
     }
 }

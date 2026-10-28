@@ -27,7 +27,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Optional;
-import java.util.UUID;
+import java.util.Locale;
 
 @Service
 public class RegistrationService {
@@ -76,16 +76,17 @@ public class RegistrationService {
             throw new UserAlreadyExistsException("username", "Username '" + registerRequest.getUsername() + "' is already taken");
         }
 
+        ageGateService.validateOrRecordRejection(ip, registerRequest.getBirthDate());
+
+        String encodedPassword = passwordEncoder.encode(registerRequest.getPassword());
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
             return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
 
-        ageGateService.validateOrRecordRejection(ip, registerRequest.getBirthDate());
-
         User user = new User();
         user.setUsername(registerRequest.getUsername());
-        user.setPassword(passwordEncoder.encode(registerRequest.getPassword()));
-        user.setEmail(registerRequest.getEmail());
+        user.setPassword(encodedPassword);
+        user.setEmail(registerRequest.getEmail().toLowerCase(Locale.ROOT));
         user.setBirthDate(registerRequest.getBirthDate());
         user.setVisibility(registerRequest.getVisibility() != null ? registerRequest.getVisibility() : true);
         user.setCreatedAt(new Date());
@@ -93,7 +94,7 @@ public class RegistrationService {
         user.setRole(Role.USER);
         user.setEmailVerified(false);
 
-        EmailVerificationToken verificationToken;
+        String verificationToken;
         try {
             verificationToken = transactionTemplate.execute(status -> {
                 userRepository.save(user);
@@ -105,14 +106,14 @@ public class RegistrationService {
             }
             return new RegisterResponseDTO(REGISTERED_MESSAGE);
         }
-        emailService.sendVerificationEmail(user, verificationToken.getToken());
+        emailService.sendVerificationEmail(user, verificationToken);
 
         return new RegisterResponseDTO(REGISTERED_MESSAGE);
     }
 
     @Transactional(dontRollbackOn = InvalidTokenException.class)
     public AuthResponse verifyEmail(String token) {
-        EmailVerificationToken verificationToken = emailVerificationTokenRepository.findByToken(token)
+        EmailVerificationToken verificationToken = emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(token))
                 .orElseThrow(() -> new InvalidTokenException("Invalid or expired verification link"));
 
         if (verificationToken.getExpiresAt().isBefore(Instant.now())) {
@@ -129,11 +130,6 @@ public class RegistrationService {
     }
 
     public void resendVerification(String username, String email) {
-        String identifier = (username != null && !username.isBlank()) ? username : email;
-        if (identifier != null && !identifier.isBlank()) {
-            identityRateLimiter.check("resend-verification", identifier, 3, 3);
-        }
-
         Optional<User> userOpt = Optional.empty();
         if (username != null && !username.isBlank()) {
             userOpt = userRepository.findByUsernameIgnoreCase(username);
@@ -141,23 +137,30 @@ public class RegistrationService {
             userOpt = userRepository.findByEmail(email);
         }
 
+        String identifier = userOpt.map(User::getEmail).orElse(
+                username != null && !username.isBlank() ? username : email);
+        if (identifier != null && !identifier.isBlank()) {
+            identityRateLimiter.check("resend-verification", identifier, 3, 3);
+        }
         userOpt.ifPresent(user -> {
             if (!user.isEmailVerified()) {
-                EmailVerificationToken token = transactionTemplate.execute(status -> {
+                String token = transactionTemplate.execute(status -> {
                     emailVerificationTokenRepository.deleteByUserId(user.getId());
                     return createVerificationToken(user);
                 });
-                emailService.sendVerificationEmail(user, token.getToken());
+                emailService.sendVerificationEmail(user, token);
             }
         });
     }
 
-    private EmailVerificationToken createVerificationToken(User user) {
+    private String createVerificationToken(User user) {
         EmailVerificationToken evt = new EmailVerificationToken();
         evt.setUser(user);
-        evt.setToken(UUID.randomUUID().toString());
+        String rawToken = OpaqueToken.generate();
+        evt.setTokenHash(OpaqueToken.hash(rawToken));
         evt.setExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
-        return emailVerificationTokenRepository.save(evt);
+        emailVerificationTokenRepository.save(evt);
+        return rawToken;
     }
 
     @Scheduled(cron = "0 0 3 * * *")

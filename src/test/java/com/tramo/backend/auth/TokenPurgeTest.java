@@ -67,13 +67,13 @@ class TokenPurgeTest extends AbstractIntegrationTest {
 
         EmailVerificationToken expiredVerification = new EmailVerificationToken();
         expiredVerification.setUser(user);
-        expiredVerification.setToken(UUID.randomUUID().toString());
+        expiredVerification.setTokenHash(UUID.randomUUID().toString());
         expiredVerification.setExpiresAt(Instant.now().minus(1, ChronoUnit.HOURS));
         emailVerificationTokenRepository.save(expiredVerification);
 
         EmailVerificationToken liveVerification = new EmailVerificationToken();
         liveVerification.setUser(user);
-        liveVerification.setToken(UUID.randomUUID().toString());
+        liveVerification.setTokenHash(UUID.randomUUID().toString());
         liveVerification.setExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
         emailVerificationTokenRepository.save(liveVerification);
 
@@ -92,8 +92,8 @@ class TokenPurgeTest extends AbstractIntegrationTest {
         registrationService.purgeExpiredVerificationTokens();
         passwordService.purgeExpiredResetTokens();
 
-        assertThat(emailVerificationTokenRepository.findByToken(expiredVerification.getToken())).isEmpty();
-        assertThat(emailVerificationTokenRepository.findByToken(liveVerification.getToken())).isPresent();
+        assertThat(emailVerificationTokenRepository.findByTokenHash(expiredVerification.getTokenHash())).isEmpty();
+        assertThat(emailVerificationTokenRepository.findByTokenHash(liveVerification.getTokenHash())).isPresent();
         assertThat(passwordResetTokenRepository.findByTokenHash(expiredReset.getTokenHash())).isEmpty();
         assertThat(passwordResetTokenRepository.findByTokenHash(liveReset.getTokenHash())).isPresent();
     }

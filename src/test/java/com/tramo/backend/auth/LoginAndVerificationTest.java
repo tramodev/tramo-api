@@ -4,6 +4,7 @@ package com.tramo.backend.auth;
 
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.entity.EmailVerificationToken;
+import com.tramo.backend.auth.service.OpaqueToken;
 import com.tramo.backend.auth.repository.EmailVerificationTokenRepository;
 import com.tramo.backend.user.Role;
 import com.tramo.backend.user.entity.User;
@@ -40,12 +41,14 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
                         {"username":"%s","password":"%s"}""".formatted(username, password)));
     }
 
-    private EmailVerificationToken issueVerificationToken(User user, Instant expiresAt) {
+    private String issueVerificationToken(User user, Instant expiresAt) {
         EmailVerificationToken token = new EmailVerificationToken();
         token.setUser(user);
-        token.setToken(UUID.randomUUID().toString());
+        String raw = OpaqueToken.generate();
+        token.setTokenHash(OpaqueToken.hash(raw));
         token.setExpiresAt(expiresAt);
-        return emailVerificationTokenRepository.save(token);
+        emailVerificationTokenRepository.save(token);
+        return raw;
     }
 
     @Test
@@ -125,18 +128,18 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void verifyEmailActivatesAccountAndReturnsTokens() throws Exception {
         User user = createUser("fresh", "fresh@example.com", false, false, Role.USER);
-        EmailVerificationToken token = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
+        String token = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
 
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"token":"%s"}""".formatted(token.getToken())))
+                                {"token":"%s"}""".formatted(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.username").value("fresh"));
 
         assertThat(userRepository.findById(user.getId()).orElseThrow().isEmailVerified()).isTrue();
-        assertThat(emailVerificationTokenRepository.findByToken(token.getToken())).isEmpty();
+        assertThat(emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isEmpty();
     }
 
     @Test
@@ -151,24 +154,24 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void verifyEmailRejectsExpiredTokenAndDeletesIt() throws Exception {
         User user = createUser("late", "late@example.com", false, false, Role.USER);
-        EmailVerificationToken token = issueVerificationToken(user, Instant.now().minus(1, ChronoUnit.HOURS));
+        String token = issueVerificationToken(user, Instant.now().minus(1, ChronoUnit.HOURS));
 
         mockMvc.perform(post("/api/auth/verify-email")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"token":"%s"}""".formatted(token.getToken())))
+                                {"token":"%s"}""".formatted(token)))
                 .andExpect(status().isUnauthorized());
 
-        assertThat(emailVerificationTokenRepository.findByToken(token.getToken())).isEmpty();
+        assertThat(emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isEmpty();
         assertThat(userRepository.findById(user.getId()).orElseThrow().isEmailVerified()).isFalse();
     }
 
     @Test
     void verifyEmailTokenIsSingleUse() throws Exception {
         User user = createUser("once", "once@example.com", false, false, Role.USER);
-        EmailVerificationToken token = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
+        String token = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
         String body = """
-                {"token":"%s"}""".formatted(token.getToken());
+                {"token":"%s"}""".formatted(token);
 
         mockMvc.perform(post("/api/auth/verify-email").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk());
@@ -179,12 +182,12 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     @Test
     void resendVerificationReplacesTokenForUnverifiedUser() throws Exception {
         User user = createUser("resendme", "resendme@example.com", false, false, Role.USER);
-        EmailVerificationToken old = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
+        String old = issueVerificationToken(user, Instant.now().plus(24, ChronoUnit.HOURS));
         doAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             assertThat(TransactionSynchronizationManager.hasResource(entityManagerFactory)).isFalse();
-            assertThat(emailVerificationTokenRepository.findByToken(invocation.getArgument(1))).isPresent();
-            assertThat(emailVerificationTokenRepository.findByToken(old.getToken())).isEmpty();
+            assertThat(emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(invocation.getArgument(1)))).isPresent();
+            assertThat(emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(old))).isEmpty();
             return null;
         }).when(emailService).sendVerificationEmail(any(User.class), anyString());
 
@@ -194,11 +197,24 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
                                 {"username":"resendme"}"""))
                 .andExpect(status().isNoContent());
 
-        assertThat(emailVerificationTokenRepository.findByToken(old.getToken())).isEmpty();
+        assertThat(emailVerificationTokenRepository.findByTokenHash(OpaqueToken.hash(old))).isEmpty();
         assertThat(emailVerificationTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
         verify(emailService).sendVerificationEmail(any(User.class), anyString());
+    }
+
+    @Test
+    void resendSharesLimitAcrossUsernameAndEmail() throws Exception {
+        createUser("sharedlimit", "sharedlimit@example.com", false, false, Role.USER);
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/api/auth/resend-verification").with(uniqueIp())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"sharedlimit\"}"))
+                    .andExpect(status().isNoContent());
+        }
+        mockMvc.perform(post("/api/auth/resend-verification").with(uniqueIp())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"SHAREDLIMIT@example.com\"}"))
+                .andExpect(status().isTooManyRequests());
     }
 
     @Test

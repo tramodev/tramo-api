@@ -67,7 +67,7 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authRequest ->
                         authRequest
                                 .requestMatchers("/actuator/health").permitAll()
-                                .requestMatchers("/api/auth/patreon/connect").authenticated()
+                                .requestMatchers("/api/auth/patreon/connect", "/api/auth/patreon/complete").authenticated()
                                 .requestMatchers("/api/auth/birth-date").authenticated()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()

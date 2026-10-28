@@ -30,14 +30,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<Long> lockStorageById(@Param("id") Long id);
     Optional<User> findByUsernameIgnoreCase(String username);
     boolean existsByUsernameIgnoreCase(String username);
-    boolean existsByEmail(String email);
-    Optional<User> findByEmail(String email);
+    @Query("select (count(u) > 0) from User u where lower(u.email) = lower(:email)")
+    boolean existsByEmail(@Param("email") String email);
+    @Query("select u from User u where lower(u.email) = lower(:email)")
+    Optional<User> findByEmail(@Param("email") String email);
     Optional<User> findByGoogleSub(String googleSub);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")
     Optional<User> findByIdForUpdate(@Param("id") Long id);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select u from User u where u.email = :email")
+    @Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findByEmailForUpdate(@Param("email") String email);
     @Query("SELECT u FROM User u WHERE :q = '' OR LOWER(u.username) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!' "
             + "OR LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '!' ORDER BY u.id ASC")

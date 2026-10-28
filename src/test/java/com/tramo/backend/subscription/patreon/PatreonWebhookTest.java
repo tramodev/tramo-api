@@ -24,6 +24,7 @@ import java.util.HexFormat;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -65,8 +66,11 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void failedSubscriptionUpdateRollsBackSignatureAndCanBeRetried(boolean cancellation) throws Exception {
         User user = createUser("retryactivation");
         user.setPatreonUserId("patreon-retry");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
         String body = pledgePayload("patreon-retry");
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), !cancellation));
         String event = cancellation ? "members:pledge:delete" : "members:pledge:create";
         Answer<Object> failAfterUpdate = invocation -> {
             invocation.callRealMethod();
@@ -104,7 +108,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void activatesSupporterSubscriptionForLinkedUserOnPledgeCreate() throws Exception {
         User user = createUser("webhookpatron");
         user.setPatreonUserId("patreon-789");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
 
         String body = pledgePayload("patreon-789");
         mockMvc.perform(post("/api/webhooks/patreon")
@@ -123,7 +129,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void deactivatesSupporterSubscriptionOnPledgeDelete() throws Exception {
         User user = createUser("lapsingpatron");
         user.setPatreonUserId("patreon-999");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
         String createBody = pledgePayload("patreon-999");
         String deleteBody = pledgePayload("patreon-999", "member-1-cancelled");
 
@@ -134,6 +142,7 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                         .content(createBody))
                 .andExpect(status().isOk());
 
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), false));
         mockMvc.perform(post("/api/webhooks/patreon")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Patreon-Event", "members:pledge:delete")
@@ -150,7 +159,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void rejectsReplayOfCapturedPledgeCreateAfterCancellation() throws Exception {
         User user = createUser("replayvictim");
         user.setPatreonUserId("patreon-555");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
 
         String createBody = pledgePayload("patreon-555");
         String createSignature = sign(createBody);
@@ -163,6 +174,7 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         String deleteBody = pledgePayload("patreon-555", "member-1-cancelled");
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), false));
         mockMvc.perform(post("/api/webhooks/patreon")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Patreon-Event", "members:pledge:delete")
@@ -180,6 +192,29 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.supporter").value(false));
+    }
+
+    @Test
+    void lateCreateAfterDeleteUsesCurrentPatreonStatus() throws Exception {
+        User user = createUser("latecreate");
+        user.setPatreonUserId("patreon-late");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
+        userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-late", false));
+        for (String event : new String[]{"members:pledge:delete", "members:pledge:create"}) {
+            String body = pledgePayload("patreon-late", event);
+            mockMvc.perform(post("/api/webhooks/patreon").contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Patreon-Event", event).header("X-Patreon-Signature", sign(body)).content(body))
+                    .andExpect(status().isOk());
+        }
+        assertThat(subscriptionService.isSupporter(user)).isFalse();
+    }
+
+    @Test
+    void missingSignatureIsForbidden() throws Exception {
+        mockMvc.perform(post("/api/webhooks/patreon").contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Patreon-Event", "members:pledge:create").content(pledgePayload("missing-signature")))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -197,7 +232,9 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void ignoresPledgeForAnotherCampaign() throws Exception {
         User user = createUser("othercampaign");
         user.setPatreonUserId("patreon-other");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
         String body = pledgePayload("patreon-other").replace("tramo-campaign", "other-campaign");
 
         mockMvc.perform(post("/api/webhooks/patreon")
@@ -215,11 +252,14 @@ class PatreonWebhookTest extends AbstractIntegrationTest {
     void declinedPledgeUpdateRemovesSupporter() throws Exception {
         User user = createUser("declinedpatron");
         user.setPatreonUserId("patreon-declined");
+        user.setEncryptedPatreonAccessToken(new com.tramo.backend.security.crypto.EncryptedStringConverter(TEST_TOKEN_ENCRYPTION_KEY).convertToDatabaseColumn("access"));
         userRepository.save(user);
+        when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), true));
         String activeBody = pledgePayload("patreon-declined");
         String declinedBody = activeBody.replace("active_patron", "declined_patron");
 
         for (String body : new String[]{activeBody, declinedBody}) {
+            when(patreonClient.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity(user.getPatreonUserId(), body.equals(activeBody)));
             mockMvc.perform(post("/api/webhooks/patreon")
                             .contentType(MediaType.APPLICATION_JSON)
                             .header("X-Patreon-Event", "members:pledge:update")

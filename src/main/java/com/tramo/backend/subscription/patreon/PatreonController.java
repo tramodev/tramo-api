@@ -11,6 +11,7 @@ import com.tramo.backend.user.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -90,6 +91,18 @@ public class PatreonController {
     
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
+                                         @RequestParam(required = false) String state,
+                                         @RequestParam(required = false) String error) {
+        URI location = UriComponentsBuilder.fromUriString(frontendUrl + "/api/auth/patreon/callback")
+                .queryParamIfPresent("code", java.util.Optional.ofNullable(code))
+                .queryParamIfPresent("state", java.util.Optional.ofNullable(state))
+                .queryParamIfPresent("error", java.util.Optional.ofNullable(error))
+                .build().encode().toUri();
+        return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
+    }
+
+    @GetMapping("/complete")
+    public ResponseEntity<Void> complete(@AuthenticationPrincipal User principal, @RequestParam(required = false) String code,
                                           @RequestParam(required = false) String state,
                                           @RequestParam(required = false) String error,
                                           @RequestParam(name = "error_description", required = false) String errorDescription) {
@@ -100,16 +113,14 @@ public class PatreonController {
             return rejected("OAUTH_PARAMETERS_MISSING", null);
         }
 
-        PatreonConnectToken connectToken = connectTokenRepository.findByToken(state).orElse(null);
-        if (connectToken == null) {
+        if (principal == null || !principal.isEnabled() || principal.isBanned()) {
+            return rejected("OAUTH_SESSION_REQUIRED", null);
+        }
+        Long userId = principal.getId();
+        Integer consumed = transactionTemplate.execute(status -> connectTokenRepository.consume(state, userId, Instant.now()));
+        if (consumed == null || consumed != 1) {
             return rejected("OAUTH_STATE_INVALID", null);
         }
-        connectTokenRepository.delete(connectToken);
-        if (connectToken.getExpiresAt().isBefore(Instant.now())) {
-            return rejected("OAUTH_STATE_EXPIRED", null);
-        }
-
-        Long userId = connectToken.getUser().getId();
         boolean activePatron;
         try {
             final PatreonClient.PatreonTokens tokens = patreonClient.exchangeCode(code);
@@ -133,7 +144,7 @@ public class PatreonController {
                     subscriptionService.deactivateSupporterSubscription(user);
                 }
             });
-        } catch (InvalidTokenException ex) {
+        } catch (InvalidTokenException | DataIntegrityViolationException ex) {
             return rejected("OAUTH_FAILED", ex);
         }
 

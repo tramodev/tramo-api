@@ -48,6 +48,7 @@ class CaptchaVerifierTest {
         captchaVerifier = new CaptchaVerifier("http://127.0.0.1:" + server.getAddress().getPort());
         ReflectionTestUtils.setField(captchaVerifier, "secretKey", "shhh");
         ReflectionTestUtils.setField(captchaVerifier, "minScore", 0.5);
+        ReflectionTestUtils.setField(captchaVerifier, "frontendUrl", "https://tramo.test");
     }
 
     @AfterEach
@@ -63,7 +64,7 @@ class CaptchaVerifierTest {
     @Test
     void acceptsScoreAboveThresholdAndPostsSecretAndToken() {
         respondWith("""
-                {"success":true,"score":0.9,"action":"register"}""");
+                {"success":true,"score":0.9,"action":"register","hostname":"tramo.test"}""");
 
         assertThatCode(() -> captchaVerifier.verify("tok", "register")).doesNotThrowAnyException();
         assertThat(requestPath).isEqualTo("/recaptcha/api/siteverify");
@@ -74,7 +75,7 @@ class CaptchaVerifierTest {
     @Test
     void acceptsScoreExactlyAtThreshold() {
         respondWith("""
-                {"success":true,"score":0.5,"action":"register"}""");
+                {"success":true,"score":0.5,"action":"register","hostname":"tramo.test"}""");
 
         assertThatCode(() -> captchaVerifier.verify("tok", "register")).doesNotThrowAnyException();
     }
@@ -82,7 +83,7 @@ class CaptchaVerifierTest {
     @Test
     void rejectsScoreBelowThreshold() {
         respondWith("""
-                {"success":true,"score":0.4,"action":"register"}""");
+                {"success":true,"score":0.4,"action":"register","hostname":"tramo.test"}""");
 
         assertThatThrownBy(() -> captchaVerifier.verify("tok", "register"))
                 .isInstanceOf(CaptchaVerificationException.class);
@@ -91,7 +92,7 @@ class CaptchaVerifierTest {
     @Test
     void rejectsUnsuccessfulVerification() {
         respondWith("""
-                {"success":false,"score":0.9,"action":"register"}""");
+                {"success":false,"score":0.9,"action":"register","hostname":"tramo.test"}""");
 
         assertThatThrownBy(() -> captchaVerifier.verify("tok", "register"))
                 .isInstanceOf(CaptchaVerificationException.class);
@@ -104,6 +105,16 @@ class CaptchaVerifierTest {
 
         assertThatThrownBy(() -> captchaVerifier.verify("tok", "register"))
                 .isInstanceOf(CaptchaVerificationException.class);
+    }
+
+    @Test
+    void rejectsUnexpectedOrMissingHostname() {
+        for (String hostname : new String[]{"evil.test", "sub.tramo.test", ""}) {
+            respondWith("""
+                    {"success":true,"score":0.9,"action":"register","hostname":"%s"}""".formatted(hostname));
+            assertThatThrownBy(() -> captchaVerifier.verify("tok", "register"))
+                    .isInstanceOf(CaptchaVerificationException.class);
+        }
     }
 
     @Test

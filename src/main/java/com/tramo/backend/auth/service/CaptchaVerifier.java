@@ -42,8 +42,11 @@ public class CaptchaVerifier {
     @Value("${app.captcha.min-score}")
     private double minScore;
 
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
+
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record SiteVerifyResponse(boolean success, double score, String action) {
+    private record SiteVerifyResponse(boolean success, double score, String action, String hostname) {
     }
 
     public void verify(String token, String expectedAction) {
@@ -65,7 +68,8 @@ public class CaptchaVerifier {
 
         if (response == null || !response.success()
                 || response.score() < minScore
-                || !expectedAction.equals(response.action())) {
+                || !expectedAction.equals(response.action())
+                || !java.net.URI.create(frontendUrl).getHost().equalsIgnoreCase(response.hostname())) {
             throw new CaptchaVerificationException("Captcha verification failed");
         }
     }

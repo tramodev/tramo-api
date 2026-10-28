@@ -12,8 +12,8 @@ import static org.mockito.Mockito.mock;
 
 class PatreonConfigurationTest {
     private PatreonWebhookController controller(String secret, Environment environment) {
-        return new PatreonWebhookController(secret, mock(UserRepository.class), mock(SubscriptionService.class),
-                new ObjectMapper(), mock(PatreonWebhookSignatureRepository.class), mock(PlatformTransactionManager.class), environment);
+        return new PatreonWebhookController(secret, mock(UserRepository.class),
+                new ObjectMapper(), mock(PatreonWebhookSignatureRepository.class), mock(PlatformTransactionManager.class), environment, mock(PatreonMembershipService.class));
     }
 
     @Test

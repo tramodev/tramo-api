@@ -36,7 +36,7 @@ class PatreonFlowTest {
     void connectedNonSupporterGoesStraightToTramoMembership() {
         PatreonController controller = callbackController(false);
 
-        var response = controller.callback("code", "state", null, null);
+        var response = controller.complete(user, "code", "state", null, null);
 
         assertThat(response.getHeaders().getLocation().toString())
                 .isEqualTo("https://www.patreon.com/cw/Tramodev/membership");
@@ -52,7 +52,7 @@ class PatreonFlowTest {
     void existingSupporterReturnsToTramoWithBenefitsActivated() {
         PatreonController controller = callbackController(true);
 
-        var response = controller.callback("code", "state", null, null);
+        var response = controller.complete(user, "code", "state", null, null);
 
         assertThat(response.getHeaders().getLocation().toString())
                 .isEqualTo("https://tramo.test/settings?tab=plan&patreon=connected");
@@ -61,7 +61,7 @@ class PatreonFlowTest {
 
     @Test
     void authorizationDenialReturnsAnErrorWithoutGrantingBenefits() {
-        var response = callbackController(false).callback(null, "state", "access_denied", null);
+        var response = callbackController(false).complete(user, null, "state", "access_denied", null);
 
         assertThat(response.getHeaders().getLocation().toString()).contains("patreon=error");
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
@@ -88,12 +88,12 @@ class PatreonFlowTest {
     }
 
     @Test
-    void signedMembershipWithoutStatusDoesNotGrantBenefits() throws Exception {
+    void webhookPayloadDoesNotOverrideCurrentMembership() throws Exception {
         String body = payload("tramo-campaign", "");
 
         webhookController().handle(body, sign(body), "members:pledge:update");
 
-        verify(subscriptions, never()).activateSupporterSubscription(any(), any());
+        verify(subscriptions).activateSupporterSubscription(eq(user), any());
         verify(subscriptions, never()).deactivateSupporterSubscription(any());
     }
 
@@ -101,10 +101,43 @@ class PatreonFlowTest {
     void declinedMembershipRemovesBenefits() throws Exception {
         String body = payload("tramo-campaign", "declined_patron");
 
-        webhookController().handle(body, sign(body), "members:pledge:update");
+        var controller = webhookController();
+        var memberships = new PatreonMembershipService(linkedClient(false), subscriptions, cipher);
+        ReflectionTestUtils.setField(controller, "memberships", memberships);
+        controller.handle(body, sign(body), "members:pledge:update");
 
         verify(subscriptions).deactivateSupporterSubscription(user);
         verify(subscriptions, never()).activateSupporterSubscription(any(), any());
+    }
+
+    @Test
+    void signedCancellationStillRemovesBenefitsWhenPatreonIsUnavailable() throws Exception {
+        var controller = webhookController();
+        var client = linkedClient(false);
+        when(client.fetchIdentity("access")).thenThrow(new InvalidTokenException("Expired access token"));
+        ReflectionTestUtils.setField(controller, "memberships", new PatreonMembershipService(client, subscriptions, cipher));
+        String body = payload("tramo-campaign", "active_patron");
+
+        assertThat(controller.handle(body, sign(body), "members:pledge:delete").getStatusCode().value()).isEqualTo(200);
+
+        verify(subscriptions).deactivateSupporterSubscription(user);
+        verify(subscriptions, never()).activateSupporterSubscription(any(), any());
+    }
+
+    @Test
+    void unavailablePatreonDoesNotRecordTheEvent() throws Exception {
+        var controller = webhookController();
+        var memberships = mock(PatreonMembershipService.class);
+        ReflectionTestUtils.setField(controller, "memberships", memberships);
+        when(memberships.fetchIdentity(user)).thenThrow(new InvalidTokenException("Patreon unavailable"));
+        String body = payload("tramo-campaign", "active_patron");
+
+        assertThat(controller.handle(body, sign(body), "members:pledge:create").getStatusCode().value()).isEqualTo(503);
+
+        var signatures = (PatreonWebhookSignatureRepository) ReflectionTestUtils.getField(controller, "webhookSignatureRepository");
+        verify(signatures, never()).saveAndFlush(any());
+        verify(subscriptions, never()).activateSupporterSubscription(any(), any());
+        verify(subscriptions, never()).deactivateSupporterSubscription(any());
     }
 
     @Test
@@ -196,10 +229,7 @@ class PatreonFlowTest {
         var client = mock(PatreonClient.class);
         var transactions = mock(PlatformTransactionManager.class);
         when(transactions.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
-        PatreonConnectToken state = new PatreonConnectToken();
-        state.setUser(user);
-        state.setExpiresAt(Instant.now().plusSeconds(60));
-        when(tokens.findByToken("state")).thenReturn(Optional.of(state));
+        when(tokens.consume(eq("state"), eq(user.getId()), any())).thenReturn(1);
         when(client.exchangeCode("code")).thenReturn(new PatreonClient.PatreonTokens("access", "refresh"));
         when(client.fetchIdentity("access")).thenReturn(new PatreonClient.PatreonIdentity("patreon-user", active));
         return new PatreonController(transactions, tokens, client, subscriptions, users,
@@ -209,10 +239,11 @@ class PatreonFlowTest {
     private PatreonWebhookController webhookController() {
         var transactions = mock(PlatformTransactionManager.class);
         when(transactions.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
-        var controller = new PatreonWebhookController("secret", users, subscriptions, new ObjectMapper(),
-                mock(PatreonWebhookSignatureRepository.class), transactions, new org.springframework.mock.env.MockEnvironment());
+        var controller = new PatreonWebhookController("secret", users, new ObjectMapper(),
+                mock(PatreonWebhookSignatureRepository.class), transactions, new org.springframework.mock.env.MockEnvironment(), new PatreonMembershipService(linkedClient(true), subscriptions, cipher));
         ReflectionTestUtils.setField(controller, "campaignId", "tramo-campaign");
         when(users.findByPatreonUserId("patreon-user")).thenReturn(Optional.of(user));
+        when(users.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         return controller;
     }
 

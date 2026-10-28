@@ -79,7 +79,7 @@ public class GoogleAuthService {
     private User createGoogleUser(GoogleTokenVerifier.GoogleTokenPayload payload) {
         User user = new User();
         user.setUsername(generateUsernameFromEmail(payload.email()));
-        user.setEmail(payload.email());
+        user.setEmail(payload.email().toLowerCase(java.util.Locale.ROOT));
         user.setGoogleSub(payload.sub());
         user.setPassword(null);
         user.setVisibility(true);
