@@ -28,6 +28,24 @@ class LexicalContentTest {
     }
 
     @Test
+    void acceptsManualLinkPlaceholderWhileEnteringTheDestination() {
+        assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"link\",\"url\":\"https://\",\"children\":[{\"type\":\"text\",\"text\":\"Link this text\"}]}")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void placeholderDoesNotAllowUnsafeUrlsOrUnknownChildren() {
+        for (String url : new String[]{"javascript:alert(1)", "data:text/html,payload", "http://", "HTTPS://", ""}) {
+            assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"link\",\"url\":\"" + url + "\"}")))
+                    .isInstanceOf(RequestValidationException.class);
+        }
+        assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"autolink\",\"url\":\"https://\"}")))
+                .isInstanceOf(RequestValidationException.class);
+        assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"link\",\"url\":\"https://\",\"children\":[{\"type\":\"script\"}]}")))
+                .isInstanceOf(RequestValidationException.class);
+    }
+
+    @Test
     void acceptsPastedLinksWithSpacesAndBraces() {
         for (String type : new String[]{"link", "autolink"}) {
             for (String url : new String[]{"https://example.com/my note", " https://example.com/my note ",

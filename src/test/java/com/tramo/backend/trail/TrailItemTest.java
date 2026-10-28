@@ -579,6 +579,27 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void autosaveAcceptsLinkInsertionConfirmationAndCancellation() throws Exception {
+        User owner = createUser("linkautosave");
+        Project project = createProject(owner, "Links", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Note");
+        String plain = """
+                {"root":{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","style":"","text":"Link this text","type":"text","version":1}],"direction":null,"format":"","indent":0,"type":"paragraph","version":1,"textFormat":0,"textStyle":""}],"direction":null,"format":"","indent":0,"type":"root","version":1}}""";
+        String pending = """
+                {"root":{"children":[{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","style":"","text":"Link this text","type":"text","version":1}],"direction":null,"format":"","indent":0,"type":"link","version":1,"rel":"noreferrer","target":null,"title":null,"url":"https://"}],"direction":null,"format":"","indent":0,"type":"paragraph","version":1,"textFormat":0,"textStyle":""}],"direction":null,"format":"","indent":0,"type":"root","version":1}}""";
+        String confirmed = pending.replace("https://", "https://example.com/note");
+        for (String content : new String[]{plain, pending, confirmed, plain}) {
+            mockMvc.perform(put("/api/item/" + itemId + "/content")
+                            .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                            .content(contentRequest(content)))
+                    .andExpect(status().isNoContent());
+            mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(content));
+        }
+    }
+
+    @Test
     void invalidEditorContentCannotReplaceSavedContent() throws Exception {
         User owner = createUser("lexicalvalidator");
         Project project = createProject(owner, "Validated", "private");
