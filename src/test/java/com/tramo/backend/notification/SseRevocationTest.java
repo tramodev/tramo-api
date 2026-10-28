@@ -47,7 +47,7 @@ class SseRevocationTest extends AbstractIntegrationTest {
         MvcResult stream = stream(user);
         passwords.forgotPassword(user.getEmail());
         ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
-        verify(emailService).sendPasswordResetEmail(any(User.class), token.capture());
+        verify(emailService, org.mockito.Mockito.timeout(5000)).sendPasswordResetEmail(any(User.class), token.capture());
         passwords.resetPassword(token.getValue(), "NewPassw0rd!");
         mockMvc.perform(asyncDispatch(stream)).andExpect(status().isOk());
     }

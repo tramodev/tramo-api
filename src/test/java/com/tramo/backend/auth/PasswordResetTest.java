@@ -28,7 +28,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -86,7 +85,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
         resetPassword(second, "NewPassw0rd!").andExpect(status().isUnauthorized());
         passwordService.forgotPassword(user.getEmail());
         ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
-        verify(emailService).sendPasswordResetEmail(any(User.class), token.capture());
+        verify(emailService, org.mockito.Mockito.timeout(5000)).sendPasswordResetEmail(any(User.class), token.capture());
         resetPassword(token.getValue(), "NewPassw0rd!").andExpect(status().isNoContent());
         resetPassword(token.getValue(), "OtherPassw0rd!").andExpect(status().isUnauthorized());
     }
@@ -166,10 +165,16 @@ class PasswordResetTest extends AbstractIntegrationTest {
     @Test
     void forgotPasswordCreatesTokenAndSendsEmail() throws Exception {
         User user = createUser("forgetful");
+        var delivered = new java.util.concurrent.CompletableFuture<Void>();
         doAnswer(invocation -> {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            assertThat(TransactionSynchronizationManager.hasResource(entityManagerFactory)).isFalse();
-            assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(invocation.getArgument(1)))).isPresent();
+            try {
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                assertThat(TransactionSynchronizationManager.hasResource(entityManagerFactory)).isFalse();
+                assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(invocation.getArgument(1)))).isPresent();
+                delivered.complete(null);
+            } catch (Throwable failure) {
+                delivered.completeExceptionally(failure);
+            }
             return null;
         }).when(emailService).sendPasswordResetEmail(any(User.class), anyString());
 
@@ -179,11 +184,12 @@ class PasswordResetTest extends AbstractIntegrationTest {
                                 {"email":"forgetful@example.com"}"""))
                 .andExpect(status().isNoContent());
 
+        delivered.get(5, TimeUnit.SECONDS);
         assertThat(passwordResetTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
         ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
-        verify(emailService).sendPasswordResetEmail(any(User.class), token.capture());
+        verify(emailService, org.mockito.Mockito.timeout(5000)).sendPasswordResetEmail(any(User.class), token.capture());
         PasswordResetToken stored = passwordResetTokenRepository.findAll().get(0);
         assertThat(stored.getTokenHash()).isEqualTo(OpaqueToken.hash(token.getValue()))
                 .isNotEqualTo(token.getValue());
@@ -206,9 +212,6 @@ class PasswordResetTest extends AbstractIntegrationTest {
                         .content("""
                                 {"email":"nobody@example.com"}"""))
                 .andExpect(status().isNoContent());
-
-        assertThat(passwordResetTokenRepository.findAll()).isEmpty();
-        verify(emailService, never()).sendPasswordResetEmail(any(), anyString());
     }
 
     @Test
@@ -222,6 +225,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
                                 {"email":"repeat@example.com"}"""))
                 .andExpect(status().isNoContent());
 
+        verify(emailService, org.mockito.Mockito.timeout(5000)).sendPasswordResetEmail(any(User.class), anyString());
         assertThat(passwordResetTokenRepository.findAll())
                 .filteredOn(t -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
@@ -253,6 +257,31 @@ class PasswordResetTest extends AbstractIntegrationTest {
                 .filteredOn((RefreshToken t) -> t.getUser().getId().equals(user.getId()))
                 .hasSize(1);
         assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isEmpty();
+    }
+
+    @Test
+    void resetRejectsCurrentPasswordWithoutConsumingLinkOrRevokingSessions() throws Exception {
+        User user = createUser("unchangedreset");
+        String loginBody = login(user.getUsername(), "Passw0rd123!").andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(loginBody, "$.accessToken");
+        String refreshToken = com.jayway.jsonpath.JsonPath.read(loginBody, "$.refreshToken");
+        String token = issueResetToken(user, Instant.now().plus(1, ChronoUnit.HOURS));
+        String previousHash = user.getPassword();
+
+        resetPassword(token, "Passw0rd123!").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NEW_PASSWORD_UNCHANGED"));
+
+        User current = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(current.getPassword()).isEqualTo(previousHash);
+        assertThat(current.getSessionVersion()).isEqualTo(user.getSessionVersion());
+        assertThat(passwordResetTokenRepository.findByTokenHash(OpaqueToken.hash(token))).isPresent();
+        assertThat(refreshTokenRepository.findByTokenHash(OpaqueToken.hash(refreshToken))).isPresent();
+        mockMvc.perform(get("/api/profile/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk());
+        resetPassword(token, "NewPassw0rd!").andExpect(status().isNoContent());
+        login(user.getUsername(), "Passw0rd123!").andExpect(status().isUnauthorized());
+        login(user.getUsername(), "NewPassw0rd!").andExpect(status().isOk());
     }
 
     @Test

@@ -182,7 +182,7 @@ class GoogleAuthTest extends AbstractIntegrationTest {
                                 {"email":"%s"}""".formatted(user.getEmail())))
                 .andExpect(status().isNoContent());
         ArgumentCaptor<String> resetToken = ArgumentCaptor.forClass(String.class);
-        verify(emailService).sendPasswordResetEmail(any(User.class), resetToken.capture());
+        verify(emailService, org.mockito.Mockito.timeout(5000)).sendPasswordResetEmail(any(User.class), resetToken.capture());
         String token = resetToken.getValue();
         mockMvc.perform(post("/api/auth/reset-password").with(uniqueIp())
                         .contentType(MediaType.APPLICATION_JSON)

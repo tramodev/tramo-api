@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.auth.service;
 
+import com.tramo.backend.common.SafeLog;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.auth.entity.PasswordResetToken;
@@ -18,6 +19,8 @@ import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,6 +42,7 @@ public class PasswordService {
     private final IdentityRateLimiter identityRateLimiter;
     private final NotificationService notifications;
     private final TransactionTemplate transactionTemplate;
+    private final AsyncTaskExecutor recoveryExecutor;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -46,7 +50,8 @@ public class PasswordService {
                            PasswordResetTokenRepository passwordResetTokenRepository,
                            RefreshTokenRepository refreshTokenRepository, EmailService emailService,
                             IdentityRateLimiter identityRateLimiter, NotificationService notifications,
-                            PlatformTransactionManager transactionManager) {
+                            PlatformTransactionManager transactionManager,
+                            @Qualifier("applicationTaskExecutor") AsyncTaskExecutor recoveryExecutor) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -55,6 +60,7 @@ public class PasswordService {
         this.identityRateLimiter = identityRateLimiter;
         this.notifications = notifications;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.recoveryExecutor = recoveryExecutor;
     }
 
     public void forgotPassword(String email) {
@@ -62,6 +68,16 @@ public class PasswordService {
             identityRateLimiter.check("forgot-password", email, 3, 3);
         }
 
+        recoveryExecutor.execute(() -> {
+            try {
+                sendPasswordReset(email);
+            } catch (RuntimeException failure) {
+                SafeLog.failure(log, "password_recovery_failed", "INTERNAL_ERROR", failure);
+            }
+        });
+    }
+
+    private void sendPasswordReset(String email) {
         userRepository.findByEmail(email).ifPresent(user -> {
             UUID observedVersion = user.getSessionVersion();
             String token = transactionTemplate.execute(status -> {
@@ -88,6 +104,9 @@ public class PasswordService {
             throw new InvalidTokenException("Invalid or expired reset link");
         }
 
+        if (user.getPassword() != null && passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new RequestValidationException(RequestErrorCode.NEW_PASSWORD_UNCHANGED);
+        }
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setSessionVersion(UUID.randomUUID());
         userRepository.save(user);

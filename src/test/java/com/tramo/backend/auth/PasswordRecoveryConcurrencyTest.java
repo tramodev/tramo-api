@@ -17,6 +17,8 @@ import static org.mockito.Mockito.*;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PasswordRecoveryConcurrencyTest extends AbstractIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean(name = "applicationTaskExecutor")
+    org.springframework.core.task.AsyncTaskExecutor recoveryExecutor;
     @MockitoSpyBean UserRepository users;
     @Autowired PasswordService passwords;
     @Autowired PasswordResetTokenRepository tokens;
@@ -33,12 +35,17 @@ class PasswordRecoveryConcurrencyTest extends AbstractIntegrationTest {
             return result;
         }).when(users).findByEmail(user.getEmail());
         var executor = Executors.newSingleThreadExecutor();
+        var recovery = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<?>>();
+        doAnswer(invocation -> {
+            recovery.set(executor.submit(invocation.getArgument(0, Runnable.class)));
+            return null;
+        }).when(recoveryExecutor).execute(any(Runnable.class));
         try {
-            var forgot = executor.submit(() -> passwords.forgotPassword(user.getEmail()));
+            passwords.forgotPassword(user.getEmail());
             assertThat(observed.await(10, TimeUnit.SECONDS)).isTrue();
             passwords.changePassword(user, "Passw0rd123!", "ChangedPassw0rd!");
             proceed.countDown();
-            forgot.get(10, TimeUnit.SECONDS);
+            recovery.get().get(10, TimeUnit.SECONDS);
             assertThat(tokens.findAll()).isEmpty();
             verify(emailService, never()).sendPasswordResetEmail(any(), any());
         } finally {
