@@ -1,13 +1,10 @@
 package com.tramo.backend.trail;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-
-import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -16,8 +13,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class MapPreviewTest extends AbstractIntegrationTest {
-    private final ObjectMapper mapper = new ObjectMapper();
-
     @Test
     void returnsCrossTrailAndLoosePreviewsOnlyToOwner() throws Exception {
         User owner = createUser("mapowner");
@@ -36,7 +31,7 @@ class MapPreviewTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + source + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("content", content))))
+                        .content(contentRequest(content)))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/map-preview")

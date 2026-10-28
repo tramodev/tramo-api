@@ -33,11 +33,10 @@ class ItemSearchTest extends AbstractIntegrationTest {
     }
 
     private void saveContent(User owner, long itemId, String lexicalJson) throws Exception {
-        String escaped = lexicalJson.replace("\\", "\\\\").replace("\"", "\\\"");
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"%s\"}".formatted(escaped)))
+                        .content(contentRequest(lexicalJson)))
                 .andExpect(status().isNoContent());
     }
 

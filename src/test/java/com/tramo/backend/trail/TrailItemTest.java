@@ -283,7 +283,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"content":"{\\"root\\":{\\"type\\":\\"root\\",\\"children\\":[]}}"}"""))
+                                {"content":"{\\"root\\":{\\"type\\":\\"root\\",\\"children\\":[]}}","expectedContent":""}"""))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
@@ -589,11 +589,13 @@ class TrailItemTest extends AbstractIntegrationTest {
         String pending = """
                 {"root":{"children":[{"children":[{"children":[{"detail":0,"format":0,"mode":"normal","style":"","text":"Link this text","type":"text","version":1}],"direction":null,"format":"","indent":0,"type":"link","version":1,"rel":"noreferrer","target":null,"title":null,"url":"https://"}],"direction":null,"format":"","indent":0,"type":"paragraph","version":1,"textFormat":0,"textStyle":""}],"direction":null,"format":"","indent":0,"type":"root","version":1}}""";
         String confirmed = pending.replace("https://", "https://example.com/note");
+        String expected = "";
         for (String content : new String[]{plain, pending, confirmed, plain}) {
             mockMvc.perform(put("/api/item/" + itemId + "/content")
                             .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
-                            .content(contentRequest(content)))
+                            .content(contentRequest(content, expected)))
                     .andExpect(status().isNoContent());
+            expected = content;
             mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(content));
         }
@@ -622,6 +624,30 @@ class TrailItemTest extends AbstractIntegrationTest {
         }
         mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(previous));
+    }
+
+    @Test
+    void invalidContentUpdatesNeverEraseTheSavedNote() throws Exception {
+        User owner = createUser("contentintegrity");
+        Project project = createProject(owner, "Integrity", "private");
+        long trail = createTrail(owner, project, "Trail");
+        long item = createItem(owner, trail, "Note");
+        String saved = lexicalText("Keep this content");
+        mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                .contentType(MediaType.APPLICATION_JSON).content(contentRequest(saved))).andExpect(status().isNoContent());
+        for (String body : new String[]{"{}", "{\"content\":null}", "{\"content\":\"\"}",
+                new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("replacement")))}) {
+            mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                    .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+            mockMvc.perform(get("/api/item/" + item + "/content").header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(saved));
+        }
+        mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText("replacement"))))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText(""), saved)))
+                .andExpect(status().isNoContent());
     }
 
     @Test
@@ -690,7 +716,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText("image removed now"))))
+                        .content(contentRequest(lexicalText("image removed now"), lexicalText("has image %s here".formatted(imageUrl)))))
                 .andExpect(status().isNoContent());
 
         assertThat(pendingImageDeletionRepository.existsByUrl(imageUrl)).isFalse();
@@ -756,17 +782,19 @@ class TrailItemTest extends AbstractIntegrationTest {
         String restoredUrl = r2PublicBaseUrl + "/editor-image/" + owner.getId() + "/restoredhash.jpg";
         String freshUrl = r2PublicBaseUrl + "/editor-image/" + owner.getId() + "/freshhash.jpg";
 
+        String expected = "";
         for (String url : new String[]{staleUrl, restoredUrl, freshUrl}) {
             mockMvc.perform(put("/api/item/" + itemId + "/content")
                             .header("Authorization", bearer(owner))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(contentRequest(lexicalText("has %s".formatted(url)))))
+                            .content(contentRequest(lexicalText("has %s".formatted(url)), expected)))
                     .andExpect(status().isNoContent());
             mockMvc.perform(put("/api/item/" + itemId + "/content")
                             .header("Authorization", bearer(owner))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(contentRequest(lexicalText("removed"))))
+                            .content(contentRequest(lexicalText("removed"), lexicalText("has %s".formatted(url)))))
                     .andExpect(status().isNoContent());
+            expected = lexicalText("removed");
         }
         assertThat(pendingImageDeletionRepository.count()).isEqualTo(3);
 
@@ -777,7 +805,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText("pasted back %s".formatted(restoredUrl)))))
+                        .content(contentRequest(lexicalText("pasted back %s".formatted(restoredUrl)), lexicalText("removed"))))
                 .andExpect(status().isNoContent());
 
         itemService.purgePendingImageDeletions();
@@ -814,7 +842,7 @@ class TrailItemTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemAId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText("image removed from A"))))
+                        .content(contentRequest(lexicalText("image removed from A"), lexicalText("shared %s here".formatted(sharedUrl)))))
                 .andExpect(status().isNoContent());
 
         assertThat(pendingImageDeletionRepository.isReferencedGlobally(sharedUrl)).isTrue();

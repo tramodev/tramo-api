@@ -21,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @TestPropertySource(properties = {"app.limits.free.storage-bytes=8192", "app.limits.supporter.storage-bytes=16384"})
 class StorageQuotaTest extends AbstractIntegrationTest {
+    @Autowired com.tramo.backend.trail.service.ItemService items;
     @Autowired UploadRecordRepository uploads;
     @Autowired SubscriptionService subscriptions;
     @Autowired ProjectPublishService publish;
@@ -33,7 +34,7 @@ class StorageQuotaTest extends AbstractIntegrationTest {
 
     private org.springframework.test.web.servlet.ResultActions save(User user, long id, String content) throws Exception {
         return mockMvc.perform(put("/api/item/" + id + "/content").header("Authorization", bearer(user))
-                .contentType("application/json").content(contentRequest(lexicalText(content))));
+                .contentType("application/json").content(contentRequest(lexicalText(content), items.getContent(id, user).getContent())));
     }
 
     private void reserve(User user, long bytes) {

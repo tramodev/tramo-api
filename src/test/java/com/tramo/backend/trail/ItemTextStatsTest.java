@@ -35,7 +35,7 @@ class ItemTextStatsTest extends AbstractIntegrationTest {
                 + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", foreign, shared);
         String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"hello world\"}]}}";
         mockMvc.perform(put("/api/item/" + shared + "/content").header("Authorization", bearer(owner))
-                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(java.util.Map.of("content", content))))
+                        .contentType(MediaType.APPLICATION_JSON).content(contentRequest(content)))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/project/" + pid(project) + "/text-stats").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.words").value(2))

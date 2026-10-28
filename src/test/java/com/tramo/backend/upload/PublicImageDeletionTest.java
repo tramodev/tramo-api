@@ -41,7 +41,7 @@ class PublicImageDeletionTest extends AbstractIntegrationTest {
 
     private void content(long item, User user, String content) throws Exception {
         mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(user))
-                        .contentType("application/json").content(contentRequest(lexicalText(content))))
+                        .contentType("application/json").content(contentRequest(lexicalText(content), items.getContent(item, user).getContent())))
                 .andExpect(status().isNoContent());
     }
 

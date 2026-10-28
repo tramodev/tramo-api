@@ -54,7 +54,11 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected static String contentRequest(String content) {
-        return new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", content));
+        return contentRequest(content, "");
+    }
+
+    protected static String contentRequest(String content, String expectedContent) {
+        return new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", content, "expectedContent", expectedContent));
     }
 
     protected static final String TEST_JWT_SECRET = "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=";

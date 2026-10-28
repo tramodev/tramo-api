@@ -13,6 +13,14 @@ class LexicalContentTest {
     }
 
     @Test
+    void boundsEquationLength() {
+        assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"equation\",\"equation\":\"" + "x".repeat(10000) + "\"}")))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"equation\",\"equation\":\"" + "x".repeat(10001) + "\"}")))
+                .isInstanceOf(RequestValidationException.class);
+    }
+
+    @Test
     void acceptsEditorNodesAndSupportedLinks() {
         for (String type : new String[]{"paragraph", "text", "linebreak", "tab", "heading", "quote", "list", "listitem",
                 "code", "code-highlight", "image", "equation", "music", "embed", "table", "tablerow", "tablecell", "horizontalrule"}) {

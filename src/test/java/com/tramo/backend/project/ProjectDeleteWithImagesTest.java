@@ -41,7 +41,7 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapperWrite(content)))
+                        .content(contentRequest(content)))
                 .andExpect(status().isNoContent());
 
         Long refCount = jdbcTemplate.queryForObject(
@@ -72,8 +72,4 @@ class ProjectDeleteWithImagesTest extends AbstractIntegrationTest {
         assertThat(stillQueued).isZero();
     }
 
-    private String objectMapperWrite(String lexicalJson) {
-        return "{\"content\":%s}".formatted(
-                "\"" + lexicalJson.replace("\\", "\\\\").replace("\"", "\\\"") + "\"");
-    }
 }

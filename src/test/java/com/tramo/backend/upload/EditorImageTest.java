@@ -698,7 +698,7 @@ class EditorImageTest extends AbstractIntegrationTest {
 
     private void updateContent(long item, User owner, String content, int status) throws Exception {
         mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
-                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", content))))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", content, "expectedContent", itemService.getContent(item, owner).getContent()))))
                 .andExpect(status().is(status));
     }
 

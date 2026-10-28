@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
-import tools.jackson.databind.ObjectMapper;
+import com.tramo.backend.trail.service.ItemService;
 
 import java.util.List;
 
@@ -26,6 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 class ForkContentTest extends AbstractIntegrationTest {
+    @Autowired
+    private ItemService items;
 
     @Autowired
     private TrailRepository trailRepository;
@@ -48,7 +50,7 @@ class ForkContentTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(new ObjectMapper().writeValueAsString(java.util.Map.of("content", content))))
+                        .content(contentRequest(content, items.getContent(itemId, owner).getContent())))
                 .andExpect(status().isNoContent());
     }
 

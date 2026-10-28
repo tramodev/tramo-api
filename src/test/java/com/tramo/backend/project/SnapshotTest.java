@@ -95,7 +95,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText("Edited after publish"))))
+                        .content(contentRequest(lexicalText("Edited after publish"), lexicalText("Hello frozen world"))))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/project/" + pid(project) + "/versions/" + snapshotId)
@@ -140,7 +140,7 @@ class SnapshotTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText("Unpublished draft edit"))))
+                        .content(contentRequest(lexicalText("Unpublished draft edit"), lexicalText("Published content"))))
                 .andExpect(status().isNoContent());
 
         String forkId = postForProjectId(forker, "/api/project/" + pid(project) + "/fork", "");

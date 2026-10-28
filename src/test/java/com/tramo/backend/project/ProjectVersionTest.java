@@ -84,7 +84,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         mockMvc.perform(post(url).header("Authorization", bearer(f.user)))
                 .andExpect(status().is(428));
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1")
-                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("stale"), "extractionEpoch", 0))))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("stale"), "extractionEpoch", 0, "expectedContent", ""))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("restored or extracted")));
     }
 
@@ -203,7 +203,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         assertThat(items.getAllForTrail(outside.getId(), outsideOwner).get(0).id()).isEqualTo(f.item);
         mockMvc.perform(put("/api/item/" + f.item + "/content").header("Authorization", bearer(f.user))
                 .header("X-Project-Epoch", "0").header("X-Project-Id", pid(f.project))
-                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("obsolete from restored project"), "extractionEpoch", 0))))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("content", lexicalText("obsolete from restored project"), "extractionEpoch", 0, "expectedContent", ""))))
                 .andExpect(status().isConflict());
         items.updateContent(f.item, lexicalText("outside edit"), outsideOwner);
         assertThat(itemRepository.findByProjectId(f.project.getId()).get(0).getContent().getContent()).isEqualTo(lexicalText("before"));

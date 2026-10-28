@@ -5,6 +5,7 @@ package com.tramo.backend.project;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.service.PublicProjectService;
+import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,6 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class PublicSnapshotViewTest extends AbstractIntegrationTest {
     @Autowired
+    private ItemService items;
+    @Autowired
     private PublicProjectService publicProjects;
 
     @Autowired
@@ -49,7 +52,7 @@ class PublicSnapshotViewTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(contentRequest(lexicalText(content))))
+                        .content(contentRequest(lexicalText(content), items.getContent(itemId, owner).getContent())))
                 .andExpect(status().isNoContent());
     }
 
