@@ -88,6 +88,21 @@ class ForkContentTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void forkAcceptsContentFromOlderPublishedSnapshot() throws Exception {
+        User owner = createUser("legacyforkowner");
+        User forker = createUser("legacyforkreader");
+        Project source = createProject(owner, "Legacy", "unlisted", "Description", null);
+        long trailId = createTrail(owner, source, "Trail");
+        createItem(owner, trailId, "Note");
+        publish(owner, source);
+        String legacy = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"" + "x".repeat(10001) + "\"}]}}";
+        jdbcTemplate.update("update project_snapshot set content = jsonb_set(content::jsonb, '{trails,0,items,0,content}', to_jsonb(?::text))::text where project_id = ? and trigger = 'PUBLISH'", legacy, source.getId());
+
+        Project fork = forkOf(forker, source);
+        assertThat(itemsOf(fork).get(0).getContent().getContent()).isEqualTo(legacy);
+    }
+
+    @Test
     void forkFromLiveTablesCopiesItemContentAndTrailStructure() throws Exception {
         User owner = createUser("flowner3");
         User forker = createUser("flforker3");

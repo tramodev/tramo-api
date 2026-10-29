@@ -131,6 +131,11 @@ public class ProjectPublishService {
         boolean supporter = subscriptions.isSupporter(project.getOwner());
         ProjectSnapshotData data = snapshotCapture.capture(project.getId(),
                 subscriptions.remainingStorageBytes(project.getOwner(), supporter));
+        for (var trail : data.trails()) {
+            ContentLimits.assertTrailDescription(trail.description());
+            for (var item : trail.items()) ContentLimits.assertEditorNote(item.content());
+        }
+        for (var item : data.looseItems()) ContentLimits.assertEditorNote(item.content());
 
         ProjectSnapshot snapshot = new ProjectSnapshot();
         snapshot.setProject(project);

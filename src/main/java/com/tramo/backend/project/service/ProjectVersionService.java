@@ -1,6 +1,5 @@
 package com.tramo.backend.project.service;
 
-import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.dto.*;
 import com.tramo.backend.project.entity.*;
@@ -86,7 +85,6 @@ public class ProjectVersionService {
         em.flush();
         Map<Long, Item> restored = new LinkedHashMap<>();
         for (var row : data.items()) {
-            ContentLimits.assertEditorNote(row.content());
             Item item = currentById.get(row.id());
             if (item == null || item.getProject() == null || !id.equals(item.getProject().getId()) || shared.contains(row.id())) {
                 item = new Item(); item.setProject(project); item.setCreatedDate(new Date());
@@ -116,7 +114,6 @@ public class ProjectVersionService {
         for (var row : data.trails()) {
             Trail trail = oldTrails.get(row.id());
             if (trail == null) { trail = new Trail(); trail.setProject(project); trail.setCreationDate(new Date()); }
-            ContentLimits.assertTrailDescription(row.description());
             trail.setTitle(row.title()); trail.setDescription(row.description()); trail.setVisibility(row.visibility());
             trail.setOrderIndex(position++); trail.setModifiedDate(new Date());
             if (trail.getId() == null && row.forkedFromId() != null) trail.setForkedFrom(trails.findById(row.forkedFromId()).orElse(null));

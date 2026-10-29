@@ -3,7 +3,6 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
-import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.notification.service.NotificationService;
@@ -146,7 +145,6 @@ public class ProjectForkService {
         int trailOrder = 0;
 
         for (ProjectSnapshotData.TrailData trailData : data.trails()) {
-            ContentLimits.assertTrailDescription(trailData.description());
             Trail trailCopy = new Trail();
             trailCopy.setTitle(trailData.title());
             trailCopy.setOrderIndex(trailOrder++);
@@ -189,7 +187,6 @@ public class ProjectForkService {
             catch (RuntimeException invalid) { continue; }
             if (retargetMentions(root, itemCopies)) {
                 String rewritten = objectMapper.writeValueAsString(root);
-                ContentLimits.assertEditorNote(rewritten);
                 content.setContent(rewritten);
             }
         }
@@ -223,7 +220,6 @@ public class ProjectForkService {
         copy.setCreatedDate(new Date());
         copy.setModifiedDate(new Date());
         if (itemData.content() != null) {
-            ContentLimits.assertEditorNote(itemData.content());
             ItemContent contentCopy = new ItemContent();
             contentCopy.setContent(itemData.content());
             contentCopy.setUpdatedDate(new Date());

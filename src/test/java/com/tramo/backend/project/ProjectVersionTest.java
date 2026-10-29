@@ -268,13 +268,18 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void invalidRestoreRollsBackSafetyVersionAndAllChanges() {
+    void restoreAcceptsLegacyContentAndPublishRejectsIt() throws Exception {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
         jdbcTemplate.update("update project_version set snapshot = jsonb_set(snapshot::jsonb, '{items,0,content}', to_jsonb(repeat('x', 1048577)))::text where id = ?", manual.id());
-        assertThatThrownBy(() -> versions.restore(f.project.getId(), manual.id(), f.user)).isInstanceOf(com.tramo.backend.exception.PayloadTooLargeException.class);
-        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("before"));
-        assertThat(versions.list(f.project.getId(), null, f.user).versions()).hasSize(1);
-        assertThat(projectRepository.findById(f.project.getId()).orElseThrow().getRestoreEpoch()).isZero();
+        versions.restore(f.project.getId(), manual.id(), f.user);
+        assertThat(items.getContent(f.item, f.user).getContent()).hasSize(1048577);
+        Project project = projectRepository.findById(f.project.getId()).orElseThrow();
+        project.setDescription("Ready to publish");
+        projectRepository.save(project);
+        mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
+                        .header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1"))
+                .andExpect(status().isPayloadTooLarge());
+        assertThat(items.getContent(f.item, f.user).getContent()).hasSize(1048577);
     }
 
     @Test
