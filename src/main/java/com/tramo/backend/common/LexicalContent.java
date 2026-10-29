@@ -5,6 +5,8 @@ import com.tramo.backend.exception.RequestValidationException;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.Locale;
@@ -17,8 +19,8 @@ public final class LexicalContent {
     private static final Set<String> TYPES = Set.of("root", "paragraph", "text", "linebreak", "tab",
             "heading", "quote", "list", "listitem", "code", "code-highlight", "link", "autolink",
             "image", "equation", "music", "embed", "table", "tablerow", "tablecell", "horizontalrule");
-    private static final Set<String> SCHEMES = Set.of("http", "https", "mailto", "sms", "tel");
     private static final Set<String> EMBED_FIELDS = Set.of("type", "version", "format", "provider", "id");
+    private static final Set<String> SCHEMES = Set.of("http", "https", "mailto", "sms", "tel");
     private static final Pattern FONT_SIZE = Pattern.compile("[0-9]+(?:\\.[0-9]+)?px");
     private static final Pattern COLOR = Pattern.compile("rgb\\((?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\)");
 
@@ -36,6 +38,49 @@ public final class LexicalContent {
         }
     }
 
+    public static String sanitizeLinks(String content) {
+        if (content == null || content.isEmpty()) return content;
+        JsonNode state = MAPPER.readTree(content);
+        if (sanitizeChildren(state.path("root"))) return MAPPER.writeValueAsString(state);
+        return content;
+    }
+
+    private static boolean sanitizeChildren(JsonNode node) {
+        JsonNode children = node.path("children");
+        if (!children.isArray()) return false;
+        ArrayNode sanitized = MAPPER.createArrayNode();
+        boolean changed = false;
+        for (JsonNode child : children) {
+            changed |= sanitizeChildren(child);
+            String type = child.path("type").asText("");
+            if (("link".equals(type) || "autolink".equals(type)) && !safeLink(child)) {
+                for (JsonNode grandchild : child.path("children")) sanitized.add(grandchild);
+                changed = true;
+            } else sanitized.add(child);
+        }
+        if (changed) ((ObjectNode) node).set("children", sanitized);
+        return changed;
+    }
+
+    private static boolean safeLink(JsonNode node) {
+        JsonNode url = node.path("url");
+        if (!url.isString()) return false;
+        String value = url.asText();
+        if ("link".equals(node.path("type").asText())) {
+            if ("https://".equals(value)) return true;
+            if ("#".equals(value) && node.path("rel").asText("")
+                    .matches("(?:tramo-idea:|mypath-idea:)[0-9]+|tramo-extraction:[0-9a-fA-F-]{36}")) return true;
+        }
+        try {
+            URI uri = URI.create(value.strip().replace(" ", "%20").replace("{", "%7B").replace("}", "%7D"));
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            return SCHEMES.contains(scheme) && (!("http".equals(scheme) || "https".equals(scheme))
+                    || uri.getHost() != null && !uri.getHost().isBlank());
+        } catch (IllegalArgumentException failure) {
+            return false;
+        }
+    }
+
     private static void validateNode(JsonNode node, int depth) {
         String type = node.path("type").asText("");
         if (depth > 100 || !node.isObject() || !TYPES.contains(type)
@@ -48,19 +93,6 @@ public final class LexicalContent {
             String id = node.path("id").asText("");
             if (!("youtube".equals(provider) && id.matches("[A-Za-z0-9_-]{11}")
                     || "tweet".equals(provider) && id.matches("[1-9][0-9]{0,19}"))) throw invalid();
-        }
-        if ("link".equals(type) || "autolink".equals(type)) {
-            JsonNode url = node.path("url");
-            if (!url.isString()) throw invalid();
-            String rel = node.path("rel").asText("");
-            boolean internal = "link".equals(type) && "#".equals(url.asText())
-                    && rel.matches("(?:tramo-idea:|mypath-idea:)[0-9]+|tramo-extraction:[0-9a-fA-F-]{36}");
-            boolean placeholder = "link".equals(type) && "https://".equals(url.asText());
-            if (!internal && !placeholder) {
-                URI uri = URI.create(url.asText().strip()
-                        .replace(" ", "%20").replace("{", "%7B").replace("}", "%7D"));
-                if (uri.getScheme() == null || !SCHEMES.contains(uri.getScheme().toLowerCase(Locale.ROOT))) throw invalid();
-            }
         }
         if ("equation".equals(type) || "music".equals(type)) {
             JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");

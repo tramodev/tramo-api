@@ -1,10 +1,12 @@
 package com.tramo.backend.security;
 
 import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.common.LexicalContent;
 import com.tramo.backend.exception.RequestValidationException;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LexicalContentTest {
@@ -48,7 +50,7 @@ class LexicalContentTest {
     @Test
     void acceptsEditorNodesAndSupportedLinks() {
         for (String type : new String[]{"paragraph", "text", "linebreak", "tab", "heading", "quote", "list", "listitem",
-                "code", "code-highlight", "image", "embed", "table", "tablerow", "tablecell", "horizontalrule"}) {
+                "code", "code-highlight", "image", "table", "tablerow", "tablecell", "horizontalrule"}) {
             assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\"}"))).doesNotThrowAnyException();
         }
         for (String type : new String[]{"link", "autolink"}) {
@@ -67,13 +69,14 @@ class LexicalContentTest {
     }
 
     @Test
-    void placeholderDoesNotAllowUnsafeUrlsOrUnknownChildren() {
+    void unsafeUrlsLoseTheirLinksButKeepTheirText() {
         for (String url : new String[]{"javascript:alert(1)", "data:text/html,payload", "http://", "HTTPS://", ""}) {
-            assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"link\",\"url\":\"" + url + "\"}")))
-                    .isInstanceOf(RequestValidationException.class);
+            String content = state("{\"type\":\"link\",\"url\":\"" + url + "\",\"children\":[{\"type\":\"text\",\"text\":\"label\"}]}");
+            assertThatCode(() -> ContentLimits.assertEditorNote(content)).doesNotThrowAnyException();
+            assertThat(LexicalContent.sanitizeLinks(content)).isEqualTo(state("{\"type\":\"text\",\"text\":\"label\"}"));
         }
-        assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"autolink\",\"url\":\"https://\"}")))
-                .isInstanceOf(RequestValidationException.class);
+        assertThat(LexicalContent.sanitizeLinks(state("{\"type\":\"autolink\",\"url\":\"https://\"}")))
+                .isEqualTo(state(""));
         assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"link\",\"url\":\"https://\",\"children\":[{\"type\":\"script\"}]}")))
                 .isInstanceOf(RequestValidationException.class);
     }
@@ -94,13 +97,13 @@ class LexicalContentTest {
     void rejectsMalformedStatesUnknownNestedNodesAndUnsafeLinks() {
         for (String content : new String[]{"plain text", "{}", "null", "[]", " ", state("{}"), state("null"),
                 state("{\"type\":\"paragraph\",\"children\":{}}"), state("{\"type\":\"paragraph\",\"children\":[{\"type\":\"script\"}]}"),
-                state("{\"type\":\"root\",\"children\":[]}"), state("{\"type\":\"link\"}"), state("") + "{}"}) {
+                state("{\"type\":\"root\",\"children\":[]}"), state("") + "{}"}) {
             assertThatThrownBy(() -> ContentLimits.assertEditorNote(content)).isInstanceOf(RequestValidationException.class);
         }
         for (String url : new String[]{"javascript:alert(1)", " javascript:alert({value: 1}) ", "java script:alert(1)",
                 "data:text/html,{payload}", "file:///etc/passwd", "ftp://example.com", "//example.com", "/relative", "#", "", "java\\tscript:alert(1)"}) {
-            assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"autolink\",\"url\":\"" + url + "\"}")))
-                    .isInstanceOf(RequestValidationException.class);
+            assertThat(LexicalContent.sanitizeLinks(state("{\"type\":\"autolink\",\"url\":\"" + url + "\"}")))
+                    .isEqualTo(state(""));
         }
         String nested = "{\"type\":\"text\"}";
         for (int i = 0; i < 105; i++) nested = "{\"type\":\"paragraph\",\"children\":[" + nested + "]}";

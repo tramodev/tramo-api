@@ -612,9 +612,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                         .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
                         .content(contentRequest(previous)))
                 .andExpect(status().isNoContent());
-        for (String node : new String[]{"{\"type\":\"script\"}",
-                "{\"type\":\"link\",\"url\":\"javascript:alert(1)\",\"children\":[]}",
-                "{\"type\":\"autolink\",\"url\":\"data:text/html,payload\",\"children\":[]}"}) {
+        for (String node : new String[]{"{\"type\":\"script\"}"}) {
             String invalid = "{\"root\":{\"type\":\"root\",\"children\":[" + node + "]}}";
             mockMvc.perform(put("/api/item/" + itemId + "/content")
                             .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
@@ -624,6 +622,21 @@ class TrailItemTest extends AbstractIntegrationTest {
         }
         mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(previous));
+    }
+
+    @Test
+    void invalidLinkDoesNotRejectTheRestOfTheNote() throws Exception {
+        User owner = createUser("oddlinkowner");
+        Project project = createProject(owner, "Odd link", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Note");
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"Before \"},{\"type\":\"link\",\"url\":\"javascript:alert(1)\",\"children\":[{\"type\":\"text\",\"text\":\"link text\"}]},{\"type\":\"text\",\"text\":\" after\"}]}]}}";
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(contentRequest(content)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(content.replace("{\"type\":\"link\",\"url\":\"javascript:alert(1)\",\"children\":[{\"type\":\"text\",\"text\":\"link text\"}]}", "{\"type\":\"text\",\"text\":\"link text\"}")));
     }
 
     @Test

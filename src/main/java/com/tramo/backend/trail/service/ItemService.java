@@ -27,6 +27,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.common.ContentLimits;
+import com.tramo.backend.common.LexicalContent;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.R2Client;
 import com.tramo.backend.upload.service.EditorImageService;
@@ -370,6 +371,7 @@ public class ItemService {
     @Transactional
     public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
         ContentLimits.assertEditorNote(content);
+        content = LexicalContent.sanitizeLinks(content);
         Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);
