@@ -2,8 +2,6 @@ package com.tramo.backend.project.service;
 
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ProjectExportException;
-import com.tramo.backend.exception.RequestErrorCode;
-import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.project.dto.ProjectExportDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.trail.entity.*;
@@ -60,11 +58,6 @@ public class ProjectExportService {
     private record Snapshot(ProjectExportDTO data, List<Resource> resources) {}
 
     public Path prepare(Long projectId, User requester) throws IOException {
-        return prepare(projectId, requester, 0);
-    }
-
-    public Path prepare(Long projectId, User requester, int embedErrors) throws IOException {
-        if (embedErrors < 0 || embedErrors > 200000) throw new RequestValidationException(RequestErrorCode.EXPORT_ERROR_COUNT_INVALID);
         access.getOwnedProject(projectId, requester);
         if (!preparations.tryAcquire()) throw new ProjectExportException(429, "EXPORT_BUSY", "Project exports are busy. Please try again shortly.");
         Path archive = null;
@@ -72,7 +65,6 @@ public class ProjectExportService {
         try {
             Snapshot snapshot = reads.execute(status -> capture(projectId, requester));
             Set<String> warnings = new LinkedHashSet<>();
-            if (embedErrors > 0) warnings.add(embedErrors + " equations or music scores with errors; original source is preserved.");
             String html = new ProjectExportHtml(mapper, snapshot.data(), warnings).render();
             var source = snapshot.data();
             var data = new ProjectExportDTO(3, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),

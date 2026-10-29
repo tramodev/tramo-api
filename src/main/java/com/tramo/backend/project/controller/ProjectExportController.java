@@ -17,8 +17,8 @@ public class ProjectExportController {
     public ProjectExportController(ProjectExportService exports, ProjectIdCodec codec) { this.exports = exports; this.codec = codec; }
 
     @GetMapping("/{id}/export")
-    public void export(@PathVariable String id, @AuthenticationPrincipal User user, @RequestParam(defaultValue = "0") int embedErrors, HttpServletResponse response) throws IOException {
-        var archive = exports.prepare(codec.decode(id), user, embedErrors);
+    public void export(@PathVariable String id, @AuthenticationPrincipal User user, HttpServletResponse response) throws IOException {
+        var archive = exports.prepare(codec.decode(id), user);
         try {
             response.setContentType("application/zip");
             response.setHeader("Content-Disposition", "attachment; filename=\"tramo-project-" + codec.encode(codec.decode(id)) + ".zip\"");

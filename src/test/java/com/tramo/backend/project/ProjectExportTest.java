@@ -75,21 +75,16 @@ class ProjectExportTest extends AbstractIntegrationTest {
     JsonNode json(Map<String, byte[]> entries) { return mapper.readTree(new String(entries.get("project.json"), StandardCharsets.UTF_8)); }
 
     @Test
-    void exportIncludesTheClientValidationWarningWithoutChangingContent() throws Exception {
+    void exportIgnoresClientValidationCountWithoutChangingContent() throws Exception {
         Fixture f = fixture();
         String original = itemService.getContent(f.shared, f.owner).getContent();
         byte[] bytes = mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("embedErrors", "2")
                         .header("Authorization", bearer(f.owner)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
         var entries = unzip(bytes);
-        assertThat(html(entries)).contains("2 equations or music scores with errors");
-        assertThat(json(entries).path("warnings").toString()).contains("2 equations or music scores with errors");
+        assertThat(html(entries)).doesNotContain("2 equations or music scores with errors");
+        assertThat(json(entries).path("warnings").toString()).doesNotContain("2 equations or music scores with errors");
         assertThat(itemService.getContent(f.shared, f.owner).getContent()).isEqualTo(original);
-        for (String count : new String[]{"-1", "200001"}) {
-            mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("embedErrors", count)
-                            .header("Authorization", bearer(f.owner)))
-                    .andExpect(status().isBadRequest());
-        }
     }
 
     @Test
