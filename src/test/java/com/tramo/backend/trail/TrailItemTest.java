@@ -627,6 +627,40 @@ class TrailItemTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void directContentWritesRejectUnsafeStylesAndEmbeds() throws Exception {
+        User owner = createUser("unsafelexical");
+        Project project = createProject(owner, "Safe content", "private");
+        long trailId = createTrail(owner, project, "Trail");
+        long itemId = createItem(owner, trailId, "Note");
+        String original = lexicalText("Original");
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(contentRequest(original)))
+                .andExpect(status().isNoContent());
+        for (String node : new String[]{
+                "{\"type\":\"text\",\"text\":\"bad\",\"style\":\"background-image: url(javascript:alert(1))\"}",
+                "{\"type\":\"text\",\"text\":\"bad\",\"textStyle\":\"color: url(javascript:alert(1))\"}",
+                "{\"type\":\"embed\",\"provider\":\"youtube\",\"id\":\"dQw4w9WgXcQ\",\"src\":\"javascript:alert(1)\"}",
+                "{\"type\":\"embed\",\"provider\":\"youtube\",\"id\":\"dQw4w9WgXcQ\",\"url\":\"https://evil.example/video\"}",
+                "{\"type\":\"embed\",\"provider\":\"youtube\",\"id\":\"../evil\"}",
+                "{\"type\":\"embed\",\"provider\":\"evil.example\",\"id\":\"dQw4w9WgXcQ\"}"}) {
+            String content = "{\"root\":{\"type\":\"root\",\"children\":[" + node + "]}}";
+            mockMvc.perform(put("/api/item/" + itemId + "/content")
+                            .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                            .content(contentRequest(content, original)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("EDITOR_CONTENT_INVALID"));
+        }
+        mockMvc.perform(get("/api/item/" + itemId + "/content").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").value(original));
+        String allowed = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"text\",\"text\":\"safe\",\"style\":\"font-size: 15px; color: rgb(12, 34, 56);\"},{\"type\":\"embed\",\"provider\":\"youtube\",\"id\":\"dQw4w9WgXcQ\",\"format\":\"\",\"version\":1}]}}";
+        mockMvc.perform(put("/api/item/" + itemId + "/content")
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(contentRequest(allowed, original)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
     void invalidContentUpdatesNeverEraseTheSavedNote() throws Exception {
         User owner = createUser("contentintegrity");
         Project project = createProject(owner, "Integrity", "private");
