@@ -10,6 +10,10 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
+import org.slf4j.LoggerFactory;
+import io.micrometer.core.instrument.Metrics;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -26,16 +30,43 @@ public final class LexicalContent {
 
     private LexicalContent() {}
 
+    public enum Mode { STRICT, PRESERVE_LEGACY }
+
     public static void validate(String content) {
-        if (content == null || content.isEmpty()) return;
+        validate(content, Mode.STRICT);
+    }
+
+    public static void validate(String content, Mode mode) {
+        Map<String, Integer> sources = new HashMap<>();
+        validateNode(document(content), 0, mode, sources);
+        if (mode == Mode.PRESERVE_LEGACY) preserved("copy", sources.values().stream().mapToInt(Integer::intValue).sum());
+    }
+
+    public static void validateUpdate(String content, String previousContent) {
+        Map<String, Integer> sources = new HashMap<>();
+        try { validateNode(document(previousContent), 0, Mode.PRESERVE_LEGACY, sources); }
+        catch (RuntimeException invalidPrevious) { sources.clear(); }
+        int before = sources.values().stream().mapToInt(Integer::intValue).sum();
+        validateNode(document(content), 0, Mode.STRICT, sources);
+        preserved("update", before - sources.values().stream().mapToInt(Integer::intValue).sum());
+    }
+
+    private static JsonNode document(String content) {
+        if (content == null || content.isEmpty()) return null;
         try {
             JsonNode state = MAPPER.readTree(content);
             if (state == null || !state.isObject() || !"root".equals(state.path("root").path("type").asText())
                     || !state.path("root").path("children").isArray()) throw invalid();
-            validateNode(state.path("root"), 0);
+            return state.path("root");
         } catch (RuntimeException failure) {
             throw invalid();
         }
+    }
+
+    private static void preserved(String operation, int count) {
+        if (count == 0) return;
+        Metrics.counter("editor.content.legacy.preserved", "operation", operation).increment(count);
+        LoggerFactory.getLogger(LexicalContent.class).warn("event=editor_content_legacy_preserved operation={} nodes={}", operation, count);
     }
 
     public static String sanitizeLinks(String content) {
@@ -81,7 +112,8 @@ public final class LexicalContent {
         }
     }
 
-    private static void validateNode(JsonNode node, int depth) {
+    private static void validateNode(JsonNode node, int depth, Mode mode, Map<String, Integer> sources) {
+        if (node == null) return;
         String type = node.path("type").asText("");
         if (depth > 100 || !node.isObject() || !TYPES.contains(type)
                 || (depth > 0 && "root".equals(type))) throw invalid();
@@ -96,11 +128,19 @@ public final class LexicalContent {
         }
         if ("equation".equals(type) || "music".equals(type)) {
             JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");
-            if (!source.isString() || source.asText().length() > 10000) throw invalid();
+            if (!source.isString() || source.asText().length() > 10000) {
+                String key = type + ":" + source.toString();
+                if (mode == Mode.PRESERVE_LEGACY) sources.merge(key, 1, Integer::sum);
+                else {
+                    int remaining = sources.getOrDefault(key, 0);
+                    if (remaining == 0) throw invalid();
+                    sources.put(key, remaining - 1);
+                }
+            }
         }
         if (node.has("children")) {
             if (!node.path("children").isArray()) throw invalid();
-            for (JsonNode child : node.path("children")) validateNode(child, depth + 1);
+            for (JsonNode child : node.path("children")) validateNode(child, depth + 1, mode, sources);
         }
     }
 

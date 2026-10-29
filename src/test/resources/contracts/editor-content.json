@@ -1,0 +1,20 @@
+[
+  {"node": {"type": "equation", "equation": "x"}, "repeat": 10000, "strict": true, "preserved": true},
+  {"node": {"type": "equation", "equation": "x"}, "repeat": 10001, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": 42}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": null}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": true}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": {}}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": []}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "equation", "equation": "unfinished {"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "music", "abc": "x"}, "repeat": 10000, "strict": true, "preserved": true},
+  {"node": {"type": "music", "abc": "x"}, "repeat": 10001, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": 42}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": null}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": true}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": {}}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": []}, "repeat": 1, "strict": false, "preserved": true},
+  {"node": {"type": "music", "abc": "unfinished {"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: red;"}, "repeat": 1, "strict": false, "preserved": false},
+  {"node": {"type": "embed", "provider": "foreign", "id": "123"}, "repeat": 1, "strict": false, "preserved": false}
+]

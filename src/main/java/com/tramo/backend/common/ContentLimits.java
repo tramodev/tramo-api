@@ -27,6 +27,10 @@ public final class ContentLimits {
         LexicalContent.validate(content);
     }
 
+    public static void assertPreservedEditorNote(String content) {
+        LexicalContent.validate(content, LexicalContent.Mode.PRESERVE_LEGACY);
+    }
+
     public static void assertTrailDescription(String description) {
         if (description != null && description.length() > TRAIL_DESCRIPTION_CHARACTERS) {
             throw new RequestValidationException(RequestErrorCode.TRAIL_DESCRIPTION_SIZE_INVALID);

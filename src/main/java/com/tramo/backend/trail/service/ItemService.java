@@ -370,8 +370,7 @@ public class ItemService {
 
     @Transactional
     public void updateContent(Long id, String content, Integer extractionEpoch, String expectedContent, User requester) {
-        ContentLimits.assertEditorNote(content);
-        content = LexicalContent.sanitizeLinks(content);
+        ContentLimits.assertNote(content);
         Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester);
@@ -380,6 +379,8 @@ public class ItemService {
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note was restored or extracted in another session. Your changes were kept locally; reload the note before saving.");
         String previousContent = itemContent != null ? itemContent.getContent() : null;
+        LexicalContent.validateUpdate(content, previousContent);
+        content = LexicalContent.sanitizeLinks(content);
         long growth = (long) ContentLimits.bytes(content) - ContentLimits.bytes(previousContent);
         if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
         if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))

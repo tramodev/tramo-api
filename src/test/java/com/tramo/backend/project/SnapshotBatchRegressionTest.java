@@ -42,7 +42,7 @@ class SnapshotBatchRegressionTest extends AbstractIntegrationTest {
             long note = postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"Public note\"}");
             Long content = jdbcTemplate.queryForObject("select nextval('item_content_seq')", Long.class);
             jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, ?, 0)",
-                    content, "{\"root\":{\"children\":[{\"type\":\"text\",\"text\":\"" + "x".repeat(240) + "\"}]}}");
+                    content, lexicalText("x".repeat(240)));
             jdbcTemplate.update("update item set content_id = ? where id = ?", content, note);
             publish.publish(project.getId(), owner);
             jdbcTemplate.update("update project_snapshot set content = rpad(content, 3000, ' ') where project_id = ?", project.getId());

@@ -1,5 +1,7 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.common.ContentLimits;
+
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.dto.*;
 import com.tramo.backend.project.entity.*;
@@ -74,6 +76,8 @@ public class ProjectVersionService {
     public long restore(Long id, Long versionId, User user) {
         Project project = capture.lock(id, user);
         ProjectVersionData data = capture.read(version(id, versionId).getSnapshot());
+        for (var item : data.items()) ContentLimits.assertPreservedEditorNote(item.content());
+        for (var trail : data.trails()) ContentLimits.assertTrailDescription(trail.description());
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
         List<Item> current = items.findForExport(id);
         Map<Long, Item> currentById = current.stream().collect(Collectors.toMap(Item::getId, i -> i));

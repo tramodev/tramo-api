@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.common.ContentLimits;
+
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.subscription.service.SubscriptionService;
 import com.tramo.backend.upload.service.EditorImageService;
@@ -141,6 +143,11 @@ public class ProjectForkService {
     }
 
     private void forkFromSnapshot(Project fork, ProjectSnapshotData data) {
+        for (var trail : data.trails()) {
+            ContentLimits.assertTrailDescription(trail.description());
+            for (var item : trail.items()) ContentLimits.assertPreservedEditorNote(item.content());
+        }
+        for (var item : data.looseItems()) ContentLimits.assertPreservedEditorNote(item.content());
         Map<Long, Item> itemCopies = new HashMap<>();
         int trailOrder = 0;
 

@@ -141,7 +141,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
         long first = postForId(owner, "/api/trail/" + trailId + "/item", "{\"title\":\"First\"}");
         long second = postForId(owner, "/api/trail/" + trailId + "/item", "{\"title\":\"Second\"}");
         publish(owner, project);
-        String content = "{\"root\":{\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + second + "\"}]}}";
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"link\",\"rel\":\"tramo-idea:" + second + "\"}]}}";
         Long contentId = jdbcTemplate.queryForObject("select nextval('item_content_seq')", Long.class);
         jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, ?, 0)", contentId, content);
         jdbcTemplate.update("update item set content_id = ? where id = ?", contentId, first);
@@ -198,7 +198,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
         long two = trail(owner, project, "Two");
         long item = postForId(owner, "/api/trail/" + one + "/item", "{\"title\":\"Note\"}");
         Long content = jdbcTemplate.queryForObject("select nextval('item_content_seq')", Long.class);
-        jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, ?, 0)", content, "x".repeat(500));
+        jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, ?, 0)", content, lexicalText("x".repeat(350)));
         jdbcTemplate.update("update item set content_id = ? where id = ?", content, item);
         jdbcTemplate.update("insert into trail_item (id, trail_id, item_id, order_index) values (nextval('trail_item_seq'), ?, ?, 0)", two, item);
         publish(owner, project);
@@ -262,7 +262,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
         long trail = trail(owner, project, "Trail");
         long item = postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"Note\"}");
         Long content = jdbcTemplate.queryForObject("select nextval('item_content_seq')", Long.class);
-        jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, 'published body', 0)", content);
+        jdbcTemplate.update("insert into item_content (id, content, extraction_epoch) values (?, ?, 0)", content, lexicalText("published body"));
         jdbcTemplate.update("update item set content_id = ? where id = ?", content, item);
         var updated = new java.util.concurrent.CountDownLatch(1);
         var commit = new java.util.concurrent.CountDownLatch(1);

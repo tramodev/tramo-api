@@ -74,6 +74,25 @@ class ProjectExportTest extends AbstractIntegrationTest {
     String html(Map<String, byte[]> entries) { return new String(entries.get("index.html"), StandardCharsets.UTF_8); }
     JsonNode json(Map<String, byte[]> entries) { return mapper.readTree(new String(entries.get("project.json"), StandardCharsets.UTF_8)); }
 
+
+    @Test
+    void sourceWarningsAreRecomputedFromUniqueSavedNotesIncludingLegacyValues() throws Exception {
+        Fixture f = fixture();
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"{\"},{\"type\":\"music\",\"abc\":\"unfinished [\"},{\"type\":\"equation\",\"equation\":42}]}}";
+        jdbcTemplate.update("update item_content set content = ? where id = (select content_id from item where id = ?)", content, f.shared);
+        String originalWarnings = null;
+        for (String count : List.of("", "0", "99")) {
+            var request = get("/api/project/" + pid(f.project) + "/export").header("Authorization", bearer(f.owner));
+            if (!count.isEmpty()) request.param("embedErrors", count);
+            var archive = unzip(mockMvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
+            String warnings = json(archive).path("warnings").toString();
+            if (originalWarnings == null) originalWarnings = warnings;
+            assertThat(warnings).isEqualTo(originalWarnings).contains("3 equations or music scores exported as source", "source is not text");
+            assertThat(html(archive)).contains("3 equations or music scores exported as source", "unfinished [", "<pre>42</pre>");
+        }
+        assertThat(itemService.getContent(f.shared, f.owner).getContent()).isEqualTo(content);
+    }
+
     @Test
     void exportIgnoresClientValidationCountWithoutChangingContent() throws Exception {
         Fixture f = fixture();

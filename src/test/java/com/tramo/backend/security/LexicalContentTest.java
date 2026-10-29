@@ -110,4 +110,50 @@ class LexicalContentTest {
         String content = state(nested);
         assertThatThrownBy(() -> ContentLimits.assertEditorNote(content)).isInstanceOf(RequestValidationException.class);
     }
+
+    @Test
+    void updatePreservesOnlyExistingLegacySourcesAndTheirMultiplicity() {
+        for (String type : new String[]{"equation", "music"}) {
+            String field = "equation".equals(type) ? "equation" : "abc";
+            for (String source : new String[]{"42", "null", "true", "{}", "[]", "\"" + "x".repeat(10001) + "\""}) {
+                String legacy = "{\"type\":\"" + type + "\",\"" + field + "\":" + source + "}";
+                String previous = state(legacy);
+                String changed = state(legacy + ",{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"saved remainder\"}]}");
+                assertThatCode(() -> LexicalContent.validateUpdate(changed, previous)).doesNotThrowAnyException();
+                assertThatThrownBy(() -> LexicalContent.validate(changed)).isInstanceOf(RequestValidationException.class);
+                assertThatThrownBy(() -> LexicalContent.validateUpdate(changed, "")).isInstanceOf(RequestValidationException.class);
+                assertThatThrownBy(() -> LexicalContent.validateUpdate(state(legacy + "," + legacy), previous)).isInstanceOf(RequestValidationException.class);
+                assertThatCode(() -> LexicalContent.validateUpdate(state(""), previous)).doesNotThrowAnyException();
+                assertThatCode(() -> ContentLimits.assertPreservedEditorNote(previous)).doesNotThrowAnyException();
+            }
+        }
+    }
+
+    @Test
+    void preservationNeverSkipsStructuralOrStyleValidation() {
+        for (String node : new String[]{"{\"type\":\"script\"}", "{\"type\":\"text\",\"style\":\"color: red\"}",
+                "{\"type\":\"embed\",\"provider\":\"evil\",\"id\":\"123\"}"}) {
+            assertThatThrownBy(() -> ContentLimits.assertPreservedEditorNote(state(node))).isInstanceOf(RequestValidationException.class);
+            assertThatThrownBy(() -> LexicalContent.validateUpdate(state(node), state(node))).isInstanceOf(RequestValidationException.class);
+        }
+        assertThatCode(() -> LexicalContent.validateUpdate(state("{\"type\":\"text\",\"text\":\"fixed\"}"), "broken old JSON"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sharedEditorContentContract() throws Exception {
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        try (var stream = getClass().getResourceAsStream("/contracts/editor-content.json")) {
+            for (var fixture : mapper.readTree(stream)) {
+                var node = (tools.jackson.databind.node.ObjectNode) fixture.path("node").deepCopy();
+                String field = "equation".equals(node.path("type").asText()) ? "equation" : "abc";
+                if (fixture.path("repeat").asInt() > 1) node.put(field, node.path(field).asText().repeat(fixture.path("repeat").asInt()));
+                String content = state(node.toString());
+                if (fixture.path("strict").asBoolean()) assertThatCode(() -> ContentLimits.assertEditorNote(content)).doesNotThrowAnyException();
+                else assertThatThrownBy(() -> ContentLimits.assertEditorNote(content)).isInstanceOf(RequestValidationException.class);
+                if (fixture.path("preserved").asBoolean()) assertThatCode(() -> ContentLimits.assertPreservedEditorNote(content)).doesNotThrowAnyException();
+                else assertThatThrownBy(() -> ContentLimits.assertPreservedEditorNote(content)).isInstanceOf(RequestValidationException.class);
+            }
+        }
+    }
 }

@@ -43,6 +43,34 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     }
     void edit(Fixture f, String content) { items.updateContent(f.item, lexicalText(content), f.user); }
 
+
+    @Test
+    void existingLegacySourcesSurviveEditsAndRestoreButCannotBeIntroducedOrDuplicated() {
+        var f = fixture();
+        for (String type : List.of("equation", "music")) {
+            String field = "equation".equals(type) ? "equation" : "abc";
+            for (String source : List.of("42", "\"" + "x".repeat(10001) + "\"")) {
+                String node = "{\"type\":\"" + type + "\",\"" + field + "\":" + source + "}";
+                String legacy = "{\"root\":{\"type\":\"root\",\"children\":[" + node + "]}}";
+                jdbcTemplate.update("update item_content set content = ?, extraction_epoch = 0 where id = (select content_id from item where id = ?)", legacy, f.item);
+                String changed = legacy.replace("]}}", ",{\"type\":\"text\",\"text\":\"saved remainder\"}]}}");
+                items.updateContent(f.item, changed, 0, legacy, f.user);
+                assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(changed);
+                String duplicated = legacy.replace("]}}", "," + node + "]}}");
+                assertThatThrownBy(() -> items.updateContent(f.item, duplicated, 0, changed, f.user))
+                        .isInstanceOf(com.tramo.backend.exception.RequestValidationException.class);
+                var manual = versions.create(f.project.getId(), "Legacy", f.user);
+                edit(f, "different");
+                versions.restore(f.project.getId(), manual.id(), f.user);
+                assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(changed);
+                int epoch = items.getContent(f.item, f.user).getExtractionEpoch();
+                String next = changed.replace("saved remainder", "saved after restore");
+                items.updateContent(f.item, next, epoch, changed, f.user);
+                assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(next);
+            }
+        }
+    }
+
     @Test
     void restorePreservesInvalidEquationAndMusicSource() {
         var f = fixture();
@@ -270,16 +298,16 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     @Test
     void restoreAcceptsLegacyContentAndPublishRejectsIt() throws Exception {
         var f = fixture(); var manual = versions.create(f.project.getId(), null, f.user);
-        jdbcTemplate.update("update project_version set snapshot = jsonb_set(snapshot::jsonb, '{items,0,content}', to_jsonb(repeat('x', 1048577)))::text where id = ?", manual.id());
+        jdbcTemplate.update("update project_version set snapshot = jsonb_set(snapshot::jsonb, '{items,0,content}', to_jsonb(?::text))::text where id = ?", lexicalText("x".repeat(1048577)), manual.id());
         versions.restore(f.project.getId(), manual.id(), f.user);
-        assertThat(items.getContent(f.item, f.user).getContent()).hasSize(1048577);
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("x".repeat(1048577)));
         Project project = projectRepository.findById(f.project.getId()).orElseThrow();
         project.setDescription("Ready to publish");
         projectRepository.save(project);
         mockMvc.perform(post("/api/project/" + pid(project) + "/publish")
                         .header("Authorization", bearer(f.user)).header("X-Project-Epoch", "1"))
                 .andExpect(status().isPayloadTooLarge());
-        assertThat(items.getContent(f.item, f.user).getContent()).hasSize(1048577);
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(lexicalText("x".repeat(1048577)));
     }
 
     @Test
