@@ -44,6 +44,17 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     void edit(Fixture f, String content) { items.updateContent(f.item, lexicalText(content), f.user); }
 
     @Test
+    void restorePreservesInvalidEquationAndMusicSource() {
+        var f = fixture();
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"{\"},{\"type\":\"music\",\"abc\":\"unfinished [\"}]}}";
+        items.updateContent(f.item, content, f.user);
+        var manual = versions.create(f.project.getId(), "Invalid sources", f.user);
+        edit(f, "different");
+        versions.restore(f.project.getId(), manual.id(), f.user);
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(content);
+    }
+
+    @Test
     void creatingSnapshotRequiresEpochBeforeAndAfterRestore() throws Exception {
         var f = fixture();
         String url = "/api/project/" + pid(f.project) + "/history";

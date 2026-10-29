@@ -49,7 +49,10 @@ public final class LexicalContent {
                 if (uri.getScheme() == null || !SCHEMES.contains(uri.getScheme().toLowerCase(Locale.ROOT))) throw invalid();
             }
         }
-        if ("equation".equals(type) && node.path("equation").asText("").length() > 10000) throw invalid();
+        if ("equation".equals(type) || "music".equals(type)) {
+            JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");
+            if (!source.isString() || source.asText().length() > 10000) throw invalid();
+        }
         if (node.has("children")) {
             if (!node.path("children").isArray()) throw invalid();
             for (JsonNode child : node.path("children")) validateNode(child, depth + 1);

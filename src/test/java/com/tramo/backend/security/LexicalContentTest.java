@@ -21,9 +21,34 @@ class LexicalContentTest {
     }
 
     @Test
+    void boundsMusicLengthAndRequiresStringSources() {
+        for (String type : new String[]{"equation", "music"}) {
+            String field = "equation".equals(type) ? "equation" : "abc";
+            assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\",\"" + field + "\":\"" + "x".repeat(10000) + "\"}")))
+                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\",\"" + field + "\":\"" + "x".repeat(10001) + "\"}")))
+                    .isInstanceOf(RequestValidationException.class);
+            for (String value : new String[]{"null", "42", "true", "{}", "[]"}) {
+                assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\",\"" + field + "\":" + value + "}")))
+                        .isInstanceOf(RequestValidationException.class);
+            }
+            assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\"}")))
+                    .isInstanceOf(RequestValidationException.class);
+        }
+    }
+
+    @Test
+    void acceptsInvalidSyntaxAsSourceText() {
+        assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"equation\",\"equation\":\"{\"}")))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"music\",\"abc\":\"not a score\"}")))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void acceptsEditorNodesAndSupportedLinks() {
         for (String type : new String[]{"paragraph", "text", "linebreak", "tab", "heading", "quote", "list", "listitem",
-                "code", "code-highlight", "image", "equation", "music", "embed", "table", "tablerow", "tablecell", "horizontalrule"}) {
+                "code", "code-highlight", "image", "embed", "table", "tablerow", "tablecell", "horizontalrule"}) {
             assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\"}"))).doesNotThrowAnyException();
         }
         for (String type : new String[]{"link", "autolink"}) {

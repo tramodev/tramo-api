@@ -73,6 +73,21 @@ class ForkContentTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void forkPreservesInvalidEquationAndMusicSource() throws Exception {
+        User owner = createUser("invalidforkowner");
+        User forker = createUser("invalidforkreader");
+        Project source = createProject(owner, "Invalid sources", "unlisted", "Description", null);
+        long trailId = createTrail(owner, source, "Trail");
+        long itemId = createItem(owner, trailId, "Note");
+        String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"{\"},{\"type\":\"music\",\"abc\":\"unfinished [\"}]}}";
+        setContent(owner, itemId, content);
+        publish(owner, source);
+        Project fork = forkOf(forker, source);
+        assertThat(itemsOf(fork)).hasSize(1);
+        assertThat(itemsOf(fork).get(0).getContent().getContent()).isEqualTo(content);
+    }
+
+    @Test
     void forkFromLiveTablesCopiesItemContentAndTrailStructure() throws Exception {
         User owner = createUser("flowner3");
         User forker = createUser("flforker3");

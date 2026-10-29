@@ -30,6 +30,42 @@ class ProjectDraftCommitTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void invalidSourcesAloneCreateAProjectWithoutLosingContent() {
+        var owner = createUser("draftinvalidembed");
+        var empty = new DraftCommitRequest.NamedEntity("");
+        for (String node : new String[]{"{\"type\":\"equation\",\"equation\":\"{\"}", "{\"type\":\"music\",\"abc\":\"unfinished [\"}"}) {
+            String content = "{\"root\":{\"type\":\"root\",\"children\":[" + node + "]}}";
+            var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty, new DraftCommitRequest.DraftItem("", "left", content));
+            var result = starter.commitDraft(request, owner);
+            assertThat(itemService.getContent(result.itemId(), owner).getContent()).isEqualTo(content);
+        }
+        assertThat(projectRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void endpointBoundsEmbedSourcesAndRejectsNonStringsBeforeCreating() throws Exception {
+        var empty = new DraftCommitRequest.NamedEntity("");
+        var mapper = new tools.jackson.databind.ObjectMapper();
+        for (String type : new String[]{"equation", "music"}) {
+            var owner = createUser("draftlimits" + type);
+            String field = "equation".equals(type) ? "equation" : "abc";
+            for (String value : new String[]{"42", "null", "{}", "[]", "\"" + "x".repeat(10001) + "\""}) {
+                String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"" + type + "\",\"" + field + "\":" + value + "}]}}";
+                var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty, new DraftCommitRequest.DraftItem("", "left", content));
+                mockMvc.perform(post("/api/project/draft-commit").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)))
+                        .andExpect(status().isBadRequest());
+            }
+            String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"" + type + "\",\"" + field + "\":\"" + "x".repeat(10000) + "\"}]}}";
+            var request = new DraftCommitRequest(UUID.randomUUID(), empty, empty, new DraftCommitRequest.DraftItem("", "left", content));
+            mockMvc.perform(post("/api/project/draft-commit").header("Authorization", bearer(owner))
+                    .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(request)))
+                    .andExpect(status().isOk());
+        }
+        assertThat(projectRepository.count()).isEqualTo(2);
+    }
+
+    @Test
     void concurrentRetriesReturnOriginalIdsAndDoNotOverwriteContent() throws Exception {
         var owner = createUser("draftowner");
         var request = request(UUID.randomUUID(), "first");
