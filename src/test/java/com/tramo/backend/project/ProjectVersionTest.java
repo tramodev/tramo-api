@@ -45,6 +45,37 @@ class ProjectVersionTest extends AbstractIntegrationTest {
 
 
     @Test
+    void fixingLegacyStylesPreservesExistingEmbeds() {
+        var f = fixture();
+        String legacy = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":42},{\"type\":\"music\",\"abc\":\"" + "x".repeat(10001) + "\"},{\"type\":\"text\",\"text\":\"fix me\",\"style\":\"color: red;\"}]}}";
+        jdbcTemplate.update("update item_content set content = ? where id = (select content_id from item where id = ?)", legacy, f.item);
+        String repaired = legacy.replace("color: red;", "color: var(--ed-red);").replace("fix me", "fixed");
+        items.updateContent(f.item, repaired, 0, legacy, f.user);
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(repaired);
+        assertThatThrownBy(() -> items.updateContent(f.item, legacy, 0, repaired, f.user))
+                .isInstanceOf(com.tramo.backend.exception.RequestValidationException.class);
+        assertThat(items.getContent(f.item, f.user).getContent()).isEqualTo(repaired);
+    }
+
+    @Test
+    void restoreKeepsAnExistingOversizedTrailDescriptionButNewTrailWritesStayStrict() {
+        var f = fixture();
+        String legacy = "x".repeat(10001);
+        jdbcTemplate.update("update trail set description = ? where id = ?", legacy, f.trail);
+        var manual = versions.create(f.project.getId(), "Legacy trail", f.user);
+        var request = new TrailRequestDTO(); request.setDescription("short");
+        trails.update(f.trail, request, f.user);
+        versions.restore(f.project.getId(), manual.id(), f.user);
+        assertThat(trailRepository.findById(f.trail).orElseThrow().getDescription()).isEqualTo(legacy);
+        request.setDescription(legacy);
+        assertThatThrownBy(() -> trails.update(f.trail, request, f.user))
+                .isInstanceOf(com.tramo.backend.exception.RequestValidationException.class);
+        request.setDescription("repaired");
+        trails.update(f.trail, request, f.user);
+        assertThat(trailRepository.findById(f.trail).orElseThrow().getDescription()).isEqualTo("repaired");
+    }
+
+    @Test
     void existingLegacySourcesSurviveEditsAndRestoreButCannotBeIntroducedOrDuplicated() {
         var f = fixture();
         for (String type : List.of("equation", "music")) {

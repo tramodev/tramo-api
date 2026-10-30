@@ -1,6 +1,7 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.project.dto.ProjectExportDTO;
+import com.tramo.backend.common.LexicalContent;
 import com.tramo.backend.exception.ProjectExportException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -41,7 +42,7 @@ public class ProjectExportHtml {
         }
         if (sourceEmbeds > 0) warnings.add(sourceEmbeds + " equations or music scores exported as source. Review the original source for rendering errors.");
         StringBuilder html = new StringBuilder("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><title>");
-        html.append(escape(data.project().title())).append("</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;padding:2rem;max-width:900px;color:#222;background:white}a{color:#174d92}nav,article,section{margin-bottom:2rem}article{border-top:1px solid #bbb;padding-top:1rem}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:1rem}blockquote{border-left:3px solid #bbb;padding-left:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #aaa;padding:.5rem}p{white-space:pre-wrap}figure{margin:1rem 0}figcaption,.warning{font-size:.9rem}article:target{outline:2px solid #aaa}input{pointer-events:none}@media(max-width:600px){body{padding:1rem}}@media print{body{max-width:none;padding:0}nav{break-after:page}article{break-inside:auto}a{color:inherit}pre{background:none}} </style></head><body><header id=\"top\"><h1>")
+        html.append(escape(data.project().title())).append("</title><style>:root{--ed-red:#e79591;--ed-orange:#f0aa54;--ed-green:#56a767;--ed-blue:#476eac;--ed-purple:#7c61bf;--ed-gray:#9AA0A6}body{font:16px/1.6 system-ui,sans-serif;margin:0 auto;padding:2rem;max-width:900px;color:#222;background:white}a{color:#174d92}nav,article,section{margin-bottom:2rem}article{border-top:1px solid #bbb;padding-top:1rem}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;padding:1rem}blockquote{border-left:3px solid #bbb;padding-left:1rem}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #aaa;padding:.5rem}p{white-space:pre-wrap}figure{margin:1rem 0}figcaption,.warning{font-size:.9rem}article:target{outline:2px solid #aaa}input{pointer-events:none}@media(max-width:600px){body{padding:1rem}}@media print{body{max-width:none;padding:0}nav{break-after:page}article{break-inside:auto}a{color:inherit}pre{background:none}} </style></head><body><header id=\"top\"><h1>")
             .append(escape(data.project().title())).append("</h1><p>").append(escape(data.project().description())).append("</p></header>");
         if (data.project().thumbnailImageUrl() != null && data.assets().containsKey(data.project().thumbnailImageUrl()))
             html.append("<img alt=\"Project thumbnail\" src=\"").append(data.assets().get(data.project().thumbnailImageUrl())).append("\">");
@@ -155,7 +156,7 @@ public class ProjectExportHtml {
             String[] pair = declaration.trim().split(":", 2);
             if (pair.length != 2) continue;
             String name = pair[0].trim(), v = pair[1].trim();
-            if (Set.of("color", "background-color").contains(name) && v.matches("rgb\\(\\d{1,3}, \\d{1,3}, \\d{1,3}\\)")) safe.append(name).append(":").append(v).append(";");
+            if (Set.of("color", "background-color").contains(name) && LexicalContent.isAllowedColor(v)) safe.append(name).append(":").append(v).append(";");
             if ("font-size".equals(name) && v.matches("\\d+(\\.\\d+)?px")) { double size = Double.parseDouble(v.substring(0, v.length()-2)); if (size >= 8 && size <= 72) safe.append(name).append(":").append(v).append(";"); }
         }
         return safe.toString();

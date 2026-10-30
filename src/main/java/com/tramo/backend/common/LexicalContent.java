@@ -26,7 +26,7 @@ public final class LexicalContent {
     private static final Set<String> EMBED_FIELDS = Set.of("type", "version", "format", "provider", "id");
     private static final Set<String> SCHEMES = Set.of("http", "https", "mailto", "sms", "tel");
     private static final Pattern FONT_SIZE = Pattern.compile("[0-9]+(?:\\.[0-9]+)?px");
-    private static final Pattern COLOR = Pattern.compile("rgb\\((?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\)");
+    private static final Pattern COLOR = Pattern.compile("(?:rgb\\((?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d), (?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\)|var\\(--ed-(?:red|orange|green|blue|purple|gray)\\))");
 
     private LexicalContent() {}
 
@@ -44,11 +44,25 @@ public final class LexicalContent {
 
     public static void validateUpdate(String content, String previousContent) {
         Map<String, Integer> sources = new HashMap<>();
-        try { validateNode(document(previousContent), 0, Mode.PRESERVE_LEGACY, sources); }
-        catch (RuntimeException invalidPrevious) { sources.clear(); }
+        try { collectLegacySources(document(previousContent), 0, sources); }
+        catch (RequestValidationException invalidPrevious) { sources.clear(); }
         int before = sources.values().stream().mapToInt(Integer::intValue).sum();
         validateNode(document(content), 0, Mode.STRICT, sources);
         preserved("update", before - sources.values().stream().mapToInt(Integer::intValue).sum());
+    }
+
+    private static String legacySourceKey(JsonNode node) {
+        String type = node.path("type").asText("");
+        if (!"equation".equals(type) && !"music".equals(type)) return null;
+        JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");
+        return !source.isString() || source.asText().length() > 10000 ? type + ":" + source.toString() : null;
+    }
+
+    private static void collectLegacySources(JsonNode node, int depth, Map<String, Integer> sources) {
+        if (node == null || depth > 100 || !node.isObject() || !TYPES.contains(node.path("type").asText(""))) return;
+        String key = legacySourceKey(node);
+        if (key != null) sources.merge(key, 1, Integer::sum);
+        if (node.path("children").isArray()) for (JsonNode child : node.path("children")) collectLegacySources(child, depth + 1, sources);
     }
 
     private static JsonNode document(String content) {
@@ -126,22 +140,23 @@ public final class LexicalContent {
             if (!("youtube".equals(provider) && id.matches("[A-Za-z0-9_-]{11}")
                     || "tweet".equals(provider) && id.matches("[1-9][0-9]{0,19}"))) throw invalid();
         }
-        if ("equation".equals(type) || "music".equals(type)) {
-            JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");
-            if (!source.isString() || source.asText().length() > 10000) {
-                String key = type + ":" + source.toString();
-                if (mode == Mode.PRESERVE_LEGACY) sources.merge(key, 1, Integer::sum);
-                else {
-                    int remaining = sources.getOrDefault(key, 0);
-                    if (remaining == 0) throw invalid();
-                    sources.put(key, remaining - 1);
-                }
+        String key = legacySourceKey(node);
+        if (key != null) {
+            if (mode == Mode.PRESERVE_LEGACY) sources.merge(key, 1, Integer::sum);
+            else {
+                int remaining = sources.getOrDefault(key, 0);
+                if (remaining == 0) throw invalid();
+                sources.put(key, remaining - 1);
             }
         }
         if (node.has("children")) {
             if (!node.path("children").isArray()) throw invalid();
             for (JsonNode child : node.path("children")) validateNode(child, depth + 1, mode, sources);
         }
+    }
+
+    public static boolean isAllowedColor(String value) {
+        return COLOR.matcher(value).matches();
     }
 
     private static void validateStyle(JsonNode style) {
@@ -156,7 +171,7 @@ public final class LexicalContent {
             if (!("font-size".equals(property) && FONT_SIZE.matcher(value).matches()
                     && Double.parseDouble(value.substring(0, value.length() - 2)) >= 8
                     && Double.parseDouble(value.substring(0, value.length() - 2)) <= 72
-                    || ("color".equals(property) || "background-color".equals(property)) && COLOR.matcher(value).matches())) throw invalid();
+                    || ("color".equals(property) || "background-color".equals(property)) && isAllowedColor(value))) throw invalid();
         }
     }
 

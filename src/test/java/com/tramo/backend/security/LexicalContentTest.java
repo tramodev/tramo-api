@@ -156,4 +156,19 @@ class LexicalContentTest {
             }
         }
     }
+
+    @Test
+    void fixingOldStylesKeepsTheInventoryOfExistingLegacySources() {
+        for (String source : new String[]{"42", "\"" + "x".repeat(10001) + "\""}) {
+            String legacy = "{\"type\":\"equation\",\"equation\":" + source + "}";
+            for (String nodes : new String[]{legacy + ",{\"type\":\"text\",\"style\":\"color: red;\"}",
+                    "{\"type\":\"paragraph\",\"style\":\"position:fixed;\",\"children\":[" + legacy + "]}"}) {
+                String previous = state(nodes);
+                String repaired = previous.replace("color: red;", "").replace("position:fixed;", "");
+                assertThatCode(() -> LexicalContent.validateUpdate(repaired, previous)).doesNotThrowAnyException();
+                assertThatThrownBy(() -> LexicalContent.validateUpdate(previous, previous)).isInstanceOf(RequestValidationException.class);
+                assertThatThrownBy(() -> LexicalContent.validateUpdate(state(legacy + "," + legacy), previous)).isInstanceOf(RequestValidationException.class);
+            }
+        }
+    }
 }

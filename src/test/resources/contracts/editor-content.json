@@ -16,5 +16,15 @@
   {"node": {"type": "music", "abc": []}, "repeat": 1, "strict": false, "preserved": true},
   {"node": {"type": "music", "abc": "unfinished {"}, "repeat": 1, "strict": true, "preserved": true},
   {"node": {"type": "text", "style": "color: red;"}, "repeat": 1, "strict": false, "preserved": false},
-  {"node": {"type": "embed", "provider": "foreign", "id": "123"}, "repeat": 1, "strict": false, "preserved": false}
+  {"node": {"type": "embed", "provider": "foreign", "id": "123"}, "repeat": 1, "strict": false, "preserved": false},
+  {"node": {"type": "text", "style": "color: var(--ed-red);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--ed-orange);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--ed-green);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--ed-blue);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--ed-purple);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--ed-gray);"}, "repeat": 1, "strict": true, "preserved": true},
+  {"node": {"type": "text", "style": "color: var(--evil);"}, "repeat": 1, "strict": false, "preserved": false},
+  {"node": {"type": "text", "style": "color: var(--ed-red, red);"}, "repeat": 1, "strict": false, "preserved": false},
+  {"node": {"type": "text", "style": "color: var(--ed-red) url(javascript:alert(1));"}, "repeat": 1, "strict": false, "preserved": false},
+  {"node": {"type": "text", "style": "color: rgb(256, 0, 0);"}, "repeat": 1, "strict": false, "preserved": false}
 ]

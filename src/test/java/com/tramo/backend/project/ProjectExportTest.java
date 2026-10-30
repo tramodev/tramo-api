@@ -76,6 +76,18 @@ class ProjectExportTest extends AbstractIntegrationTest {
 
 
     @Test
+    void paletteColorsSurviveSavingAndOfflineExport() throws Exception {
+        Fixture f = fixture();
+        String content = mapper.writeValueAsString(Map.of("root", Map.of("type", "root", "children", List.of(
+                Map.of("type", "text", "text", "colored", "style", "color: var(--ed-red); background-color: var(--ed-blue);")))));
+        itemService.updateContent(f.shared, content, f.owner);
+        assertThat(itemService.getContent(f.shared, f.owner).getContent()).isEqualTo(content);
+        var archive = unzip(download(f));
+        assertThat(html(archive)).contains("color:var(--ed-red);", "background-color:var(--ed-blue);", "--ed-red:#e79591", "--ed-blue:#476eac");
+        assertThat(json(archive).toString()).contains("color: var(--ed-red);");
+    }
+
+    @Test
     void sourceWarningsAreRecomputedFromUniqueSavedNotesIncludingLegacyValues() throws Exception {
         Fixture f = fixture();
         String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"{\"},{\"type\":\"music\",\"abc\":\"unfinished [\"},{\"type\":\"equation\",\"equation\":42}]}}";
