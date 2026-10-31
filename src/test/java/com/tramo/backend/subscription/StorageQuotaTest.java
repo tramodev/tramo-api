@@ -46,6 +46,28 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void storageSeparatesThumbnailsAndProfileImagesWithoutChangingTotal() throws Exception {
+        User user = createUser("imagebreakdown");
+        User other = createUser("otherbreakdown");
+        String[] keys = {"private/note", "thumbnail/cover", "avatar/profile", "banner/profile"};
+        for (int i = 0; i < keys.length; i++) {
+            UploadRecord record = new UploadRecord();
+            record.setUserId(user.getId());
+            record.setObjectKey(keys[i]);
+            record.setBytes((i + 1) * 100);
+            uploads.save(record);
+        }
+        reserve(other, 500);
+        mockMvc.perform(get("/api/subscription").header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storageUsedBytes").value(1000))
+                .andExpect(jsonPath("$.storageImageBytes").value(1000))
+                .andExpect(jsonPath("$.storageThumbnailBytes").value(200))
+                .andExpect(jsonPath("$.storageProfileImageBytes").value(700))
+                .andExpect(jsonPath("$.storageTextBytes").value(0));
+    }
+
+    @Test
     void notesUseUtf8BytesAndShareQuotaWithUploads() throws Exception {
         User user = createUser("textquota");
         long note = note(user, createProject(user, "Quota", "private"));

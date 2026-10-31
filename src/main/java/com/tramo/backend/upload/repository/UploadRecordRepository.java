@@ -33,7 +33,9 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
     @Query("SELECT COALESCE(SUM(u.bytes), 0) FROM UploadRecord u WHERE u.userId = :userId")
     long sumBytesByUserId(@Param("userId") Long userId);
 
-    @Query(value = "SELECT (SELECT COALESCE(SUM(bytes), 0) FROM upload_record WHERE user_id = :userId) AS imageBytes, " +
+    @Query(value = "SELECT COALESCE(SUM(bytes), 0) AS imageBytes, " +
+            "COALESCE(SUM(CASE WHEN object_key LIKE 'thumbnail/%' THEN bytes ELSE 0 END), 0) AS thumbnailBytes, " +
+            "COALESCE(SUM(CASE WHEN object_key LIKE 'avatar/%' OR object_key LIKE 'banner/%' THEN bytes ELSE 0 END), 0) AS profileImageBytes, " +
             "(" +
             "(SELECT COALESCE(SUM(octet_length(c.content)), 0) FROM item_content c WHERE EXISTS " +
             "(SELECT 1 FROM item i WHERE i.content_id = c.id AND (EXISTS " +
@@ -44,7 +46,7 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
             "WHERE p.user_id = :userId) + " +
             "(SELECT COALESCE(SUM(v.snapshot_bytes), 0) FROM project_version v JOIN project p ON p.id = v.project_id WHERE p.user_id = :userId AND v.type <> 'AUTO') + " +
             "(SELECT COALESCE(SUM(octet_length(s.content)), 0) FROM project_snapshot s JOIN project p ON p.id = s.project_id " +
-            "WHERE p.user_id = :userId)) AS textBytes", nativeQuery = true)
+            "WHERE p.user_id = :userId)) AS textBytes FROM upload_record WHERE user_id = :userId", nativeQuery = true)
     StorageUsage getStorageUsageByUserId(@Param("userId") Long userId);
 
     default long sumStorageBytesByUserId(Long userId) {
@@ -52,10 +54,20 @@ public interface UploadRecordRepository extends JpaRepository<UploadRecord, Long
         return usage.getImageBytes() + usage.getTextBytes();
     }
 
-    interface StorageUsage {
+    interface ImageUsage {
         long getImageBytes();
+        long getThumbnailBytes();
+    }
+
+    interface StorageUsage extends ImageUsage {
+        long getProfileImageBytes();
         long getTextBytes();
     }
+
+    @Query("SELECT COALESCE(SUM(u.bytes), 0) AS imageBytes, " +
+            "COALESCE(SUM(CASE WHEN u.objectKey LIKE 'thumbnail/%' THEN u.bytes ELSE 0 END), 0) AS thumbnailBytes " +
+            "FROM UploadRecord u WHERE u.projectId = :projectId")
+    ImageUsage getImageUsageByProjectId(@Param("projectId") Long projectId);
 
     @Query("SELECT COALESCE(SUM(u.bytes), 0) FROM UploadRecord u WHERE u.projectId = :projectId")
     long sumBytesByProjectId(@Param("projectId") Long projectId);

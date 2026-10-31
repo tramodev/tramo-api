@@ -343,6 +343,7 @@ class TrailItemTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.storageUsedBytes").value(1000 + contentBytes))
                 .andExpect(jsonPath("$.storageImageBytes").value(1000))
+                .andExpect(jsonPath("$.storageThumbnailBytes").value(1000))
                 .andExpect(jsonPath("$.storageTextBytes").value(contentBytes));
     }
 

@@ -87,6 +87,8 @@ public class SubscriptionService {
                 supporter,
                 usage.getImageBytes() + usage.getTextBytes(),
                 usage.getImageBytes(),
+                usage.getThumbnailBytes(),
+                usage.getProfileImageBytes(),
                 usage.getTextBytes(),
                 supporter ? supporterStorageBytes : freeStorageBytes,
                 -1);

@@ -159,9 +159,10 @@ public class ProjectService {
 
     public ProjectStorageDTO getStorage(Long id, User requester) {
         Project project = accessGuard.getOwnedProject(id, requester);
-        long images = uploadRecordRepository.sumBytesByProjectId(project.getId());
+        var usage = uploadRecordRepository.getImageUsageByProjectId(project.getId());
+        long images = usage.getImageBytes();
         long text = itemRepository.sumContentBytesByProjectId(project.getId());
-        return new ProjectStorageDTO(images + text, images, text);
+        return new ProjectStorageDTO(images + text, images, usage.getThumbnailBytes(), text);
     }
 
     @Transactional
