@@ -7,10 +7,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -34,8 +37,20 @@ public class ApplicationConfig {
     @Bean
     public AuthenticationProvider authenticationProvider()
     {
-        DaoAuthenticationProvider authenticationProvider= new DaoAuthenticationProvider(userDetailService());
-        authenticationProvider.setPasswordEncoder(passwordEncoder());
+        PasswordEncoder encoder = passwordEncoder();
+        String fillerHash = encoder.encode("filler");
+        DaoAuthenticationProvider authenticationProvider = new DaoAuthenticationProvider(userDetailService()) {
+            @Override
+            protected void additionalAuthenticationChecks(UserDetails userDetails,
+                    UsernamePasswordAuthenticationToken authentication) {
+                if (userDetails.getPassword() == null) {
+                    encoder.matches(String.valueOf(authentication.getCredentials()), fillerHash);
+                    throw new BadCredentialsException("Bad credentials");
+                }
+                super.additionalAuthenticationChecks(userDetails, authentication);
+            }
+        };
+        authenticationProvider.setPasswordEncoder(encoder);
         authenticationProvider.setPreAuthenticationChecks(user -> { });
         authenticationProvider.setPostAuthenticationChecks(user -> {
             if (!user.isAccountNonLocked()) {

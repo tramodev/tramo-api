@@ -133,6 +133,15 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void passwordlessAccountRejectsLoginWithGenericError() throws Exception {
+        User googleOnly = createUser("googler", "googler@example.com", true, false, Role.USER);
+        googleOnly.setPassword(null);
+        userRepository.save(googleOnly);
+        login("googler", "Passw0rd123!").andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+    }
+
+    @Test
     void loginRejectsBannedUser() throws Exception {
         createUser("outlaw", "outlaw@example.com", true, true, Role.USER);
         login("outlaw", "Passw0rd123!")
