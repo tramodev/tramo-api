@@ -86,19 +86,27 @@ public class SessionService {
     }
 
     public AuthResponse login(LoginRequestDTO request, String clientIp) {
-        identityRateLimiter.checkLogin(request.getUsername(), clientIp, request.getCaptchaToken(), captchaVerifier);
+        String username = resolveUsername(request.getUsername());
+        identityRateLimiter.checkLogin(username, clientIp, request.getCaptchaToken(), captchaVerifier);
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(
-                    request.getUsername(), request.getPassword()));
+                    username, request.getPassword()));
         } catch (BadCredentialsException failure) {
-            identityRateLimiter.recordLoginFailure(request.getUsername(), clientIp);
+            identityRateLimiter.recordLoginFailure(username, clientIp);
             throw failure;
         }
 
-        User user = userRepository.findByUsernameIgnoreCase(request.getUsername())
+        User user = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         return issueSession(user);
+    }
+
+    private String resolveUsername(String identifier) {
+        if (!identifier.contains("@")) {
+            return identifier;
+        }
+        return userRepository.findByEmail(identifier).map(User::getUsername).orElse(identifier);
     }
 
     @Transactional(dontRollbackOn = InvalidTokenException.class)
