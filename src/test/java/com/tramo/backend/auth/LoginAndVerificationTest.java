@@ -70,6 +70,37 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void loginAcceptsEmailInPlaceOfUsername() throws Exception {
+        createUser("dave", "Dave@Example.com", true, false, Role.USER);
+        login("dave@example.com", "Passw0rd123!")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("dave"));
+        login("DAVE@EXAMPLE.COM", "Passw0rd123!")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("dave"));
+    }
+
+    @Test
+    void loginByEmailRejectsWrongPasswordAndUnknownEmail() throws Exception {
+        createUser("erin", "erin@example.com", true, false, Role.USER);
+        login("erin@example.com", "WrongPass1!")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+        login("nobody@example.com", "Passw0rd123!")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+    }
+
+    @Test
+    void loginByEmailSharesTheUsernameFailureCounter() throws Exception {
+        createUser("frank", "frank@example.com", true, false, Role.USER);
+        for (int i = 0; i < 3; i++) login("frank@example.com", "wrong-password").andExpect(status().isUnauthorized());
+        for (int i = 0; i < 2; i++) login("frank", "wrong-password").andExpect(status().isUnauthorized());
+        login("frank@example.com", "Passw0rd123!").andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("CAPTCHA_REQUIRED"));
+    }
+
+    @Test
     void loginRejectsWrongPassword() throws Exception {
         createUser("carol");
         login("carol", "WrongPass1!")
