@@ -9,7 +9,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mail.MailSendException;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.BodyPart;
+import jakarta.mail.Part;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -21,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class EmailServiceTest {
 
@@ -29,6 +34,7 @@ class EmailServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(mailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
         emailService = new EmailService(mailSender);
         ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@tramo.dev");
         ReflectionTestUtils.setField(emailService, "frontendUrl", "https://tramo.dev");
@@ -46,35 +52,38 @@ class EmailServiceTest {
     }
 
     @Test
-    void sendVerificationEmailIncludesLinkAndRecipient() {
+    void sendVerificationEmailIncludesLinkAndRecipient() throws Exception {
         emailService.sendVerificationEmail(user("alice", "alice@example.com"), "tok123");
 
-        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender).send(captor.capture());
-        SimpleMailMessage sent = captor.getValue();
+        MimeMessage sent = captor.getValue();
 
-        assertThat(sent.getFrom()).isEqualTo("noreply@tramo.dev");
-        assertThat(sent.getTo()).containsExactly("alice@example.com");
+        assertThat(sent.getFrom()[0].toString()).isEqualTo("noreply@tramo.dev");
+        assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("alice@example.com");
         assertThat(sent.getSubject()).isEqualTo("Verify your Tramo account");
-        assertThat(sent.getText()).contains("alice").contains("https://tramo.dev/verify-email?token=tok123");
+        assertThat(part(sent, "text/plain")).contains("alice").contains("https://tramo.dev/verify-email?token=tok123");
+        assertThat(part(sent, "text/html")).contains("alice").contains("href=\"https://tramo.dev/verify-email?token=tok123\"")
+                .contains("Verify my email").contains("https://tramo.dev/email-logo.png").contains("https://tramo.dev/privacy");
     }
 
     @Test
-    void sendPasswordResetEmailIncludesLinkAndRecipient() {
+    void sendPasswordResetEmailIncludesLinkAndRecipient() throws Exception {
         emailService.sendPasswordResetEmail(user("bob", "bob@example.com"), "reset456");
 
-        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender).send(captor.capture());
-        SimpleMailMessage sent = captor.getValue();
+        MimeMessage sent = captor.getValue();
 
-        assertThat(sent.getTo()).containsExactly("bob@example.com");
+        assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("bob@example.com");
         assertThat(sent.getSubject()).isEqualTo("Reset your Tramo password");
-        assertThat(sent.getText()).contains("bob").contains("https://tramo.dev/reset-password?token=reset456");
+        assertThat(part(sent, "text/plain")).contains("bob").contains("https://tramo.dev/reset-password?token=reset456");
+        assertThat(part(sent, "text/html")).contains("bob").contains("href=\"https://tramo.dev/reset-password?token=reset456\"").contains("Reset my password");
     }
 
     @Test
     void verificationEmailFailureIsSwallowedNotThrown() {
-        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(SimpleMailMessage.class));
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(MimeMessage.class));
 
         assertThatCode(() -> emailService.sendVerificationEmail(user("carol", "carol@example.com"), "tok"))
                 .doesNotThrowAnyException();
@@ -82,18 +91,19 @@ class EmailServiceTest {
 
     @Test
     void passwordResetEmailFailureIsSwallowedNotThrown() {
-        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(SimpleMailMessage.class));
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(MimeMessage.class));
 
         assertThatCode(() -> emailService.sendPasswordResetEmail(user("dave", "dave@example.com"), "tok"))
                 .doesNotThrowAnyException();
     }
     @Test
-    void moderationEmailContainsTheNoticeAndHonorsDisabledMail() {
+    void moderationEmailContainsTheNoticeAndHonorsDisabledMail() throws Exception {
         emailService.sendModerationEmail("alice@example.com", "alice", "Your account has been banned. Reason: Abuse");
-        var captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        var captor = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender).send(captor.capture());
-        assertThat(captor.getValue().getTo()).containsExactly("alice@example.com");
-        assertThat(captor.getValue().getText()).contains("alice", "Your account has been banned. Reason: Abuse");
+        assertThat(captor.getValue().getAllRecipients()[0].toString()).isEqualTo("alice@example.com");
+        assertThat(part(captor.getValue(), "text/plain")).contains("alice", "Your account has been banned. Reason: Abuse");
+        assertThat(part(captor.getValue(), "text/html")).contains("alice", "Your account has been banned. Reason: Abuse");
         org.mockito.Mockito.clearInvocations(mailSender);
         ReflectionTestUtils.setField(emailService, "mailEnabled", false);
         emailService.sendModerationEmail("alice@example.com", "alice", "Notice");
@@ -102,8 +112,31 @@ class EmailServiceTest {
 
     @Test
     void failedModerationEmailDoesNotFailTheCommittedAction() {
-        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(SimpleMailMessage.class));
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(MimeMessage.class));
         assertThatCode(() -> emailService.sendModerationEmail("alice@example.com", "alice", "Notice")).doesNotThrowAnyException();
     }
 
+    @Test
+    void htmlBodyEscapesUserControlledValues() throws Exception {
+        emailService.sendModerationEmail("alice@example.com", "<b>alice</b>", "Reason: <script>alert(1)</script>\n{{content}}");
+        var captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        String html = part(captor.getValue(), "text/html");
+        assertThat(html).doesNotContain("<script>").doesNotContain("<b>alice</b>")
+                .contains("&lt;script&gt;alert(1)&lt;/script&gt;").contains("&lt;b&gt;alice&lt;/b&gt;").contains("{{content}}");
+    }
+
+    private static String part(Part part, String type) throws Exception {
+        if (part instanceof MimeMessage message) message.saveChanges();
+        if (part.isMimeType(type)) return (String) part.getContent();
+        if (part.isMimeType("multipart/*")) {
+            MimeMultipart multipart = (MimeMultipart) part.getContent();
+            for (int i = 0; i < multipart.getCount(); i++) {
+                BodyPart child = multipart.getBodyPart(i);
+                String found = part(child, type);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
 }

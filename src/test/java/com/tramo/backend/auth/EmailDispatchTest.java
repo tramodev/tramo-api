@@ -8,7 +8,8 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.EnableAsync;
 
@@ -26,7 +27,11 @@ class EmailDispatchTest {
     @Configuration
     @EnableAsync
     static class Config {
-        @Bean JavaMailSender mailSender() { return mock(JavaMailSender.class); }
+        @Bean JavaMailSender mailSender() {
+            JavaMailSender sender = mock(JavaMailSender.class);
+            org.mockito.Mockito.when(sender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+            return sender;
+        }
         @Bean EmailService emails(JavaMailSender sender) { return new EmailService(sender); }
     }
 
@@ -44,7 +49,7 @@ class EmailDispatchTest {
                 started.countDown();
                 if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Mail delivery timed out");
                 return null;
-            }).when(context.getBean(JavaMailSender.class)).send(any(SimpleMailMessage.class));
+            }).when(context.getBean(JavaMailSender.class)).send(any(MimeMessage.class));
             var callers = Executors.newSingleThreadExecutor();
             try {
                 User user = new User();

@@ -38,7 +38,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailSendException;
-import org.springframework.mail.SimpleMailMessage;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
@@ -121,7 +122,8 @@ class SensitiveLoggingTest {
     @Test
     void smtpFailuresAndDisabledDeliveryNeverLogRecipientsOrLinks() {
         JavaMailSender sender = mock(JavaMailSender.class);
-        doThrow(new MailSendException(SECRET, new RuntimeException(SECRET))).when(sender).send(any(SimpleMailMessage.class));
+        org.mockito.Mockito.when(sender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+        doThrow(new MailSendException(SECRET, new RuntimeException(SECRET))).when(sender).send(any(MimeMessage.class));
         EmailService service = new EmailService(sender);
         ReflectionTestUtils.setField(service, "frontendUrl", "https://private.test");
         ReflectionTestUtils.setField(service, "fromAddress", "from@example.test");
