@@ -86,7 +86,7 @@ public class SessionService {
     }
 
     public AuthResponse login(LoginRequestDTO request, String clientIp) {
-        String username = resolveUsername(request.getUsername());
+        String username = resolveUsername(request.getUsername().trim());
         identityRateLimiter.checkLogin(username, clientIp, request.getCaptchaToken(), captchaVerifier);
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(

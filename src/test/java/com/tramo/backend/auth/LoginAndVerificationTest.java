@@ -142,6 +142,13 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void loginIgnoresSurroundingWhitespaceInIdentifier() throws Exception {
+        createUser("spacey", "spacey@example.com", true, false, Role.USER);
+        login(" spacey ", "Passw0rd123!").andExpect(status().isOk());
+        login("spacey@example.com ", "Passw0rd123!").andExpect(status().isOk());
+    }
+
+    @Test
     void loginRejectsBannedUser() throws Exception {
         createUser("outlaw", "outlaw@example.com", true, true, Role.USER);
         login("outlaw", "Passw0rd123!")
