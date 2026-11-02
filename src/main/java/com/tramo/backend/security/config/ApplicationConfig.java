@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -34,6 +36,15 @@ public class ApplicationConfig {
     {
         DaoAuthenticationProvider authenticationProvider= new DaoAuthenticationProvider(userDetailService());
         authenticationProvider.setPasswordEncoder(passwordEncoder());
+        authenticationProvider.setPreAuthenticationChecks(user -> { });
+        authenticationProvider.setPostAuthenticationChecks(user -> {
+            if (!user.isAccountNonLocked()) {
+                throw new LockedException("User account is locked");
+            }
+            if (!user.isEnabled()) {
+                throw new DisabledException("User is disabled");
+            }
+        });
         return authenticationProvider;
     }
 

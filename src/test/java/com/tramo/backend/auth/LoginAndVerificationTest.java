@@ -123,6 +123,16 @@ class LoginAndVerificationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void wrongPasswordDoesNotRevealUnverifiedOrBannedAccounts() throws Exception {
+        createUser("pending", "pending@example.com", false, false, Role.USER);
+        createUser("outlaw", "outlaw@example.com", true, true, Role.USER);
+        login("pending", "Wrong123!").andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+        login("outlaw", "Wrong123!").andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"));
+    }
+
+    @Test
     void loginRejectsBannedUser() throws Exception {
         createUser("outlaw", "outlaw@example.com", true, true, Role.USER);
         login("outlaw", "Passw0rd123!")
