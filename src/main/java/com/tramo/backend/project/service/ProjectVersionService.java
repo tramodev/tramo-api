@@ -55,13 +55,13 @@ public class ProjectVersionService {
     public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot) {}
 
     public History list(Long id, Long beforeId, User user) {
-        Project project = access.getOwnedProject(id, user);
+        Project project = access.getProject(id, user, ProjectRole.VIEWER);
         var rows = versions.summaries(id, beforeId, PageRequest.of(0, 21));
         return new History(rows.stream().limit(20).toList(), rows.size() > 20 ? rows.get(19).id() : null, project.isHistoryUnavailable());
     }
 
     public Detail detail(Long id, Long versionId, User user) {
-        access.getOwnedProject(id, user);
+        access.getProject(id, user, ProjectRole.VIEWER);
         ProjectVersion version = version(id, versionId);
         return new Detail(summary(version, user), capture.read(version.getSnapshot()));
     }

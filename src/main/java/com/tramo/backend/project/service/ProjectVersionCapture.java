@@ -50,14 +50,22 @@ public class ProjectVersionCapture {
     }
 
     public Project lock(Long id, User user) {
+        return lock(id, user, ProjectRole.EDITOR);
+    }
+
+    public Project lock(Long id, User user, ProjectRole min) {
         subscriptions.lockStorage(user);
-        return lockProject(id, user);
+        return lockProject(id, user, min);
     }
 
     private Project lockProject(Long id, User user) {
+        return lockProject(id, user, ProjectRole.EDITOR);
+    }
+
+    private Project lockProject(Long id, User user, ProjectRole min) {
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
-        access.getOwnedProject(id, user);
+        access.assertRole(project, user, min);
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes && attributes.getRequest().getRequestURI().startsWith("/api/")) {
             String supplied = attributes.getRequest().getHeader("X-Project-Epoch");
             if (supplied == null && project.getRestoreEpoch() == 0) return project;

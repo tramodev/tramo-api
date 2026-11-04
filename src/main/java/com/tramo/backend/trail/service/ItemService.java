@@ -24,6 +24,7 @@ import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
 import com.tramo.backend.common.ContentLimits;
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import org.springframework.security.access.AccessDeniedException;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -152,14 +154,14 @@ public class ItemService {
     }
 
     public List<ItemResponseDTO> getItemsForProject(Long projectId, User requester) {
-        accessGuard.getOwnedProject(projectId, requester);
+        accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         return itemRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     public Map<String, MapItemPreviewDTO> getMapPreviews(Long projectId, User requester) {
-        accessGuard.getOwnedProject(projectId, requester);
+        accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         List<Item> items = itemRepository.findForExport(projectId);
         Set<Long> itemIds = items.stream().map(Item::getId).collect(Collectors.toSet());
         Map<String, MapItemPreviewDTO> previews = new LinkedHashMap<>();
@@ -214,7 +216,7 @@ public class ItemService {
     }
 
     public List<Long> searchItemIds(Long projectId, String q, User requester) {
-        accessGuard.getOwnedProject(projectId, requester);
+        accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         String needle = q == null ? "" : q.trim().toLowerCase();
         if (needle.length() < MIN_SEARCH_LENGTH) {
             return List.of();
@@ -226,7 +228,7 @@ public class ItemService {
     }
 
     public ProjectTextStatsDTO getProjectTextStats(Long projectId, User requester) {
-        accessGuard.getOwnedProject(projectId, requester);
+        accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         var items = itemRepository.findTextStatsByProjectId(projectId);
         return new ProjectTextStatsDTO(
                 items.stream().mapToLong(ItemTextStatsDTO::words).sum(),
@@ -267,7 +269,7 @@ public class ItemService {
     }
 
     public List<TrailItemDTO> getAllForTrail(Long trailId, User requester) {
-        trailService.getOwnedTrail(trailId, requester);
+        trailService.getOwnedTrail(trailId, requester, ProjectRole.VIEWER);
         return trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
                 .map(this::toStepResponse)
                 .toList();
@@ -291,7 +293,7 @@ public class ItemService {
     }
 
     public List<TrailItemContentDTO> getContentsForTrail(Long trailId, User requester) {
-        trailService.getOwnedTrail(trailId, requester);
+        trailService.getOwnedTrail(trailId, requester, ProjectRole.VIEWER);
         return trailItemRepository.findByTrailIdOrderByOrderIndexAsc(trailId).stream()
                 .map(step -> {
                     Item item = step.getItem();
@@ -317,7 +319,7 @@ public class ItemService {
     @Transactional
     public ItemResponseDTO update(Long id, ItemRequestDTO request, User requester) {
         Project project = history.lockItem(id, requester);
-        Item item = getOwnedItem(id, requester);
+        Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
         boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !Objects.equals(request.getTitle(), item.getTitle()))
                 || (request.getType() != null && !Objects.equals(request.getType(), item.getType()))
                 || (request.getTitleAlign() != null && !Objects.equals(request.getTitleAlign(), item.getTitleAlign()));
@@ -339,7 +341,7 @@ public class ItemService {
     @Transactional
     public void delete(Long id, User requester) {
         Project project = history.lockItem(id, requester);
-        Item item = getOwnedItem(id, requester);
+        Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
         history.beforeChange(project);
         deleteItemCompletely(item, requester.getId());
     }
@@ -353,7 +355,7 @@ public class ItemService {
 
     @Transactional
     public ItemContentResponseDTO getContent(Long id, User requester) {
-        Item item = getOwnedItem(id, requester);
+        Item item = getOwnedItem(id, requester, ProjectRole.VIEWER);
         String content = item.getContent() != null ? item.getContent().getContent() : "";
         return new ItemContentResponseDTO(content, item.getContent() == null ? 0 : item.getContent().getExtractionEpoch());
     }
@@ -373,7 +375,7 @@ public class ItemService {
         ContentLimits.assertNote(content);
         Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        Item item = getOwnedItem(id, requester);
+        Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
         ItemContent itemContent = item.getContent();
         int epoch = itemContent == null ? 0 : itemContent.getExtractionEpoch();
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
@@ -440,7 +442,7 @@ public class ItemService {
     @Transactional
     public void attachToTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
-        Item item = getOwnedItem(itemId, requester);
+        Item item = getOwnedItem(itemId, requester, ProjectRole.EDITOR);
         if (item.getProject() == null || !item.getProject().getId().equals(trail.getProject().getId())) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_ITEM_INVALID);
         }
@@ -458,7 +460,7 @@ public class ItemService {
     @Transactional
     public void detachFromTrail(Long trailId, Long itemId, User requester) {
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
-        Item item = getOwnedItem(itemId, requester);
+        Item item = getOwnedItem(itemId, requester, ProjectRole.EDITOR);
 
         var membership = trailItemRepository.findByTrailIdAndItemId(trailId, item.getId());
         if (membership.isEmpty()) return;
@@ -479,15 +481,18 @@ public class ItemService {
     }
 
     
-    private Item getOwnedItem(Long id, User requester) {
+    private Item getOwnedItem(Long id, User requester, ProjectRole min) {
         Item item = itemRepository.findByIdWithProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        boolean owns = item.getProject() != null
-                ? item.getProject().getOwner().getId().equals(requester.getId())
-                : trailItemRepository.findByItemId(id).stream()
-                        .anyMatch(pi -> pi.getTrail().getProject().getOwner().getId().equals(requester.getId()));
-        if (!owns) {
+        List<Project> projects = item.getProject() != null
+                ? List.of(item.getProject())
+                : trailItemRepository.findByItemId(id).stream().map(pi -> pi.getTrail().getProject()).toList();
+        List<ProjectRole> roles = projects.stream().map(p -> accessGuard.roleOf(p, requester)).filter(Objects::nonNull).toList();
+        if (roles.isEmpty()) {
             throw new ResourceNotFoundException("Item not found");
+        }
+        if (roles.stream().noneMatch(role -> role.atLeast(min))) {
+            throw new AccessDeniedException("Insufficient project role");
         }
         return item;
     }

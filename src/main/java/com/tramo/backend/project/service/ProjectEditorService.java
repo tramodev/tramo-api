@@ -3,6 +3,7 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.project.dto.EditorBootstrapDTO;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.trail.dto.ItemTextStatsDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.entity.Item;
@@ -46,7 +47,7 @@ public class ProjectEditorService {
 
     @Transactional(readOnly = true)
     public EditorBootstrapDTO get(Long projectId, Long preferredItemId, Long preferredTrailId, User requester) {
-        Project project = accessGuard.getOwnedProject(projectId, requester);
+        Project project = accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         List<Trail> trails = trailRepository.findByProjectId(projectId);
         List<TrailItem> steps = trailItemRepository.findEditorSteps(projectId);
         Map<Long, List<Long>> itemIdsByTrail = steps.stream().collect(Collectors.groupingBy(

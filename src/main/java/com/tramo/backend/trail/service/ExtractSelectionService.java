@@ -1,5 +1,6 @@
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.exception.*;
 import com.tramo.backend.project.service.AccessGuard;
@@ -37,7 +38,7 @@ public class ExtractSelectionService {
     }
 
     public int sharedCount(Long projectId, Long sourceId, User user) {
-        access.getOwnedProject(projectId, user);
+        access.getProject(projectId, user, ProjectRole.VIEWER);
         itemService.getContent(sourceId, user);
         Item source = items.findByIdWithProject(sourceId).orElseThrow();
         var steps = memberships.findByItemId(sourceId);

@@ -18,6 +18,7 @@ import com.tramo.backend.trail.repository.ItemRepository;
 import com.tramo.backend.trail.repository.TrailItemRepository;
 import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.upload.ImageDeletionQueue;
@@ -77,14 +78,14 @@ public class TrailService {
     }
 
     public List<TrailResponseDTO> getAllForProject(Long projectId, User requester) {
-        accessGuard.getOwnedProject(projectId, requester);
+        accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
         return trailRepository.findByProjectId(projectId).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     public TrailResponseDTO getById(Long id, User requester) {
-        return toResponse(getOwnedTrail(id, requester));
+        return toResponse(getOwnedTrail(id, requester, ProjectRole.VIEWER));
     }
 
     @Transactional
@@ -105,7 +106,7 @@ public class TrailService {
     public TrailResponseDTO update(Long id, TrailRequestDTO request, User requester) {
         ContentLimits.assertTrailDescription(request.getDescription());
         Project project = history.lockTrail(id, requester);
-        Trail trail = getOwnedTrail(id, requester);
+        Trail trail = getOwnedTrail(id, requester, ProjectRole.EDITOR);
         boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !java.util.Objects.equals(request.getTitle(), trail.getTitle()))
                 || (request.getDescription() != null && !java.util.Objects.equals(request.getDescription(), trail.getDescription()))
                 || (request.getVisibility() != null && !java.util.Objects.equals(request.getVisibility(), trail.getVisibility()));
@@ -162,15 +163,13 @@ public class TrailService {
     public Trail getOwnedTrailForUpdate(Long id, User requester) {
         history.lockTrail(id, requester);
         trailRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
-        return getOwnedTrail(id, requester);
+        return getOwnedTrail(id, requester, ProjectRole.EDITOR);
     }
 
-    public Trail getOwnedTrail(Long id, User requester) {
+    public Trail getOwnedTrail(Long id, User requester, ProjectRole min) {
         Trail trail = trailRepository.findByIdWithProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Trail not found"));
-        if (!trail.getProject().getOwner().getId().equals(requester.getId())) {
-            throw new ResourceNotFoundException("Trail not found");
-        }
+        accessGuard.assertRole(trail.getProject(), requester, min);
         return trail;
     }
 

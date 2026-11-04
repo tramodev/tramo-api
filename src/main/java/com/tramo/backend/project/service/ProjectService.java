@@ -28,6 +28,7 @@ import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.ProjectStorageDTO;
 import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
@@ -154,11 +155,11 @@ public class ProjectService {
     }
 
     public ProjectResponseDTO getById(Long id, User requester) {
-        return responseMapper.toResponse(accessGuard.getOwnedProject(id, requester));
+        return responseMapper.toResponse(accessGuard.getProject(id, requester, ProjectRole.VIEWER));
     }
 
     public ProjectStorageDTO getStorage(Long id, User requester) {
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = accessGuard.getProject(id, requester, ProjectRole.VIEWER);
         var usage = uploadRecordRepository.getImageUsageByProjectId(project.getId());
         long images = usage.getImageBytes();
         long text = itemRepository.sumContentBytesByProjectId(project.getId());
@@ -192,6 +193,7 @@ public class ProjectService {
         boolean firstPublish = false;
         Date firstPublishTimestamp = null;
         if (request.getVisibility() != null) {
+            if (request.getVisibility() != previousVisibility) accessGuard.assertRole(project, requester, ProjectRole.OWNER);
             if (project.isModerationBlocked() && request.getVisibility() != ProjectVisibility.PRIVATE)
                 throw new AccessDeniedException("Publishing is blocked by moderation");
             if (request.getVisibility() == ProjectVisibility.PUBLISHED
@@ -224,7 +226,7 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponseDTO setThumbnail(Long id, SetThumbnailRequestDTO request, User requester) {
-        Project project = history.lock(id, requester);
+        Project project = history.lock(id, requester, ProjectRole.OWNER);
         ProjectThumbnailType type = ProjectThumbnailType.valueOf(request.getType());
         ProjectThumbnailType previousType = project.getThumbnailType();
         String previousImageUrl = project.getThumbnailImageUrl();
@@ -266,7 +268,7 @@ public class ProjectService {
     }
 
     public List<ProjectImageDTO> listProjectImages(Long id, User requester) {
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = accessGuard.getProject(id, requester, ProjectRole.VIEWER);
         return itemImageReferenceRepository.findByProjectIdOrderByItemIdAsc(project.getId()).stream()
                 .map(ref -> new ProjectImageDTO(ref.getUrl(), String.valueOf(ref.getItem().getId()), ref.getItem().getTitle()))
                 .toList();

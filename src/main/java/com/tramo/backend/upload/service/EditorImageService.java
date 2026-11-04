@@ -9,6 +9,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
@@ -74,7 +75,7 @@ public class EditorImageService {
     }
 
     public EditorImagePresignResponse presign(EditorImagePresignRequest request, User user) {
-        Project project = request.projectId() == null ? null : access.getOwnedProject(codec.decode(request.projectId()), user);
+        Project project = request.projectId() == null ? null : access.getProject(codec.decode(request.projectId()), user, ProjectRole.EDITOR);
         if (request.contentBytes() > maxBytes) throw new RequestValidationException(RequestErrorCode.IMAGE_SIZE_LIMIT_EXCEEDED);
         if (!limiter.resolveBucket("upload-bytes:" + user.getId(), bytesPerHour, bytesPerHour, Duration.ofHours(1))
                 .tryConsume(request.contentBytes())) throw new LimitExceededException("Upload throughput limit reached. Try again later.");
@@ -94,7 +95,7 @@ public class EditorImageService {
         EditorImage image = findOne(id);
         if (image.projectId() == null) {
             if (!images.isOwnedUnattached(id, user.getId())) throw missing();
-        } else access.getOwnedProject(image.projectId(), user);
+        } else access.getProject(image.projectId(), user, ProjectRole.EDITOR);
         UUID attempt = images.withObjectLock(image.objectId(), () ->
                 transactions.execute(status -> images.claimCompletion(image.objectId())));
         if (attempt == null) return;
@@ -114,7 +115,7 @@ public class EditorImageService {
     }
 
     public EditorImageResolveResponse resolve(Long projectId, EditorImageResolveRequest request, User user, boolean publicRead) {
-        Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getOwnedProject(projectId, user);
+        Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getProject(projectId, user, ProjectRole.VIEWER);
         if (publicRead) access.assertViewable(project, user);
         Long snapshotId = request.snapshotId();
         if (request.versionId() != null) {
