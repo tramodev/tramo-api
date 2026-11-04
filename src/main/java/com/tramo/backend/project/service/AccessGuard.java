@@ -5,6 +5,7 @@ package com.tramo.backend.project.service;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectRole;
+import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.UserRepository;
@@ -17,11 +18,14 @@ public class AccessGuard {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final PrivacyPolicy privacyPolicy;
+    private final ProjectMemberRepository memberRepository;
 
-    public AccessGuard(ProjectRepository projectRepository, UserRepository userRepository, PrivacyPolicy privacyPolicy) {
+    public AccessGuard(ProjectRepository projectRepository, UserRepository userRepository, PrivacyPolicy privacyPolicy,
+                       ProjectMemberRepository memberRepository) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.privacyPolicy = privacyPolicy;
+        this.memberRepository = memberRepository;
     }
 
     public Project getOwnedProject(Long id, User requester) {
@@ -54,7 +58,11 @@ public class AccessGuard {
         if (requester == null) {
             return null;
         }
-        return project.getOwner().getId().equals(requester.getId()) ? ProjectRole.OWNER : null;
+        if (project.getOwner().getId().equals(requester.getId())) {
+            return ProjectRole.OWNER;
+        }
+        ProjectRole role = memberRepository.findRole(project.getId(), requester.getId()).orElse(null);
+        return role == null || project.getOwner().isBanned() ? null : role;
     }
 
     public void assertViewable(Project project, User requester) {

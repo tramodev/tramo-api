@@ -152,6 +152,32 @@ public class NotificationService {
         sendUnreadCount(recipient);
     }
 
+    public void sendEvent(Long userId, String name, Object data) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deliverEvent(userId, name, data);
+                }
+            });
+            return;
+        }
+        deliverEvent(userId, name, data);
+    }
+
+    private void deliverEvent(Long userId, String name, Object data) {
+        CopyOnWriteArrayList<Connection> userEmitters = emitters.get(userId);
+        if (userEmitters == null || userEmitters.isEmpty()) return;
+
+        try {
+            UserRepository.SessionState state = userRepository.findSessionStates(List.of(userId))
+                    .stream().findFirst().orElse(null);
+            sendToAll(userId, userEmitters, state, SseEmitter.event().name(name).data(data));
+        } catch (Exception failure) {
+            SafeLog.failure(log, "notification_delivery_failed", "INTERNAL_ERROR", failure);
+        }
+    }
+
     private void sendUnreadCount(User recipient) {
         CopyOnWriteArrayList<Connection> userEmitters = emitters.get(recipient.getId());
         if (userEmitters == null || userEmitters.isEmpty()) return;

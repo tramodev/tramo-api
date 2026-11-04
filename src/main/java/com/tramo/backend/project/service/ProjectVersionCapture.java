@@ -89,7 +89,7 @@ public class ProjectVersionCapture {
                 return project;
             }
         }
-        List<Long> ids = jdbc.queryForList("SELECT COALESCE(i.project_id, (SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id WHERE ti.item_id = i.id AND p.user_id = ? ORDER BY t.project_id LIMIT 1)) FROM item i WHERE i.id = ?", Long.class, user.getId(), id);
+        List<Long> ids = jdbc.queryForList("SELECT COALESCE(i.project_id, (SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id WHERE ti.item_id = i.id AND (p.user_id = ? OR EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = p.id AND m.user_id = ? AND m.role = 'EDITOR')) ORDER BY t.project_id LIMIT 1)) FROM item i WHERE i.id = ?", Long.class, user.getId(), user.getId(), id);
         if (ids.isEmpty() || ids.get(0) == null) throw new ResourceNotFoundException("Item not found");
         return lockProject(ids.get(0), user);
     }

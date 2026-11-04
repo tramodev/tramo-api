@@ -1,0 +1,8 @@
+// Copyright (C) 2026 Ezequiel Martino
+// SPDX-License-Identifier: AGPL-3.0-only
+package com.tramo.backend.project.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record AcceptShareLinkRequest(@NotBlank @Size(max = 64) String token) {}

@@ -80,6 +80,15 @@ public class RateLimitFilter implements Filter {
             }
         }
 
+        if ((MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/(members|share-links)(/.*)?"))
+                || ("POST".equals(req.getMethod()) && "/api/share-links/accept".equals(path))) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User user) {
+                Bucket bucket = rateLimiterService.resolveBucket("user:sharing:" + user.getId(), 10, 10, Duration.ofMinutes(1));
+                if (!tryConsumeOrReject(bucket, res)) return;
+            }
+        }
+
         if (path.startsWith("/api/auth/")) {
             Bucket bucket = switch (path) {
                 case "/api/auth/patreon/connect", "/api/auth/patreon/complete" -> rateLimiterService.resolveBucket(
