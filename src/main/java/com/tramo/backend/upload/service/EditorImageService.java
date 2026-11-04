@@ -79,13 +79,14 @@ public class EditorImageService {
         if (request.contentBytes() > maxBytes) throw new RequestValidationException(RequestErrorCode.IMAGE_SIZE_LIMIT_EXCEEDED);
         if (!limiter.resolveBucket("upload-bytes:" + user.getId(), bytesPerHour, bytesPerHour, Duration.ofHours(1))
                 .tryConsume(request.contentBytes())) throw new LimitExceededException("Upload throughput limit reached. Try again later.");
+        User payer = project == null ? user : project.getOwner();
         EditorImage image = transactions.execute(status -> {
-            images.lockUser(user.getId());
-            subscriptions.assertUploadAllowed(user, request.contentBytes(), subscriptions.isSupporter(user));
+            images.lockUser(payer.getId());
+            subscriptions.assertUploadAllowed(payer, request.contentBytes(), subscriptions.isSupporter(payer));
             UUID imageId = UUID.randomUUID();
             UUID objectId = UUID.randomUUID();
             images.createObject(objectId, request.contentType(), request.contentBytes(), request.contentHash());
-            createImage(imageId, objectId, project, user, request.contentBytes());
+            createImage(imageId, objectId, project, payer, request.contentBytes());
             return new EditorImage(imageId, objectId, project == null ? null : project.getId(), request.contentType(), request.contentBytes(), "PENDING", request.contentHash());
         });
         return new EditorImagePresignResponse(image.id(), storage.presignUpload(image));

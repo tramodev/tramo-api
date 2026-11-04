@@ -107,7 +107,7 @@ public class ProjectVersionService {
             if (shared.contains(item.getId())) {
                 item.setProject(null);
             } else {
-                deletion.queueItemImages(item.getId(), user.getId());
+                deletion.queueItemImages(item.getId(), project.getOwner().getId());
                 references.deleteByItemId(item.getId());
                 items.delete(item);
             }
@@ -141,17 +141,17 @@ public class ProjectVersionService {
             for (String url : urls) {
                 ItemImageReference reference = new ItemImageReference(); reference.setItem(item); reference.setUrl(url); references.save(reference);
             }
-            for (String url : old) if (!urls.contains(url)) deletion.queue(url, user.getId());
+            for (String url : old) if (!urls.contains(url)) deletion.queue(url, project.getOwner().getId());
         }
         String oldThumbnail = project.getThumbnailImageUrl();
         project.setTitle(data.title()); project.setDescription(data.description()); project.setGraphColors(data.graphColors());
         project.setThumbnailType(data.thumbnailType()); project.setThumbnailImageUrl(data.thumbnailImageUrl());
         tags.applyProjectTags(project, data.tags(), user.getId());
-        if (oldThumbnail != null && !Objects.equals(oldThumbnail, data.thumbnailImageUrl())) deletion.queue(oldThumbnail, user.getId());
+        if (oldThumbnail != null && !Objects.equals(oldThumbnail, data.thumbnailImageUrl())) deletion.queue(oldThumbnail, project.getOwner().getId());
         project.setRestoreEpoch(project.getRestoreEpoch() + 1);
         project.setLastEditedDate(new Date()); project.setModifiedDate(new Date()); project.setHistoryUnavailable(false);
         em.flush();
-        subscriptions.assertUploadAllowed(user, 0, subscriptions.isSupporter(user));
+        subscriptions.assertUploadAllowed(project.getOwner(), 0, subscriptions.isSupporter(project.getOwner()));
         return project.getRestoreEpoch();
     }
 

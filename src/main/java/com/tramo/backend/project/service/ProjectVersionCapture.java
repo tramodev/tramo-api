@@ -54,7 +54,6 @@ public class ProjectVersionCapture {
     }
 
     public Project lock(Long id, User user, ProjectRole min) {
-        subscriptions.lockStorage(user);
         return lockProject(id, user, min);
     }
 
@@ -63,6 +62,10 @@ public class ProjectVersionCapture {
     }
 
     private Project lockProject(Long id, User user, ProjectRole min) {
+        em.flush();
+        List<Long> owners = jdbc.queryForList("SELECT user_id FROM project WHERE id = ?", Long.class, id);
+        if (owners.isEmpty()) throw new ResourceNotFoundException("Project not found");
+        subscriptions.lockStorage(em.getReference(User.class, owners.get(0)));
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
         access.assertRole(project, user, min);
@@ -76,7 +79,6 @@ public class ProjectVersionCapture {
     }
 
     public Project lockItem(Long id, User user) {
-        subscriptions.lockStorage(user);
         em.flush();
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String context = attributes.getRequest().getHeader("X-Project-Id");
@@ -93,7 +95,6 @@ public class ProjectVersionCapture {
     }
 
     public Project lockTrail(Long id, User user) {
-        subscriptions.lockStorage(user);
         em.flush();
         List<Long> ids = jdbc.queryForList("SELECT project_id FROM trail WHERE id = ?", Long.class, id);
         if (ids.isEmpty()) throw new ResourceNotFoundException("Trail not found");

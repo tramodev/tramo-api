@@ -64,7 +64,7 @@ public class TrailService {
         Project project = history.lock(projectId, requester);
         ContentLimits.assertTrailDescription(request.getDescription());
         long bytes = ContentLimits.bytes(request.getDescription());
-        if (bytes > 0) subscriptions.assertUploadAllowed(requester, bytes, subscriptions.isSupporter(requester));
+        if (bytes > 0) subscriptions.assertUploadAllowed(project.getOwner(), bytes, subscriptions.isSupporter(project.getOwner()));
         history.beforeChange(project);
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
@@ -117,7 +117,7 @@ public class TrailService {
         }
         if (request.getDescription() != null) {
             long growth = (long) ContentLimits.bytes(request.getDescription()) - ContentLimits.bytes(trail.getDescription());
-            if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
+            if (growth > 0) subscriptions.assertUploadAllowed(project.getOwner(), growth, subscriptions.isSupporter(project.getOwner()));
             trail.setDescription(request.getDescription());
         }
         if (request.getVisibility() != null) {
@@ -139,7 +139,7 @@ public class TrailService {
             if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
                 if (item.getProject() == null) {
 
-                    imageDeletionQueue.queueItemImages(item.getId(), requester.getId());
+                    imageDeletionQueue.queueItemImages(item.getId(), trail.getProject().getOwner().getId());
                     itemRepository.delete(item);
                 } else {
                     

@@ -343,7 +343,7 @@ public class ItemService {
         Project project = history.lockItem(id, requester);
         Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
         history.beforeChange(project);
-        deleteItemCompletely(item, requester.getId());
+        deleteItemCompletely(item, project.getOwner().getId());
     }
 
     private void deleteItemCompletely(Item item, Long ownerId) {
@@ -384,7 +384,7 @@ public class ItemService {
         LexicalContent.validateUpdate(content, previousContent);
         content = LexicalContent.sanitizeLinks(content);
         long growth = (long) ContentLimits.bytes(content) - ContentLimits.bytes(previousContent);
-        if (growth > 0) subscriptions.assertUploadAllowed(requester, growth, subscriptions.isSupporter(requester));
+        if (growth > 0) subscriptions.assertUploadAllowed(project.getOwner(), growth, subscriptions.isSupporter(project.getOwner()));
         if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note changed in another session. Your changes were kept locally; reload before saving.");
         if (Objects.equals(content, previousContent)) return;
@@ -400,7 +400,7 @@ public class ItemService {
         Set<String> newUrls = r2Client.extractReferencedUrls(content);
         resyncImageReferences(item, newUrls);
         for (String url : r2Client.extractReferencedUrls(previousContent)) {
-            if (!newUrls.contains(url)) imageDeletionQueue.queue(url, requester.getId());
+            if (!newUrls.contains(url)) imageDeletionQueue.queue(url, project.getOwner().getId());
         }
     }
 
@@ -472,7 +472,7 @@ public class ItemService {
         
         if (trailItemRepository.findByItemId(item.getId()).isEmpty()) {
             if (item.getProject() == null) {
-                deleteItemCompletely(item, requester.getId());
+                deleteItemCompletely(item, trail.getProject().getOwner().getId());
             } else {
                 item.setUnfiled(true);
                 itemRepository.save(item);
