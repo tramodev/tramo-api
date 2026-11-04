@@ -157,4 +157,46 @@ class ProjectMemberAccessTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM project_member", Long.class)).isZero();
     }
+
+    @Test
+    void sharedProjectsAppearInListingAndEditorWithRole() throws Exception {
+        User owner = createUser("pmaowner7");
+        User viewer = createUser("pmaviewer7");
+        Project project = createProject(owner, "Shared", "private");
+        createProject(viewer, "Own", "private");
+        addMember(owner, project, viewer, "VIEWER");
+
+        mockMvc.perform(get("/api/project").header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.id == '%s')].role".formatted(pid(project))).value("VIEWER"))
+                .andExpect(jsonPath("$[?(@.id == '%s')].ownerUsername".formatted(pid(project))).value(owner.getUsername()))
+                .andExpect(jsonPath("$[?(@.title == 'Own')].role").value("OWNER"));
+        mockMvc.perform(get("/api/project/" + pid(project) + "/editor").header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("VIEWER"));
+    }
+
+    @Test
+    void membersCanForkPrivateProjectsIntoPrivateCopies() throws Exception {
+        User owner = createUser("pmaowner8");
+        User viewer = createUser("pmaviewer8");
+        User stranger = createUser("pmastranger8");
+        Project project = createProject(owner, "Shared", "private");
+        createItem(owner, createTrail(owner, project));
+        addMember(owner, project, viewer, "VIEWER");
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(stranger)))
+                .andExpect(status().isNotFound());
+        String forkId = com.jayway.jsonpath.JsonPath.read(mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.visibility").value("private"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM project_member WHERE project_id = ?", Long.class, projectIdCodec.decode(forkId))).isZero();
+
+        jdbcTemplate.update("UPDATE users SET allow_forks = false WHERE id = ?", owner.getId());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(viewer)))
+                .andExpect(status().isForbidden());
+    }
+
 }

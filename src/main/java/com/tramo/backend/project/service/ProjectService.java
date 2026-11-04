@@ -28,10 +28,12 @@ import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.ProjectStorageDTO;
 import com.tramo.backend.project.dto.SetThumbnailRequestDTO;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectMember;
 import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectThumbnailType;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectBookmarkRepository;
+import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.project.repository.ProjectSnapshotRepository;
 import com.tramo.backend.project.repository.ProjectViewRepository;
@@ -42,7 +44,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -75,6 +79,7 @@ public class ProjectService {
     private final ProjectPublishService publishService;
     private final R2Client r2Client;
     private final SubscriptionService subscriptions;
+    private final ProjectMemberRepository memberRepository;
 
     public ProjectService(ProjectRepository projectRepository, TrailRepository trailRepository,
                            TrailItemRepository trailItemRepository, ItemRepository itemRepository,
@@ -89,8 +94,10 @@ public class ProjectService {
                            ImageDeletionQueue imageDeletionQueue,
                             AccessGuard accessGuard, ProjectThumbnailResolver thumbnailResolver,
                             ProjectResponseMapper responseMapper, ProjectPublishService publishService, R2Client r2Client,
-                            SubscriptionService subscriptions, ProjectVersionCapture history) {
+                            SubscriptionService subscriptions, ProjectVersionCapture history,
+                            ProjectMemberRepository memberRepository) {
         this.subscriptions = subscriptions;
+        this.memberRepository = memberRepository;
         this.accessGuard = accessGuard;
         this.history = history;
         this.thumbnailResolver = thumbnailResolver;
@@ -137,8 +144,13 @@ public class ProjectService {
         return responseMapper.toResponse(saved, responseMapper.liveTagNames(saved));
     }
 
-    public List<ProjectResponseDTO> getAllForUser(User owner) {
-        List<Project> projects = projectRepository.findByOwnerId(owner.getId());
+    public List<ProjectResponseDTO> getAllForUser(User requester) {
+        List<Project> projects = new ArrayList<>(projectRepository.findByOwnerId(requester.getId()));
+        Map<Long, ProjectRole> roles = new HashMap<>();
+        for (ProjectMember member : memberRepository.findSharedWith(requester.getId())) {
+            projects.add(member.getProject());
+            roles.put(member.getProject().getId(), member.getRole());
+        }
         List<Long> projectIds = projects.stream().map(Project::getId).toList();
         Map<Long, Long> imageBytesByProjectId = uploadRecordRepository.sumBytesGroupedByProjectIdIn(projectIds).stream()
                 .collect(Collectors.toMap(UploadRecordRepository.ProjectBytesSum::getProjectId, UploadRecordRepository.ProjectBytesSum::getBytes));
@@ -147,10 +159,14 @@ public class ProjectService {
         Map<Long, List<String>> tagNamesByProjectId = responseMapper.tagNamesGroupedByProjectId(projectIds);
         Map<Long, ThumbnailResolution> thumbnailByProjectId = thumbnailResolver.resolveThumbnails(projects);
         return projects.stream()
-                .map(p -> responseMapper.toResponse(p, imageBytesByProjectId.getOrDefault(p.getId(), 0L)
-                        + contentBytesByProjectId.getOrDefault(p.getId(), 0L),
-                        tagNamesByProjectId.getOrDefault(p.getId(), List.of()),
-                        thumbnailByProjectId.getOrDefault(p.getId(), ThumbnailResolution.EMPTY)))
+                .map(p -> {
+                    ProjectResponseDTO dto = responseMapper.toResponse(p, imageBytesByProjectId.getOrDefault(p.getId(), 0L)
+                            + contentBytesByProjectId.getOrDefault(p.getId(), 0L),
+                            tagNamesByProjectId.getOrDefault(p.getId(), List.of()),
+                            thumbnailByProjectId.getOrDefault(p.getId(), ThumbnailResolution.EMPTY));
+                    dto.setRole(roles.getOrDefault(p.getId(), ProjectRole.OWNER));
+                    return dto;
+                })
                 .toList();
     }
 

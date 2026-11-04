@@ -22,6 +22,9 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Lo
 
     long countByProjectId(Long projectId);
 
+    @Query("SELECT m FROM ProjectMember m JOIN FETCH m.project p JOIN FETCH p.owner o WHERE m.user.id = :userId AND o.banned = false")
+    List<ProjectMember> findSharedWith(@Param("userId") Long userId);
+
     @Query("SELECT m FROM ProjectMember m JOIN FETCH m.user WHERE m.project.id = :projectId ORDER BY m.createdAt, m.id")
     List<ProjectMember> findWithUserByProjectId(@Param("projectId") Long projectId);
 

@@ -96,7 +96,9 @@ public class ProjectForkService {
         subscriptions.lockStorage(requester);
         Project source = projectRepository.findById(sourceProjectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
-        accessGuard.assertViewable(source, requester);
+        if (!privacyPolicy.isProjectViewable(source, requester) && accessGuard.roleOf(source, requester) == null) {
+            throw new ResourceNotFoundException("Project not found");
+        }
         if (source.getOwner().getId().equals(requester.getId())) {
             throw new AccessDeniedException("Cannot fork your own project");
         }

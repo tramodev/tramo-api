@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.dto;
 
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -29,4 +30,6 @@ public class ProjectResponseDTO {
     private String forkedFromProjectId;
     private String forkedFromTitle;
     private String forkedFromOwnerUsername;
+    private String ownerUsername;
+    private ProjectRole role;
 }

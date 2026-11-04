@@ -512,4 +512,33 @@ class QueryCountTest extends AbstractIntegrationTest {
         assertThat(large).isLessThanOrEqualTo(small);
     }
 
+
+    private void shareWith(Project project, User member, String role) {
+        jdbcTemplate.update("INSERT INTO project_member (project_id, user_id, role, created_at) VALUES (?, ?, ?, now())",
+                project.getId(), member.getId(), role);
+    }
+
+    @Test
+    void sharedProjectListingDoesNotScaleWithSharedProjectsOrOwners() throws Exception {
+        User few = createUser("qcsharedfew");
+        User many = createUser("qcsharedmany");
+        shareWith(createProject(createUser("qcsharedowner0"), "Shared 0", "private"), few, "VIEWER");
+        for (int i = 1; i <= 10; i++) shareWith(createProject(createUser("qcsharedowner" + i), "Shared " + i, "private"), many, "EDITOR");
+        long small = queryCount(() -> mockMvc.perform(get("/api/project").header("Authorization", bearer(few))).andExpect(status().isOk()));
+        long large = queryCount(() -> mockMvc.perform(get("/api/project").header("Authorization", bearer(many))).andExpect(status().isOk()));
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
+    void memberListDoesNotScaleWithMemberCount() throws Exception {
+        User owner = createUser("qcmembersowner");
+        Project small = createProject(owner, "Few members", "private");
+        Project large = createProject(owner, "Many members", "private");
+        shareWith(small, createUser("qcmembersolo"), "VIEWER");
+        for (int i = 0; i < 10; i++) shareWith(large, createUser("qcmembers" + i), "EDITOR");
+        long smallCount = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(small) + "/members").header("Authorization", bearer(owner))).andExpect(status().isOk()));
+        long largeCount = queryCount(() -> mockMvc.perform(get("/api/project/" + pid(large) + "/members").header("Authorization", bearer(owner))).andExpect(status().isOk()));
+        assertThat(largeCount).isEqualTo(smallCount);
+    }
+
 }

@@ -107,6 +107,7 @@ public class ProjectEditorService {
         return new EditorBootstrapDTO(projectIdCodec.encode(projectId), project.getTitle(),
                 project.getDescription(), project.getGraphColors(), project.getVisibility(),
                 responseMapper.resolveTagNames(project), trailDtos, itemDtos,
-                selectedItemId, selectedTrailId, contents, requester.getUsername(), requester.getImageUrl(), project.getRestoreEpoch(), project.isHistoryUnavailable());
+                selectedItemId, selectedTrailId, contents, requester.getUsername(), requester.getImageUrl(), project.getRestoreEpoch(), project.isHistoryUnavailable(),
+                accessGuard.roleOf(project, requester));
     }
 }
