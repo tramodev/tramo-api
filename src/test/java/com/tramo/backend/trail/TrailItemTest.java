@@ -155,9 +155,9 @@ class TrailItemTest extends AbstractIntegrationTest {
         String content = lexicalText("Selection");
         var mapper = new tools.jackson.databind.ObjectMapper();
         var foreignTrailRequest = new com.tramo.backend.trail.dto.ExtractSelectionRequest(java.util.UUID.randomUUID(),
-                "Extracted", content, 0, content, content, trailId, java.util.List.of(ownItemId), false, null);
+                "Extracted", content, trailId, java.util.List.of(ownItemId), false);
         var foreignItemRequest = new com.tramo.backend.trail.dto.ExtractSelectionRequest(java.util.UUID.randomUUID(),
-                "Extracted", content, 0, content, content, ownTrailId, java.util.List.of(ownItemId), false, null);
+                "Extracted", content, ownTrailId, java.util.List.of(ownItemId), false);
         for (var request : java.util.List.of(
                 get(trailPath), put(trailPath).content("{\"title\":\"Changed\"}"), delete(trailPath),
                 get(trailPath + "/item"), get(trailPath + "/content"),
