@@ -100,6 +100,16 @@ public class ProjectMemberService {
         notifyRevoked(List.of(member.getUser().getId()), projectId);
     }
 
+    @Transactional
+    public void leave(Long projectId, User requester) {
+        Project project = accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
+        if (project.getOwner().getId().equals(requester.getId())) {
+            throw new RequestValidationException(RequestErrorCode.PROJECT_MEMBER_SELF);
+        }
+        memberRepository.findByProjectIdAndUserId(projectId, requester.getId()).ifPresent(memberRepository::delete);
+        notifyRevoked(List.of(requester.getId()), projectId);
+    }
+
     ProjectMember newMember(Project project, User user, ProjectRole role, User invitedBy, ProjectShareLink shareLink) {
         if (memberRepository.countByProjectId(project.getId()) >= maxMembers) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_MEMBER_LIMIT);

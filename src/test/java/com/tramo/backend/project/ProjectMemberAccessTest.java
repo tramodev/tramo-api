@@ -202,4 +202,25 @@ class ProjectMemberAccessTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+
+    @Test
+    void membersCanLeaveButOwnersAndStrangersCannot() throws Exception {
+        User owner = createUser("pmaowner9");
+        User member = createUser("pmamember9");
+        User stranger = createUser("pmastranger9");
+        Project project = createProject(owner, "Shared", "private");
+        addMember(owner, project, member, "EDITOR");
+
+        mockMvc.perform(delete("/api/project/" + pid(project) + "/membership").header("Authorization", bearer(stranger)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/project/" + pid(project) + "/membership").header("Authorization", bearer(owner)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete("/api/project/" + pid(project) + "/membership").header("Authorization", bearer(member)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(member)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(owner)))
+                .andExpect(status().isOk());
+    }
+
 }
