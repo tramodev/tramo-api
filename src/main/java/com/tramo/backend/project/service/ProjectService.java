@@ -171,7 +171,10 @@ public class ProjectService {
     }
 
     public ProjectResponseDTO getById(Long id, User requester) {
-        return responseMapper.toResponse(accessGuard.getProject(id, requester, ProjectRole.VIEWER));
+        Project project = accessGuard.getProject(id, requester, ProjectRole.VIEWER);
+        ProjectResponseDTO dto = responseMapper.toResponse(project);
+        dto.setRole(accessGuard.roleOf(project, requester));
+        return dto;
     }
 
     public ProjectStorageDTO getStorage(Long id, User requester) {

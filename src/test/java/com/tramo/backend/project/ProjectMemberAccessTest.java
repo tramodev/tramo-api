@@ -172,6 +172,9 @@ class ProjectMemberAccessTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[?(@.id == '%s')].role".formatted(pid(project))).value("VIEWER"))
                 .andExpect(jsonPath("$[?(@.id == '%s')].ownerUsername".formatted(pid(project))).value(owner.getUsername()))
                 .andExpect(jsonPath("$[?(@.title == 'Own')].role").value("OWNER"));
+        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("VIEWER"));
         mockMvc.perform(get("/api/project/" + pid(project) + "/editor").header("Authorization", bearer(viewer)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("VIEWER"));
