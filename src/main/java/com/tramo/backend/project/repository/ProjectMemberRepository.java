@@ -32,6 +32,10 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Lo
     List<Long> findUserIdsByShareLinkId(@Param("shareLinkId") Long shareLinkId);
 
     @Modifying(flushAutomatically = true)
+    @Query("update ProjectMember m set m.role = :role where m.shareLink.id = :shareLinkId")
+    void updateRoleByShareLinkId(@Param("shareLinkId") Long shareLinkId, @Param("role") ProjectRole role);
+
+    @Modifying(flushAutomatically = true)
     @Query("delete from ProjectMember m where m.shareLink.id = :shareLinkId")
     void deleteByShareLinkId(@Param("shareLinkId") Long shareLinkId);
 

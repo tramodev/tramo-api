@@ -88,7 +88,7 @@ public class RateLimitFilter implements Filter {
             }
         }
 
-        if ((MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/(members|membership|share-links)(/.*)?"))
+        if ((MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/(members|membership|share-link)(/.*)?"))
                 || ("POST".equals(req.getMethod()) && "/api/share-links/accept".equals(path))) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {

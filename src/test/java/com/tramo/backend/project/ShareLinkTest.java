@@ -18,8 +18,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ShareLinkTest extends AbstractIntegrationTest {
 
-    private MvcResult createLink(User owner, Project project, String role) throws Exception {
-        return mockMvc.perform(post("/api/project/" + pid(project) + "/share-links")
+    private MvcResult setLink(User owner, Project project, String role) throws Exception {
+        return mockMvc.perform(put("/api/project/" + pid(project) + "/share-link")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"%s\"}".formatted(role)))
@@ -30,8 +30,8 @@ class ShareLinkTest extends AbstractIntegrationTest {
         return JsonPath.read(result.getResponse().getContentAsString(), "$.token");
     }
 
-    private long linkId(MvcResult result) throws Exception {
-        return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
+    private ResultActions clearLink(User owner, Project project) throws Exception {
+        return mockMvc.perform(delete("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner)));
     }
 
     private ResultActions accept(User user, String token) throws Exception {
@@ -47,29 +47,52 @@ class ShareLinkTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void acceptingCreatesMembershipAndStoresOnlyHash() throws Exception {
+    void linkIsStoredHashedAndEncryptedAndTheOwnerCanCopyItAgain() throws Exception {
         User owner = createUser("slowner1");
         User guest = createUser("slguest1");
         Project project = createProject(owner, "Shared", "private");
-        String token = token(createLink(owner, project, "VIEWER"));
+        mockMvc.perform(get("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        String token = token(setLink(owner, project, "VIEWER"));
 
-        assertThat(jdbcTemplate.queryForObject("SELECT token_hash FROM project_share_link", String.class))
-                .isEqualTo(OpaqueToken.hash(token)).isNotEqualTo(token);
+        var stored = jdbcTemplate.queryForMap("SELECT token_hash, token_ciphertext FROM project_share_link");
+        assertThat(stored.get("token_hash")).isEqualTo(OpaqueToken.hash(token));
+        assertThat((String) stored.get("token_ciphertext")).isNotBlank().doesNotContain(token);
         accept(guest, token).andExpect(status().isOk()).andExpect(jsonPath("$.projectId").value(pid(project)));
         assertThat(role(project, guest)).isEqualTo("VIEWER");
-        mockMvc.perform(get("/api/project/" + pid(project)).header("Authorization", bearer(guest)))
-                .andExpect(status().isOk());
-        mockMvc.perform(get("/api/project/" + pid(project) + "/share-links").header("Authorization", bearer(owner)))
+        mockMvc.perform(get("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].useCount").value(1))
-                .andExpect(jsonPath("$[0].token").doesNotExist());
+                .andExpect(jsonPath("$.role").value("VIEWER"))
+                .andExpect(jsonPath("$.useCount").value(1))
+                .andExpect(jsonPath("$.token").value(token));
+    }
+
+    @Test
+    void changingTheLinkRoleKeepsTheTokenAndUpdatesOnlyMembersWhoJoinedThroughIt() throws Exception {
+        User owner = createUser("slowner7");
+        User viaLink = createUser("slvialink7");
+        User direct = createUser("sldirect7");
+        Project project = createProject(owner, "Shared", "private");
+        String token = token(setLink(owner, project, "EDITOR"));
+        accept(viaLink, token).andExpect(status().isOk());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/members")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"%s\",\"role\":\"EDITOR\"}".formatted(direct.getUsername())))
+                .andExpect(status().isOk());
+
+        assertThat(token(setLink(owner, project, "VIEWER"))).isEqualTo(token);
+        assertThat(role(project, viaLink)).isEqualTo("VIEWER");
+        assertThat(role(project, direct)).isEqualTo("EDITOR");
+        accept(createUser("sllate7"), token).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM project_share_link WHERE revoked_at IS NULL", Long.class)).isEqualTo(1);
     }
 
     @Test
     void acceptRequiresLoginAndRejectsUnknownTokens() throws Exception {
         User owner = createUser("slowner2");
         Project project = createProject(owner, "Shared", "private");
-        String token = token(createLink(owner, project, "EDITOR"));
+        String token = token(setLink(owner, project, "EDITOR"));
         mockMvc.perform(post("/api/share-links/accept")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"%s\"}".formatted(token)))
@@ -81,7 +104,7 @@ class ShareLinkTest extends AbstractIntegrationTest {
     void expiredLinkIsRejected() throws Exception {
         User owner = createUser("slowner3");
         Project project = createProject(owner, "Shared", "private");
-        String token = token(createLink(owner, project, "VIEWER"));
+        String token = token(setLink(owner, project, "VIEWER"));
         jdbcTemplate.update("UPDATE project_share_link SET expires_at = now() - interval '1 minute'");
         accept(createUser("slguest3"), token).andExpect(status().isNotFound());
     }
@@ -93,7 +116,7 @@ class ShareLinkTest extends AbstractIntegrationTest {
         User direct = createUser("sldirect4");
         User promoted = createUser("slpromoted4");
         Project project = createProject(owner, "Shared", "private");
-        MvcResult link = createLink(owner, project, "EDITOR");
+        MvcResult link = setLink(owner, project, "EDITOR");
         accept(viaLink, token(link)).andExpect(status().isOk());
         accept(promoted, token(link)).andExpect(status().isOk());
         mockMvc.perform(post("/api/project/" + pid(project) + "/members")
@@ -111,8 +134,7 @@ class ShareLinkTest extends AbstractIntegrationTest {
 
         MvcResult stream = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(viaLink)))
                 .andExpect(request().asyncStarted()).andReturn();
-        mockMvc.perform(delete("/api/project/" + pid(project) + "/share-links/" + linkId(link)).header("Authorization", bearer(owner)))
-                .andExpect(status().isNoContent());
+        clearLink(owner, project).andExpect(status().isNoContent());
 
         assertThat(role(project, viaLink)).isNull();
         assertThat(role(project, direct)).isEqualTo("VIEWER");
@@ -122,15 +144,19 @@ class ShareLinkTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void rotatingInvalidatesOldTokenAndUnlinksItsMembers() throws Exception {
+    void restrictingThenSharingAgainIssuesANewTokenAndUnlinksOldMembers() throws Exception {
         User owner = createUser("slowner5");
         User guest = createUser("slguest5");
         Project project = createProject(owner, "Shared", "private");
-        String oldToken = token(createLink(owner, project, "VIEWER"));
+        String oldToken = token(setLink(owner, project, "VIEWER"));
         accept(guest, oldToken).andExpect(status().isOk());
 
-        String newToken = token(createLink(owner, project, "VIEWER"));
+        clearLink(owner, project).andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        String newToken = token(setLink(owner, project, "VIEWER"));
 
+        assertThat(newToken).isNotEqualTo(oldToken);
         assertThat(role(project, guest)).isNull();
         accept(createUser("slother5"), oldToken).andExpect(status().isNotFound());
         accept(guest, newToken).andExpect(status().isOk());
@@ -142,15 +168,15 @@ class ShareLinkTest extends AbstractIntegrationTest {
         User owner = createUser("slowner6");
         User editor = createUser("sleditor6");
         Project project = createProject(owner, "Shared", "private");
-        String token = token(createLink(owner, project, "EDITOR"));
+        String token = token(setLink(owner, project, "EDITOR"));
         accept(editor, token).andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/project/" + pid(project) + "/share-links")
+        mockMvc.perform(put("/api/project/" + pid(project) + "/share-link")
                         .header("Authorization", bearer(editor))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"VIEWER\"}"))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/project/" + pid(project) + "/share-links")
+        mockMvc.perform(put("/api/project/" + pid(project) + "/share-link")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"OWNER\"}"))

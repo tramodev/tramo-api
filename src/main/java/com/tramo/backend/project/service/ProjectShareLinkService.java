@@ -3,6 +3,7 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.auth.service.OpaqueToken;
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.NotificationTypes;
@@ -14,6 +15,7 @@ import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectShareLink;
 import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.project.repository.ProjectShareLinkRepository;
+import com.tramo.backend.security.crypto.EncryptedStringConverter;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.BlockedUserRepository;
 import jakarta.transaction.Transactional;
@@ -31,11 +33,13 @@ public class ProjectShareLinkService {
     private final BlockedUserRepository blockedUserRepository;
     private final NotificationService notificationService;
     private final ProjectIdCodec codec;
+    private final EncryptedStringConverter cipher;
+    private final CollabClient collab;
 
     public ProjectShareLinkService(AccessGuard accessGuard, ProjectShareLinkRepository linkRepository,
                                    ProjectMemberRepository memberRepository, ProjectMemberService memberService,
                                    BlockedUserRepository blockedUserRepository, NotificationService notificationService,
-                                   ProjectIdCodec codec) {
+                                   ProjectIdCodec codec, EncryptedStringConverter cipher, CollabClient collab) {
         this.accessGuard = accessGuard;
         this.linkRepository = linkRepository;
         this.memberRepository = memberRepository;
@@ -43,35 +47,41 @@ public class ProjectShareLinkService {
         this.blockedUserRepository = blockedUserRepository;
         this.notificationService = notificationService;
         this.codec = codec;
+        this.cipher = cipher;
+        this.collab = collab;
     }
 
-    public List<ShareLinkDTO> list(Long projectId, User requester) {
+    public ShareLinkDTO get(Long projectId, User requester) {
         accessGuard.getOwnedProject(projectId, requester);
-        return linkRepository.findByProjectIdAndRevokedAtIsNullOrderByCreatedAtAsc(projectId).stream()
-                .map(link -> toDto(link, null)).toList();
+        return linkRepository.findByProjectIdAndRevokedAtIsNull(projectId).map(this::toDto).orElse(null);
     }
 
     @Transactional
-    public ShareLinkDTO create(Long projectId, ProjectRole role, Date expiresAt, User requester) {
+    public ShareLinkDTO set(Long projectId, ProjectRole role, User requester) {
         Project project = accessGuard.getOwnedProject(projectId, requester);
-        linkRepository.findActiveForUpdate(projectId, role).ifPresent(this::revoke);
-        String token = OpaqueToken.generate();
-        ProjectShareLink link = new ProjectShareLink();
-        link.setProject(project);
-        link.setTokenHash(OpaqueToken.hash(token));
+        ProjectShareLink link = linkRepository.findActiveForUpdate(projectId).orElse(null);
+        if (link == null) {
+            String token = OpaqueToken.generate();
+            link = new ProjectShareLink();
+            link.setProject(project);
+            link.setTokenHash(OpaqueToken.hash(token));
+            link.setTokenCiphertext(cipher.convertToDatabaseColumn(token));
+            link.setCreatedBy(requester);
+            link.setCreatedAt(new Date());
+        } else if (link.getRole() != role) {
+            if (link.getRole().atLeast(ProjectRole.EDITOR) && !role.atLeast(ProjectRole.EDITOR)) {
+                memberRepository.findUserIdsByShareLinkId(link.getId()).forEach(collab::revokeAfterCommit);
+            }
+            memberRepository.updateRoleByShareLinkId(link.getId(), role);
+        }
         link.setRole(role);
-        link.setCreatedBy(requester);
-        link.setCreatedAt(new Date());
-        link.setExpiresAt(expiresAt);
-        return toDto(linkRepository.save(link), token);
+        return toDto(linkRepository.save(link));
     }
 
     @Transactional
-    public void revoke(Long projectId, Long linkId, User requester) {
+    public void clear(Long projectId, User requester) {
         accessGuard.getOwnedProject(projectId, requester);
-        ProjectShareLink link = linkRepository.findByIdAndProjectIdForUpdate(linkId, projectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Share link not found"));
-        if (link.getRevokedAt() == null) revoke(link);
+        linkRepository.findActiveForUpdate(projectId).ifPresent(this::revoke);
     }
 
     @Transactional
@@ -109,8 +119,8 @@ public class ProjectShareLinkService {
         memberService.notifyRevoked(userIds, link.getProject().getId());
     }
 
-    private ShareLinkDTO toDto(ProjectShareLink link, String token) {
-        return new ShareLinkDTO(link.getId(), link.getRole().name(), link.getCreatedAt(), link.getExpiresAt(),
-                link.getLastUsedAt(), link.getUseCount(), token);
+    private ShareLinkDTO toDto(ProjectShareLink link) {
+        return new ShareLinkDTO(link.getRole().name(), link.getCreatedAt(), link.getLastUsedAt(), link.getUseCount(),
+                cipher.convertToEntityAttribute(link.getTokenCiphertext()));
     }
 }

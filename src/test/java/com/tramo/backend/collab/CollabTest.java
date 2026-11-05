@@ -305,4 +305,22 @@ class CollabTest extends AbstractIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("SELECT c.extraction_epoch FROM item i JOIN item_content c ON c.id = i.content_id WHERE i.id = ?", Integer.class, item)).isEqualTo(1);
         load(item).andExpect(jsonPath("$.state").doesNotExist());
     }
+
+    @Test
+    void downgradingTheShareLinkRevokesSessionsOfMembersWhoJoinedThroughIt() throws Exception {
+        User owner = createUser("collabowner11");
+        User guest = createUser("collabguest11");
+        Project project = createProject(owner, "Shared", "private");
+        String token = MAPPER.readTree(mockMvc.perform(put("/api/project/" + pid(project) + "/share-link")
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"EDITOR\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("token").asString();
+        mockMvc.perform(post("/api/share-links/accept").header("Authorization", bearer(guest))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"token\":\"" + token + "\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/project/" + pid(project) + "/share-link")
+                        .header("Authorization", bearer(owner)).contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"VIEWER\"}"))
+                .andExpect(status().isOk());
+        verify(collabClient).revokeAfterCommit(guest.getId());
+    }
 }

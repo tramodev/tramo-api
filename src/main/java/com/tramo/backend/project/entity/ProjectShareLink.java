@@ -26,6 +26,9 @@ public class ProjectShareLink {
     @Column(unique = true, nullable = false, length = 64)
     private String tokenHash;
 
+    @Column(columnDefinition = "TEXT")
+    private String tokenCiphertext;
+
     @Enumerated(EnumType.STRING)
     private ProjectRole role;
 

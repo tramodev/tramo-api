@@ -4,4 +4,4 @@ package com.tramo.backend.project.dto;
 
 import java.util.Date;
 
-public record ShareLinkDTO(Long id, String role, Date createdAt, Date expiresAt, Date lastUsedAt, int useCount, String token) {}
+public record ShareLinkDTO(String role, Date createdAt, Date lastUsedAt, int useCount, String token) {}

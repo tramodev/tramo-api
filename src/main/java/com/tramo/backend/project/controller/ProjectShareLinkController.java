@@ -11,10 +11,10 @@ import com.tramo.backend.project.service.ProjectShareLinkService;
 import com.tramo.backend.user.entity.User;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -27,20 +27,21 @@ public class ProjectShareLinkController {
         this.links = links; this.codec = codec;
     }
 
-    @GetMapping("/project/{id}/share-links")
-    public List<ShareLinkDTO> list(@PathVariable String id, @AuthenticationPrincipal User user) {
-        return links.list(codec.decode(id), user);
+    @GetMapping("/project/{id}/share-link")
+    public ResponseEntity<ShareLinkDTO> get(@PathVariable String id, @AuthenticationPrincipal User user) {
+        ShareLinkDTO link = links.get(codec.decode(id), user);
+        return link == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(link);
     }
 
-    @PostMapping("/project/{id}/share-links")
-    public ShareLinkDTO create(@PathVariable String id, @Valid @RequestBody ShareLinkRequest request, @AuthenticationPrincipal User user) {
-        return links.create(codec.decode(id), ProjectRole.valueOf(request.role()), request.expiresAt(), user);
+    @PutMapping("/project/{id}/share-link")
+    public ShareLinkDTO set(@PathVariable String id, @Valid @RequestBody ShareLinkRequest request, @AuthenticationPrincipal User user) {
+        return links.set(codec.decode(id), ProjectRole.valueOf(request.role()), user);
     }
 
-    @DeleteMapping("/project/{id}/share-links/{linkId}")
+    @DeleteMapping("/project/{id}/share-link")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void revoke(@PathVariable String id, @PathVariable Long linkId, @AuthenticationPrincipal User user) {
-        links.revoke(codec.decode(id), linkId, user);
+    public void clear(@PathVariable String id, @AuthenticationPrincipal User user) {
+        links.clear(codec.decode(id), user);
     }
 
     @PostMapping("/share-links/accept")
