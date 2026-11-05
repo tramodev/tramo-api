@@ -1,5 +1,6 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ContentLimits;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -40,15 +41,16 @@ public class ProjectVersionService {
     private final ObjectMapper mapper;
     private final SubscriptionService subscriptions;
     private final EntityManager em;
+    private final CollabClient collab;
 
     public ProjectVersionService(AccessGuard access, ProjectVersionCapture capture, ProjectVersionRepository versions,
             ItemRepository items, TrailRepository trails, TrailItemRepository memberships,
             ItemImageReferenceRepository references, EditorImageService images, ImageDeletionQueue deletion,
-            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em) {
+            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em, CollabClient collab) {
         this.access = access; this.capture = capture; this.versions = versions; this.items = items;
         this.trails = trails; this.memberships = memberships; this.references = references; this.images = images;
         this.deletion = deletion; this.r2 = r2; this.limits = limits; this.tags = tags; this.mapper = mapper;
-        this.subscriptions = subscriptions; this.em = em;
+        this.subscriptions = subscriptions; this.em = em; this.collab = collab;
     }
 
     public record History(List<ProjectVersionSummaryDTO> versions, Long nextCursor, boolean unavailable) {}
@@ -79,6 +81,7 @@ public class ProjectVersionService {
         for (var item : data.items()) ContentLimits.assertPreservedEditorNote(item.content());
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
         List<Item> current = items.findForExport(id);
+        collab.resetAfterCommit(current.stream().map(Item::getId).toList());
         Map<Long, Item> currentById = current.stream().collect(Collectors.toMap(Item::getId, i -> i));
         Set<Long> shared = em.createQuery("select distinct ti.item.id from TrailItem ti where ti.item.id in :ids and ti.trail.project.id <> :project", Long.class)
                 .setParameter("ids", currentById.isEmpty() ? List.of(-1L) : currentById.keySet()).setParameter("project", id).getResultStream().collect(Collectors.toSet());

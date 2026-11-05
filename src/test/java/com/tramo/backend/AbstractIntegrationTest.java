@@ -80,6 +80,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("app.collab.token-secret", () -> TEST_JWT_SECRET);
         registry.add("app.collab.internal-secret", () -> TEST_COLLAB_SECRET);
+        registry.add("app.collab.sidecar-url", () -> "");
         registry.add("app.auth.refresh-derivation-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.security.token-encryption-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.google.client-id", () -> "test-client-id");

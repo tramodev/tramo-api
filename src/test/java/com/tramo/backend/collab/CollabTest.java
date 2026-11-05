@@ -3,10 +3,12 @@
 package com.tramo.backend.collab;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -18,11 +20,17 @@ import java.util.HexFormat;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class CollabTest extends AbstractIntegrationTest {
+    @MockitoBean
+    private CollabClient collabClient;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String STATE = Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
 
@@ -197,5 +205,50 @@ class CollabTest extends AbstractIntegrationTest {
                 Map.of("userId", owner.getId(), "itemId", item, "sv", "stale", "perm", "edit")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value(org.hamcrest.Matchers.contains(1, 3, 4, 5)));
+    }
+
+    @Test
+    void lostAccessRevokesCollabSessions() throws Exception {
+        User owner = createUser("collabowner7");
+        User editor = createUser("collabeditor7");
+        User viewer = createUser("collabviewer7");
+        Project project = createProject(owner, "Shared", "private");
+        addMember(owner, project, editor, "EDITOR");
+        addMember(owner, project, viewer, "VIEWER");
+
+        mockMvc.perform(patch("/api/project/" + pid(project) + "/members/" + viewer.getUsername())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"EDITOR\"}"))
+                .andExpect(status().isOk());
+        verify(collabClient, never()).revokeAfterCommit(viewer.getId());
+        mockMvc.perform(patch("/api/project/" + pid(project) + "/members/" + editor.getUsername())
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"VIEWER\"}"))
+                .andExpect(status().isOk());
+        verify(collabClient).revokeAfterCommit(editor.getId());
+        mockMvc.perform(delete("/api/project/" + pid(project) + "/members/" + viewer.getUsername())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+        verify(collabClient).revokeAfterCommit(viewer.getId());
+    }
+
+    @Test
+    void restoreResetsNotesItDeletes() throws Exception {
+        User owner = createUser("collabowner8");
+        Project project = createProject(owner, "Private", "private");
+        long kept = createItem(owner, project);
+        long version = MAPPER.readTree(mockMvc.perform(post("/api/project/" + pid(project) + "/history")
+                        .header("Authorization", bearer(owner)).header("X-Project-Epoch", "0")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("id").asLong();
+        long removed = createItem(owner, project);
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/history/" + version + "/restore")
+                        .header("Authorization", bearer(owner)).header("X-Project-Epoch", "0"))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM item WHERE id = ?", Long.class, removed)).isZero();
+        verify(collabClient).resetAfterCommit(argThat(ids -> ids.contains(kept) && ids.contains(removed)));
     }
 }

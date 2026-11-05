@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
@@ -36,17 +37,19 @@ public class ProjectMemberService {
     private final BlockedUserRepository blockedUserRepository;
     private final NotificationService notificationService;
     private final ProjectIdCodec codec;
+    private final CollabClient collab;
     private final int maxMembers;
 
     public ProjectMemberService(AccessGuard accessGuard, ProjectMemberRepository memberRepository, UserRepository userRepository,
                                 BlockedUserRepository blockedUserRepository, NotificationService notificationService,
-                                ProjectIdCodec codec, @Value("${app.projects.max-members:20}") int maxMembers) {
+                                ProjectIdCodec codec, CollabClient collab, @Value("${app.projects.max-members:20}") int maxMembers) {
         this.accessGuard = accessGuard;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.blockedUserRepository = blockedUserRepository;
         this.notificationService = notificationService;
         this.codec = codec;
+        this.collab = collab;
         this.maxMembers = maxMembers;
     }
 
@@ -76,6 +79,7 @@ public class ProjectMemberService {
         if (member == null) {
             member = newMember(project, target, role, requester, null);
         } else {
+            revokeIfDowngraded(member, role);
             member.setRole(role);
             member.setShareLink(null);
         }
@@ -88,6 +92,7 @@ public class ProjectMemberService {
     public ProjectMemberDTO changeRole(Long projectId, String username, ProjectRole role, User requester) {
         accessGuard.getOwnedProject(projectId, requester);
         ProjectMember member = findMember(projectId, username);
+        revokeIfDowngraded(member, role);
         member.setRole(role);
         return toDto(memberRepository.save(member));
     }
@@ -126,7 +131,16 @@ public class ProjectMemberService {
 
     void notifyRevoked(List<Long> userIds, Long projectId) {
         Map<String, String> payload = Map.of("projectId", codec.encode(projectId));
-        userIds.forEach(id -> notificationService.sendEvent(id, ACCESS_REVOKED_EVENT, payload));
+        userIds.forEach(id -> {
+            notificationService.sendEvent(id, ACCESS_REVOKED_EVENT, payload);
+            collab.revokeAfterCommit(id);
+        });
+    }
+
+    private void revokeIfDowngraded(ProjectMember member, ProjectRole role) {
+        if (member.getRole().atLeast(ProjectRole.EDITOR) && !role.atLeast(ProjectRole.EDITOR)) {
+            collab.revokeAfterCommit(member.getUser().getId());
+        }
     }
 
     private ProjectMember findMember(Long projectId, String username) {

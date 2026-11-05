@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.notification.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.common.Pagination;
 import com.tramo.backend.common.SafeLog;
@@ -54,11 +55,13 @@ public class NotificationService {
     private final Map<Long, CopyOnWriteArrayList<Connection>> emitters = new ConcurrentHashMap<>();
     private final long sseTimeoutMs;
     private final UserRepository userRepository;
+    private final CollabClient collab;
 
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
                                 @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs,
-                                UserRepository userRepository) {
+                                UserRepository userRepository, CollabClient collab) {
         this.notificationRepository = notificationRepository;
+        this.collab = collab;
         this.projectIdCodec = projectIdCodec;
         this.sseTimeoutMs = sseTimeoutMs;
         this.userRepository = userRepository;
@@ -209,6 +212,7 @@ public class NotificationService {
     }
 
     public void revokeSessionsAfterCommit(Long userId) {
+        collab.revokeAfterCommit(userId);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
