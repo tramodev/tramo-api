@@ -541,4 +541,14 @@ class QueryCountTest extends AbstractIntegrationTest {
         assertThat(largeCount).isEqualTo(smallCount);
     }
 
+    @Test
+    void collabDocumentLoadUsesConstantQueries() throws Exception {
+        User owner = createUser("qccollabload");
+        Project project = createProject(owner, "Collab", "private");
+        long trail = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\"}");
+        long item = postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"Note\"}");
+        long count = queryCount(() -> mockMvc.perform(get("/internal/collab/items/" + item).header("X-Collab-Secret", TEST_COLLAB_SECRET))
+                .andExpect(status().isOk()));
+        assertThat(count).isLessThanOrEqualTo(2);
+    }
 }

@@ -80,6 +80,14 @@ public class RateLimitFilter implements Filter {
             }
         }
 
+        if ("POST".equals(req.getMethod()) && "/api/collab/token".equals(path)) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User user) {
+                Bucket bucket = rateLimiterService.resolveBucket("user:collab-token:" + user.getId(), 30, 30, Duration.ofMinutes(1));
+                if (!tryConsumeOrReject(bucket, res)) return;
+            }
+        }
+
         if ((MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/(members|membership|share-links)(/.*)?"))
                 || ("POST".equals(req.getMethod()) && "/api/share-links/accept".equals(path))) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();

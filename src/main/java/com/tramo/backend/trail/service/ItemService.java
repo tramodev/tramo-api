@@ -48,6 +48,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -489,17 +490,24 @@ public class ItemService {
     private Item getOwnedItem(Long id, User requester, ProjectRole min) {
         Item item = itemRepository.findByIdWithProject(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        List<Project> projects = item.getProject() != null
-                ? List.of(item.getProject())
-                : trailItemRepository.findByItemId(id).stream().map(pi -> pi.getTrail().getProject()).toList();
-        List<ProjectRole> roles = projects.stream().map(p -> accessGuard.roleOf(p, requester)).filter(Objects::nonNull).toList();
-        if (roles.isEmpty()) {
-            throw new ResourceNotFoundException("Item not found");
-        }
-        if (roles.stream().noneMatch(role -> role.atLeast(min))) {
+        if (!roleOf(item, requester).atLeast(min)) {
             throw new AccessDeniedException("Insufficient project role");
         }
         return item;
+    }
+
+    public ProjectRole roleOf(Long id, User requester) {
+        return roleOf(itemRepository.findByIdWithProject(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found")), requester);
+    }
+
+    private ProjectRole roleOf(Item item, User requester) {
+        List<Project> projects = item.getProject() != null
+                ? List.of(item.getProject())
+                : trailItemRepository.findByItemId(item.getId()).stream().map(pi -> pi.getTrail().getProject()).toList();
+        return projects.stream().map(p -> accessGuard.roleOf(p, requester)).filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
     }
 
     private ItemResponseDTO toResponse(Item item) {
