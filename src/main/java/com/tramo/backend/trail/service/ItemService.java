@@ -380,6 +380,11 @@ public class ItemService {
         int epoch = itemContent == null ? 0 : itemContent.getExtractionEpoch();
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note was restored or extracted in another session. Your changes were kept locally; reload the note before saving.");
+        applyContent(item, project, content, expectedContent);
+    }
+
+    public void applyContent(Item item, Project project, String content, String expectedContent) {
+        ItemContent itemContent = item.getContent();
         String previousContent = itemContent != null ? itemContent.getContent() : null;
         LexicalContent.validateUpdate(content, previousContent);
         content = LexicalContent.sanitizeLinks(content);
