@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.trail.service;
 
+import com.tramo.backend.collab.repository.ItemYdocRepository;
+import com.tramo.backend.exception.CollabActiveException;
 import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
@@ -75,6 +77,7 @@ public class ItemService {
     private final EditorImageService editorImages;
     private final SubscriptionService subscriptions;
     private final ProjectVersionCapture history;
+    private final ItemYdocRepository ydocs;
 
     public ItemService(ItemRepository itemRepository, TrailItemRepository trailItemRepository,
                         TrailService trailService,
@@ -82,7 +85,7 @@ public class ItemService {
                         R2Client r2Client, PendingImageDeletionRepository pendingImageDeletionRepository,
                         ItemImageReferenceRepository itemImageReferenceRepository,
                         ImageDeletionQueue imageDeletionQueue, ObjectMapper objectMapper, EditorImageService editorImages,
-                        SubscriptionService subscriptions, ProjectVersionCapture history) {
+                        SubscriptionService subscriptions, ProjectVersionCapture history, ItemYdocRepository ydocs) {
         this.itemRepository = itemRepository;
         this.trailItemRepository = trailItemRepository;
         this.trailService = trailService;
@@ -96,6 +99,7 @@ public class ItemService {
         this.editorImages = editorImages;
         this.subscriptions = subscriptions;
         this.history = history;
+        this.ydocs = ydocs;
     }
 
     @Transactional
@@ -377,6 +381,7 @@ public class ItemService {
         Project project = history.lockItem(id, requester);
         itemRepository.lockById(id).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
+        if (ydocs.existsById(id)) throw new CollabActiveException();
         ItemContent itemContent = item.getContent();
         int epoch = itemContent == null ? 0 : itemContent.getExtractionEpoch();
         if ((extractionEpoch == null && epoch != 0) || (extractionEpoch != null && extractionEpoch != epoch))

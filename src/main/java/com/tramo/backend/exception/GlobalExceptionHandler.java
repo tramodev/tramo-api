@@ -82,6 +82,13 @@ public class GlobalExceptionHandler {
         return handled(ex, error, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(CollabActiveException.class)
+    public ResponseEntity<ErrorResponse> handleCollabActive(CollabActiveException ex) {
+        ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());
+        error.setCode("COLLAB_ACTIVE");
+        return handled(ex, error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(ExtractionConflictException.class)
     public ResponseEntity<ErrorResponse> handleExtractionConflict(ExtractionConflictException ex) {
         ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());

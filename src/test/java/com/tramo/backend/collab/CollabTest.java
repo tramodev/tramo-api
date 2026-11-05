@@ -3,6 +3,7 @@
 package com.tramo.backend.collab;
 
 import com.tramo.backend.AbstractIntegrationTest;
+import com.tramo.backend.collab.dto.CollabStoreRequest;
 import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
@@ -30,6 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CollabTest extends AbstractIntegrationTest {
     @MockitoBean
     private CollabClient collabClient;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.tramo.backend.collab.service.CollabService collab;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.tramo.backend.project.service.ProjectVersionService versions;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String STATE = Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
@@ -250,5 +255,54 @@ class CollabTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM item WHERE id = ?", Long.class, removed)).isZero();
         verify(collabClient).resetAfterCommit(argThat(ids -> ids.contains(kept) && ids.contains(removed)));
+    }
+
+    @Test
+    void restPutIsRejectedOnceNoteIsCollaborative() throws Exception {
+        User owner = createUser("collabowner9");
+        long item = createItem(owner, createProject(owner, "Private", "private"));
+
+        mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText("draft"))))
+                .andExpect(status().isNoContent());
+        store(item, owner, lexicalText("live"), 0, hash(lexicalText("draft"))).andExpect(status().isNoContent());
+        mockMvc.perform(put("/api/item/" + item + "/content").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText("late"), lexicalText("live"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("COLLAB_ACTIVE"));
+        assertThat(storedContent(item)).isEqualTo(lexicalText("live"));
+    }
+
+    @Test
+    void concurrentStoreAndRestoreSerialize() throws Exception {
+        User owner = createUser("collabowner10");
+        Project project = createProject(owner, "Private", "private");
+        long item = createItem(owner, project);
+        store(item, owner, lexicalText("before"), 0, hash("")).andExpect(status().isNoContent());
+        var version = versions.create(project.getId(), null, owner);
+        store(item, owner, lexicalText("after"), 0, null).andExpect(status().isNoContent());
+
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var latch = new java.util.concurrent.CountDownLatch(1);
+            var storing = pool.submit(() -> {
+                latch.await();
+                try {
+                    collab.store(item, new CollabStoreRequest(new byte[]{9}, lexicalText("racing"), 0, owner.getId(), null));
+                    return true;
+                } catch (com.tramo.backend.exception.ExtractionConflictException restoredFirst) {
+                    return false;
+                }
+            });
+            var restoring = pool.submit(() -> { latch.await(); return versions.restore(project.getId(), version.id(), owner); });
+            latch.countDown();
+            storing.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            restoring.get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(storedContent(item)).isEqualTo(lexicalText("before"));
+        assertThat(jdbcTemplate.queryForObject("SELECT c.extraction_epoch FROM item i JOIN item_content c ON c.id = i.content_id WHERE i.id = ?", Integer.class, item)).isEqualTo(1);
+        load(item).andExpect(jsonPath("$.state").doesNotExist());
     }
 }
