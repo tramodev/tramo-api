@@ -10,6 +10,7 @@ import com.tramo.backend.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -264,6 +265,38 @@ class CollabTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM item WHERE id = ?", Long.class, removed)).isZero();
         verify(collabClient).resetAfterCommit(argThat(ids -> ids.contains(kept) && ids.contains(removed)));
+    }
+
+    @Test
+    void restoreTellsOpenEditorsOfMembersToRefresh() throws Exception {
+        User owner = createUser("collabowner11");
+        User editor = createUser("collabeditor11");
+        Project project = createProject(owner, "Private", "private");
+        addMember(owner, project, editor, "EDITOR");
+        createItem(owner, project);
+        long version = MAPPER.readTree(mockMvc.perform(post("/api/project/" + pid(project) + "/history")
+                        .header("Authorization", bearer(owner)).header("X-Project-Epoch", "0")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("id").asLong();
+        MvcResult stream = mockMvc.perform(get("/api/notifications/stream").header("Authorization", bearer(editor)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted()).andReturn();
+
+        mockMvc.perform(post("/api/project/" + pid(project) + "/history/" + version + "/restore")
+                        .header("Authorization", bearer(owner)).header("X-Project-Epoch", "0"))
+                .andExpect(status().isOk());
+        assertThat(stream.getResponse().getContentAsString()).contains("event:project-restored").contains(pid(project));
+    }
+
+    @Test
+    void storeReturnsTheContentWhenUnsafeLinksWereRemoved() throws Exception {
+        User owner = createUser("collabowner12");
+        Project project = createProject(owner, "Private", "private");
+        long item = createItem(owner, project);
+        String unsafe = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"link\",\"url\":\"javascript:alert(1)\",\"children\":[{\"type\":\"text\",\"text\":\"label\"}]}]}]}}";
+        String body = store(item, owner, unsafe, 0, hash("")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String sanitized = MAPPER.readTree(body).path("content").asString();
+        assertThat(sanitized).doesNotContain("javascript").contains("label");
+        store(item, owner, sanitized, 0, null).andExpect(status().isNoContent());
     }
 
     @Test

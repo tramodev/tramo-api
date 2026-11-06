@@ -63,6 +63,7 @@ public abstract class AbstractIntegrationTest {
 
     protected static final String TEST_JWT_SECRET = "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=";
     protected static final String TEST_COLLAB_SECRET = "test-collab-secret";
+    protected static final String TEST_METRICS_SECRET = "test-metrics-secret";
     protected static final String TEST_PATREON_WEBHOOK_SECRET = "test-patreon-webhook-secret";
     protected static final String TEST_TOKEN_ENCRYPTION_KEY = "rRbqGbbP1Sfjmqi+lEZKzNlTztGZy1wcqzu9sVEgEAU=";
 
@@ -80,6 +81,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("app.collab.token-secret", () -> TEST_JWT_SECRET);
         registry.add("app.collab.internal-secret", () -> TEST_COLLAB_SECRET);
+        registry.add("app.metrics.secret", () -> TEST_METRICS_SECRET);
         registry.add("app.collab.sidecar-url", () -> "");
         registry.add("app.auth.refresh-derivation-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.security.token-encryption-key", () -> TEST_TOKEN_ENCRYPTION_KEY);

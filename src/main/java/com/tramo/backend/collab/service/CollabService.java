@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.collab.service;
 
+import com.tramo.backend.common.LexicalContent;
 import com.tramo.backend.collab.dto.CollabDocumentDTO;
 import com.tramo.backend.collab.dto.CollabSessionDTO;
 import com.tramo.backend.collab.dto.CollabStoreRequest;
@@ -63,7 +64,7 @@ public class CollabService {
     }
 
     @Transactional
-    public void store(Long itemId, CollabStoreRequest request) {
+    public String store(Long itemId, CollabStoreRequest request) {
         ContentLimits.assertNote(request.content());
         User author = users.findById(request.authorId()).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         Project project = history.lockItem(itemId, author);
@@ -78,11 +79,13 @@ public class CollabService {
         if (request.bootstrapHash() == null ? ydoc == null : ydoc != null || !request.bootstrapHash().equals(hash(content(item))))
             throw new ExtractionConflictException("This note changed while it was opening.");
         itemService.applyContent(item, project, request.content(), null);
+        String sanitized = LexicalContent.sanitizeLinks(request.content());
         if (ydoc == null) ydoc = ydocs.findById(itemId).orElseGet(() -> new ItemYdoc(itemId));
         ydoc.setState(request.state());
         ydoc.setExtractionEpoch(epoch);
         ydoc.setUpdatedAt(new Date());
         ydocs.save(ydoc);
+        return sanitized.equals(request.content()) ? null : sanitized;
     }
 
     @Transactional

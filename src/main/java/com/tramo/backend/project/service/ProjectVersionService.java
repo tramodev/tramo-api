@@ -42,15 +42,16 @@ public class ProjectVersionService {
     private final SubscriptionService subscriptions;
     private final EntityManager em;
     private final CollabClient collab;
+    private final ProjectMemberService members;
 
     public ProjectVersionService(AccessGuard access, ProjectVersionCapture capture, ProjectVersionRepository versions,
             ItemRepository items, TrailRepository trails, TrailItemRepository memberships,
             ItemImageReferenceRepository references, EditorImageService images, ImageDeletionQueue deletion,
-            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em, CollabClient collab) {
+            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em, CollabClient collab, ProjectMemberService members) {
         this.access = access; this.capture = capture; this.versions = versions; this.items = items;
         this.trails = trails; this.memberships = memberships; this.references = references; this.images = images;
         this.deletion = deletion; this.r2 = r2; this.limits = limits; this.tags = tags; this.mapper = mapper;
-        this.subscriptions = subscriptions; this.em = em; this.collab = collab;
+        this.subscriptions = subscriptions; this.em = em; this.collab = collab; this.members = members;
     }
 
     public record History(List<ProjectVersionSummaryDTO> versions, Long nextCursor, boolean unavailable) {}
@@ -82,6 +83,7 @@ public class ProjectVersionService {
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
         List<Item> current = items.findForExport(id);
         collab.resetAfterCommit(current.stream().map(Item::getId).toList());
+        members.notifyRestored(project);
         Map<Long, Item> currentById = current.stream().collect(Collectors.toMap(Item::getId, i -> i));
         Set<Long> shared = em.createQuery("select distinct ti.item.id from TrailItem ti where ti.item.id in :ids and ti.trail.project.id <> :project", Long.class)
                 .setParameter("ids", currentById.isEmpty() ? List.of(-1L) : currentById.keySet()).setParameter("project", id).getResultStream().collect(Collectors.toSet());

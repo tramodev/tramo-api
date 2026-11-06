@@ -7,10 +7,11 @@ import com.tramo.backend.collab.dto.CollabSessionDTO;
 import com.tramo.backend.collab.dto.CollabStoreRequest;
 import com.tramo.backend.collab.service.CollabService;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/internal/collab")
@@ -28,11 +29,11 @@ public class CollabInternalController {
     }
 
     @PutMapping("/items/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void store(@PathVariable Long id, @Valid @RequestBody CollabStoreRequest request,
-                      @RequestHeader(value = "X-Collab-Secret", required = false) String secret) {
+    public ResponseEntity<Map<String, String>> store(@PathVariable Long id, @Valid @RequestBody CollabStoreRequest request,
+                                                     @RequestHeader(value = "X-Collab-Secret", required = false) String secret) {
         collab.assertInternal(secret);
-        collab.store(id, request);
+        String sanitized = collab.store(id, request);
+        return sanitized == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(Map.of("content", sanitized));
     }
 
     @PostMapping("/check")

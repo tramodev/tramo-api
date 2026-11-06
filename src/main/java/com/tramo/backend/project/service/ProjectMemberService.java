@@ -30,6 +30,7 @@ import java.util.Map;
 @Service
 public class ProjectMemberService {
     public static final String ACCESS_REVOKED_EVENT = "access-revoked";
+    public static final String PROJECT_RESTORED_EVENT = "project-restored";
 
     private final AccessGuard accessGuard;
     private final ProjectMemberRepository memberRepository;
@@ -127,6 +128,13 @@ public class ProjectMemberService {
         member.setShareLink(shareLink);
         member.setCreatedAt(new Date());
         return member;
+    }
+
+    public void notifyRestored(Project project) {
+        Map<String, String> payload = Map.of("projectId", codec.encode(project.getId()));
+        notificationService.sendEvent(project.getOwner().getId(), PROJECT_RESTORED_EVENT, payload);
+        memberRepository.findWithUserByProjectId(project.getId())
+                .forEach(member -> notificationService.sendEvent(member.getUser().getId(), PROJECT_RESTORED_EVENT, payload));
     }
 
     void notifyRevoked(List<Long> userIds, Long projectId) {
