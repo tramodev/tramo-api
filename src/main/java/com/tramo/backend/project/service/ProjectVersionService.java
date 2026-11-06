@@ -1,5 +1,6 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ContentLimits;
 
 import com.tramo.backend.exception.ResourceNotFoundException;
@@ -40,28 +41,30 @@ public class ProjectVersionService {
     private final ObjectMapper mapper;
     private final SubscriptionService subscriptions;
     private final EntityManager em;
+    private final CollabClient collab;
+    private final ProjectMemberService members;
 
     public ProjectVersionService(AccessGuard access, ProjectVersionCapture capture, ProjectVersionRepository versions,
             ItemRepository items, TrailRepository trails, TrailItemRepository memberships,
             ItemImageReferenceRepository references, EditorImageService images, ImageDeletionQueue deletion,
-            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em) {
+            R2Client r2, SnapshotLimits limits, TagService tags, ObjectMapper mapper, SubscriptionService subscriptions, EntityManager em, CollabClient collab, ProjectMemberService members) {
         this.access = access; this.capture = capture; this.versions = versions; this.items = items;
         this.trails = trails; this.memberships = memberships; this.references = references; this.images = images;
         this.deletion = deletion; this.r2 = r2; this.limits = limits; this.tags = tags; this.mapper = mapper;
-        this.subscriptions = subscriptions; this.em = em;
+        this.subscriptions = subscriptions; this.em = em; this.collab = collab; this.members = members;
     }
 
     public record History(List<ProjectVersionSummaryDTO> versions, Long nextCursor, boolean unavailable) {}
     public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot) {}
 
     public History list(Long id, Long beforeId, User user) {
-        Project project = access.getOwnedProject(id, user);
+        Project project = access.getProject(id, user, ProjectRole.VIEWER);
         var rows = versions.summaries(id, beforeId, PageRequest.of(0, 21));
         return new History(rows.stream().limit(20).toList(), rows.size() > 20 ? rows.get(19).id() : null, project.isHistoryUnavailable());
     }
 
     public Detail detail(Long id, Long versionId, User user) {
-        access.getOwnedProject(id, user);
+        access.getProject(id, user, ProjectRole.VIEWER);
         ProjectVersion version = version(id, versionId);
         return new Detail(summary(version, user), capture.read(version.getSnapshot()));
     }
@@ -79,6 +82,8 @@ public class ProjectVersionService {
         for (var item : data.items()) ContentLimits.assertPreservedEditorNote(item.content());
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
         List<Item> current = items.findForExport(id);
+        collab.resetAfterCommit(current.stream().map(Item::getId).toList());
+        members.notifyRestored(project);
         Map<Long, Item> currentById = current.stream().collect(Collectors.toMap(Item::getId, i -> i));
         Set<Long> shared = em.createQuery("select distinct ti.item.id from TrailItem ti where ti.item.id in :ids and ti.trail.project.id <> :project", Long.class)
                 .setParameter("ids", currentById.isEmpty() ? List.of(-1L) : currentById.keySet()).setParameter("project", id).getResultStream().collect(Collectors.toSet());
@@ -107,7 +112,7 @@ public class ProjectVersionService {
             if (shared.contains(item.getId())) {
                 item.setProject(null);
             } else {
-                deletion.queueItemImages(item.getId(), user.getId());
+                deletion.queueItemImages(item.getId(), project.getOwner().getId());
                 references.deleteByItemId(item.getId());
                 items.delete(item);
             }
@@ -141,17 +146,17 @@ public class ProjectVersionService {
             for (String url : urls) {
                 ItemImageReference reference = new ItemImageReference(); reference.setItem(item); reference.setUrl(url); references.save(reference);
             }
-            for (String url : old) if (!urls.contains(url)) deletion.queue(url, user.getId());
+            for (String url : old) if (!urls.contains(url)) deletion.queue(url, project.getOwner().getId());
         }
         String oldThumbnail = project.getThumbnailImageUrl();
         project.setTitle(data.title()); project.setDescription(data.description()); project.setGraphColors(data.graphColors());
         project.setThumbnailType(data.thumbnailType()); project.setThumbnailImageUrl(data.thumbnailImageUrl());
         tags.applyProjectTags(project, data.tags(), user.getId());
-        if (oldThumbnail != null && !Objects.equals(oldThumbnail, data.thumbnailImageUrl())) deletion.queue(oldThumbnail, user.getId());
+        if (oldThumbnail != null && !Objects.equals(oldThumbnail, data.thumbnailImageUrl())) deletion.queue(oldThumbnail, project.getOwner().getId());
         project.setRestoreEpoch(project.getRestoreEpoch() + 1);
         project.setLastEditedDate(new Date()); project.setModifiedDate(new Date()); project.setHistoryUnavailable(false);
         em.flush();
-        subscriptions.assertUploadAllowed(user, 0, subscriptions.isSupporter(user));
+        subscriptions.assertUploadAllowed(project.getOwner(), 0, subscriptions.isSupporter(project.getOwner()));
         return project.getRestoreEpoch();
     }
 

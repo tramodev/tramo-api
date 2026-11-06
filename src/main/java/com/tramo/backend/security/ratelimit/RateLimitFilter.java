@@ -22,6 +22,7 @@ import java.util.Set;
 public class RateLimitFilter implements Filter {
 
     private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "DELETE", "PATCH");
+    private static final Set<String> COLLAB_TOKEN_PATHS = Set.of("/api/collab/token", "/api/collab/project-token");
     private static final Set<String> TIGHT_TIER_PATHS = Set.of(
             "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign",
             "/api/subscription/patreon/sync", "/api/project/draft-commit"
@@ -57,6 +58,11 @@ public class RateLimitFilter implements Filter {
         String ip = clientIp.from(req);
         String path = req.getRequestURI();
 
+        if ("POST".equals(req.getMethod()) && "/api/public/share-links/project".equals(path)) {
+            Bucket bucket = rateLimiterService.resolveBucket(ip + ":share-view", 30, 30, Duration.ofMinutes(1));
+            if (!tryConsumeOrReject(bucket, res)) return;
+        }
+
         if (path.startsWith("/api/public/") && path.endsWith("/editor-images/resolve")) {
             Bucket bucket = rateLimiterService.resolveBucket(ip + ":image-resolve", 120, 120, Duration.ofMinutes(1));
             if (!tryConsumeOrReject(bucket, res)) return;
@@ -76,6 +82,23 @@ public class RateLimitFilter implements Filter {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
                 Bucket bucket = rateLimiterService.resolveBucket("user:fork:" + user.getId(), 10, 10, Duration.ofMinutes(1));
+                if (!tryConsumeOrReject(bucket, res)) return;
+            }
+        }
+
+        if ("POST".equals(req.getMethod()) && COLLAB_TOKEN_PATHS.contains(path)) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User user) {
+                Bucket bucket = rateLimiterService.resolveBucket("user:collab-token:" + user.getId(), 120, 120, Duration.ofMinutes(1));
+                if (!tryConsumeOrReject(bucket, res)) return;
+            }
+        }
+
+        if ((MUTATING_METHODS.contains(req.getMethod()) && path.matches("/api/project/[^/]+/(members|membership|share-link)(/.*)?"))
+                || ("POST".equals(req.getMethod()) && "/api/share-links/accept".equals(path))) {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof User user) {
+                Bucket bucket = rateLimiterService.resolveBucket("user:sharing:" + user.getId(), 10, 10, Duration.ofMinutes(1));
                 if (!tryConsumeOrReject(bucket, res)) return;
             }
         }
@@ -121,7 +144,8 @@ public class RateLimitFilter implements Filter {
             if (bucket != null && !tryConsumeOrReject(bucket, res)) {
                 return;
             }
-        } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?"))) && !path.startsWith("/api/admin/")) {
+        } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?")))
+                && !path.startsWith("/api/admin/") && !COLLAB_TOKEN_PATHS.contains(path)) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
                 boolean historyRead = "GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?");

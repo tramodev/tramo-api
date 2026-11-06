@@ -4,6 +4,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.ProjectExportException;
 import com.tramo.backend.project.dto.ProjectExportDTO;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.trail.entity.*;
 import com.tramo.backend.trail.repository.*;
 import com.tramo.backend.upload.PrivateImageStorage;
@@ -58,7 +59,7 @@ public class ProjectExportService {
     private record Snapshot(ProjectExportDTO data, List<Resource> resources) {}
 
     public Path prepare(Long projectId, User requester) throws IOException {
-        access.getOwnedProject(projectId, requester);
+        access.getProject(projectId, requester, ProjectRole.VIEWER);
         if (!preparations.tryAcquire()) throw new ProjectExportException(429, "EXPORT_BUSY", "Project exports are busy. Please try again shortly.");
         Path archive = null;
         boolean complete = false;
@@ -107,7 +108,7 @@ public class ProjectExportService {
     }
 
     private Snapshot capture(Long projectId, User requester) {
-        Project project = access.getOwnedProject(projectId, requester);
+        Project project = access.getProject(projectId, requester, ProjectRole.VIEWER);
         var size = items.exportSize(projectId);
         if (size.getItems() > 5000 || size.getBytes() > 8L * 1024 * 1024 || steps.countByTrailProjectId(projectId) > 20000 || trails.countByProjectId(projectId) > 2000) throw ProjectExportException.tooLarge();
         List<Item> found = items.findForExport(projectId);

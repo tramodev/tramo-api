@@ -50,14 +50,25 @@ public class ProjectVersionCapture {
     }
 
     public Project lock(Long id, User user) {
-        subscriptions.lockStorage(user);
-        return lockProject(id, user);
+        return lock(id, user, ProjectRole.EDITOR);
+    }
+
+    public Project lock(Long id, User user, ProjectRole min) {
+        return lockProject(id, user, min);
     }
 
     private Project lockProject(Long id, User user) {
+        return lockProject(id, user, ProjectRole.EDITOR);
+    }
+
+    private Project lockProject(Long id, User user, ProjectRole min) {
+        em.flush();
+        List<Long> owners = jdbc.queryForList("SELECT user_id FROM project WHERE id = ?", Long.class, id);
+        if (owners.isEmpty()) throw new ResourceNotFoundException("Project not found");
+        subscriptions.lockStorage(em.getReference(User.class, owners.get(0)));
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
-        access.getOwnedProject(id, user);
+        access.assertRole(project, user, min);
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes && attributes.getRequest().getRequestURI().startsWith("/api/")) {
             String supplied = attributes.getRequest().getHeader("X-Project-Epoch");
             if (supplied == null && project.getRestoreEpoch() == 0) return project;
@@ -68,7 +79,6 @@ public class ProjectVersionCapture {
     }
 
     public Project lockItem(Long id, User user) {
-        subscriptions.lockStorage(user);
         em.flush();
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String context = attributes.getRequest().getHeader("X-Project-Id");
@@ -79,13 +89,12 @@ public class ProjectVersionCapture {
                 return project;
             }
         }
-        List<Long> ids = jdbc.queryForList("SELECT COALESCE(i.project_id, (SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id WHERE ti.item_id = i.id AND p.user_id = ? ORDER BY t.project_id LIMIT 1)) FROM item i WHERE i.id = ?", Long.class, user.getId(), id);
+        List<Long> ids = jdbc.queryForList("SELECT COALESCE(i.project_id, (SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id WHERE ti.item_id = i.id AND (p.user_id = ? OR EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = p.id AND m.user_id = ? AND m.role = 'EDITOR')) ORDER BY t.project_id LIMIT 1)) FROM item i WHERE i.id = ?", Long.class, user.getId(), user.getId(), id);
         if (ids.isEmpty() || ids.get(0) == null) throw new ResourceNotFoundException("Item not found");
         return lockProject(ids.get(0), user);
     }
 
     public Project lockTrail(Long id, User user) {
-        subscriptions.lockStorage(user);
         em.flush();
         List<Long> ids = jdbc.queryForList("SELECT project_id FROM trail WHERE id = ?", Long.class, id);
         if (ids.isEmpty()) throw new ResourceNotFoundException("Trail not found");

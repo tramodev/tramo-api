@@ -1,5 +1,6 @@
 package com.tramo.backend.notification;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.notification.repository.NotificationRepository;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.*;
 class SseConnectionLimitTest {
     private final UserRepository users = mock(UserRepository.class);
     private final NotificationService notifications = new NotificationService(mock(NotificationRepository.class),
-            mock(ProjectIdCodec.class), 1800000, users);
+            mock(ProjectIdCodec.class), 1800000, users, mock(CollabClient.class));
 
     SseConnectionLimitTest() {
         when(users.findSessionStates(any())).thenAnswer(call -> {

@@ -396,7 +396,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/project/" + pid(f.project) + "/trail/order").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
                 .contentType("application/json").content("{\"trailIds\":[" + f.trail + "]}")).andExpect(status().isConflict());
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.item + "/extract").header("Authorization", bearer(f.user)).header("X-Project-Epoch", "0")
-                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("operationId", UUID.randomUUID(), "title", "Extract", "expectedContent", lexicalText("before"), "sourceContent", lexicalText("source"), "extractedContent", lexicalText("selection"), "extractionEpoch", 1, "appendToTrail", false))))
+                .contentType("application/json").content(new tools.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("operationId", UUID.randomUUID(), "title", "Extract", "extractedContent", lexicalText("selection"), "appendToTrail", false))))
                 .andExpect(status().isConflict());
     }
 

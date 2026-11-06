@@ -19,6 +19,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -79,6 +80,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleContentConflict(ContentConflictException ex) {
         ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());
         error.setCode("CONTENT_CONFLICT");
+        return handled(ex, error, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(CollabActiveException.class)
+    public ResponseEntity<ErrorResponse> handleCollabActive(CollabActiveException ex) {
+        ErrorResponse error = new ErrorResponse(409, ex.getMessage(), LocalDateTime.now());
+        error.setCode("COLLAB_ACTIVE");
         return handled(ex, error, HttpStatus.CONFLICT);
     }
 
@@ -277,7 +285,7 @@ public class GlobalExceptionHandler {
         return handled(ex, errorResponse, HttpStatus.BAD_REQUEST);
     }
 
-    @ExceptionHandler({MethodArgumentTypeMismatchException.class, MissingServletRequestParameterException.class})
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class, MissingServletRequestParameterException.class, HandlerMethodValidationException.class})
     public ResponseEntity<ErrorResponse> handleInvalidParameter(Exception ex) {
         return handled(ex, new ErrorResponse(400, RequestErrorCode.BAD_REQUEST.getMessage(), LocalDateTime.now()), HttpStatus.BAD_REQUEST);
     }

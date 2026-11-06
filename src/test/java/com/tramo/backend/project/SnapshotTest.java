@@ -153,16 +153,17 @@ class SnapshotTest extends AbstractIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void forkOfPreviouslyPublishedUnlistedProjectUsesVisibleLiveContent(boolean missingSnapshot) throws Exception {
-        User owner = createUser("unlistedauthor");
-        User forker = createUser("unlistedforker");
+    void viewerForkOfPreviouslyPublishedProjectUsesLiveContent(boolean missingSnapshot) throws Exception {
+        User owner = createUser("memberforkauthor");
+        User forker = createUser("memberforker");
         Project project = seedProject(owner, "Published title");
         long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
                 {"title":"Trail"}""");
         long itemId = postForId(owner, "/api/trail/" + trailId + "/item", """
                 {"title":"Note"}""");
         setVisibility(owner, project, "published");
-        setVisibility(owner, project, "unlisted");
+        setVisibility(owner, project, "private");
+        addViewer(project, forker);
         if (missingSnapshot) {
             jdbcTemplate.update("delete from project_snapshot where project_id = ?", project.getId());
         }
@@ -172,17 +173,13 @@ class SnapshotTest extends AbstractIntegrationTest {
                         .content("""
                                 {"title":"Visible title"}"""))
                 .andExpect(status().isOk());
-        String content = lexicalText("Visible unlisted edit");
+        String content = lexicalText("Visible member edit");
         mockMvc.perform(put("/api/item/" + itemId + "/content")
                         .header("Authorization", bearer(owner))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(contentRequest(content)))
                 .andExpect(status().isNoContent());
 
-        mockMvc.perform(get("/api/public/project/" + pid(project)).header("Authorization", bearer(forker)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Visible title"))
-                .andExpect(jsonPath("$.trails[0].items[0].content").value(content));
         String forkId = postForProjectId(forker, "/api/project/" + pid(project) + "/fork", "");
         mockMvc.perform(get("/api/project/" + forkId).header("Authorization", bearer(forker)))
                 .andExpect(status().isOk())
@@ -206,10 +203,10 @@ class SnapshotTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void forkOfNeverPublishedUnlistedProjectUsesLiveContent() throws Exception {
+    void viewerForkOfNeverPublishedProjectUsesLiveContent() throws Exception {
         User owner = createUser("snapowner10");
         User forker = createUser("snapforker10");
-        Project project = seedProject(owner, "UnlistedOnly");
+        Project project = seedProject(owner, "PrivateOnly");
         long trailId = postForId(owner, "/api/project/" + pid(project) + "/trail", """
                 {"title":"Trail 0"}""");
         long itemId = postForId(owner, "/api/trail/" + trailId + "/item", """
@@ -219,7 +216,7 @@ class SnapshotTest extends AbstractIntegrationTest {
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(contentRequest(lexicalText("Never published content"))))
                 .andExpect(status().isNoContent());
-        setVisibility(owner, project, "unlisted");
+        addViewer(project, forker);
 
         String forkId = postForProjectId(forker, "/api/project/" + pid(project) + "/fork", "");
         long forkedItemId = firstItemIdOfFork(forkId, forker);

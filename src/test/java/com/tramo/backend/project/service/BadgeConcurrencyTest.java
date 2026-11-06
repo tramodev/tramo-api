@@ -69,8 +69,8 @@ class BadgeConcurrencyTest extends AbstractIntegrationTest {
     @Test
     void remixKingRequiresTwentyFiveDistinctForkersAcrossProjects() {
         var author = createUser("remixauthor");
-        var first = createProject(author, "First", "unlisted");
-        var second = createProject(author, "Second", "unlisted");
+        var first = createProject(author, "First", "private");
+        var second = createProject(author, "Second", "private");
         for (int i = 0; i < 25; i++) {
             var forker = createUser("remixforker" + i);
             for (var source : List.of(first, second)) {

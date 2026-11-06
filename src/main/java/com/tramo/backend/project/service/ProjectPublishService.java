@@ -13,6 +13,7 @@ import com.tramo.backend.project.dto.ProjectResponseDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotDetailDTO;
 import com.tramo.backend.project.dto.ProjectSnapshotSummaryDTO;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
@@ -70,7 +71,7 @@ public class ProjectPublishService {
 
     @Transactional
     public ProjectResponseDTO publish(Long id, User requester) {
-        Project project = history.lock(id, requester);
+        Project project = history.lock(id, requester, ProjectRole.OWNER);
         if (project.isModerationBlocked()) throw new AccessDeniedException("Publishing is blocked by moderation");
         if (project.getDescription() == null || project.getDescription().isBlank()) {
             throw new RequestValidationException(RequestErrorCode.PROJECT_DESCRIPTION_REQUIRED);
@@ -152,12 +153,12 @@ public class ProjectPublishService {
     }
 
     public List<ProjectSnapshotSummaryDTO> listSnapshots(Long id, User requester) {
-        accessGuard.getOwnedProject(id, requester);
+        accessGuard.getProject(id, requester, ProjectRole.VIEWER);
         return projectSnapshotRepository.findByProjectIdAndTriggerOrderByVersionDesc(id, "PUBLISH");
     }
 
     public ProjectSnapshotDetailDTO getSnapshotDetail(Long id, Long snapshotId, User requester) {
-        accessGuard.getOwnedProject(id, requester);
+        accessGuard.getProject(id, requester, ProjectRole.VIEWER);
         ProjectSnapshot snapshot = projectSnapshotRepository.findById(snapshotId)
                 .orElseThrow(() -> new ResourceNotFoundException("Version not found"));
         if (!snapshot.getProject().getId().equals(id)) {

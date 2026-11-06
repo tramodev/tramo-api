@@ -31,7 +31,8 @@ public class ClientIp {
         String path = request.getRequestURI();
         return !("GET".equals(request.getMethod()) && ("/actuator/health".equals(path)
                 || "/api/auth/patreon/callback".equals(path)))
-                && !("POST".equals(request.getMethod()) && "/api/webhooks/patreon".equals(path));
+                && !("POST".equals(request.getMethod()) && "/api/webhooks/patreon".equals(path))
+                && !path.startsWith("/internal/collab/");
     }
 
     public boolean isTrusted(HttpServletRequest request) {

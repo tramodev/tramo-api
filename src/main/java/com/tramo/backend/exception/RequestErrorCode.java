@@ -19,6 +19,8 @@ public enum RequestErrorCode {
     THUMBNAIL_UPLOAD_REQUIRED("Thumbnail must be a separate public upload owned by you"),
     PROJECT_TRAIL_INVALID("Trail does not belong to this project"),
     PROJECT_ITEM_INVALID("Note does not belong to this project"),
+    PROJECT_MEMBER_SELF("You already own this project"),
+    PROJECT_MEMBER_LIMIT("This project reached its member limit"),
     IMAGE_URL_INVALID("Invalid image URL"),
     BANNER_URL_INVALID("Invalid banner URL"),
     COMMENT_PARENT_INVALID("Parent comment belongs to a different project"),

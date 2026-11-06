@@ -62,6 +62,8 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected static final String TEST_JWT_SECRET = "dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQ=";
+    protected static final String TEST_COLLAB_SECRET = "test-collab-secret";
+    protected static final String TEST_METRICS_SECRET = "test-metrics-secret";
     protected static final String TEST_PATREON_WEBHOOK_SECRET = "test-patreon-webhook-secret";
     protected static final String TEST_TOKEN_ENCRYPTION_KEY = "rRbqGbbP1Sfjmqi+lEZKzNlTztGZy1wcqzu9sVEgEAU=";
 
@@ -77,6 +79,10 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("app.jwt.secret", () -> TEST_JWT_SECRET);
+        registry.add("app.collab.token-secret", () -> TEST_JWT_SECRET);
+        registry.add("app.collab.internal-secret", () -> TEST_COLLAB_SECRET);
+        registry.add("app.metrics.secret", () -> TEST_METRICS_SECRET);
+        registry.add("app.collab.sidecar-url", () -> "");
         registry.add("app.auth.refresh-derivation-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.security.token-encryption-key", () -> TEST_TOKEN_ENCRYPTION_KEY);
         registry.add("app.google.client-id", () -> "test-client-id");
@@ -273,6 +279,11 @@ public abstract class AbstractIntegrationTest {
 
     protected static String uniqueEmail() {
         return "ratetest" + IDENTITY_COUNTER.incrementAndGet() + "@example.com";
+    }
+
+    protected void addViewer(Project project, User user) {
+        jdbcTemplate.update("INSERT INTO project_member (project_id, user_id, role, created_at) VALUES (?, ?, 'VIEWER', now())",
+                project.getId(), user.getId());
     }
 
     protected Project createProject(User owner, String title, String visibility) {

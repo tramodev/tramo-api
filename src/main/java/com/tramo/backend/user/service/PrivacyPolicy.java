@@ -70,8 +70,7 @@ public class PrivacyPolicy {
     }
 
     public boolean isProjectViewable(Project project, User requester) {
-        ProjectVisibility visibility = project.getVisibility();
-        if (visibility != ProjectVisibility.UNLISTED && visibility != ProjectVisibility.PUBLISHED) {
+        if (project.getVisibility() != ProjectVisibility.PUBLISHED) {
             return false;
         }
         boolean isOwner = requester != null && project.getOwner().getId().equals(requester.getId());

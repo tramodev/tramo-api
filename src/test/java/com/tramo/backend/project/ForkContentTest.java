@@ -76,7 +76,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void forkPreservesInvalidEquationAndMusicSource() throws Exception {
         User owner = createUser("invalidforkowner");
         User forker = createUser("invalidforkreader");
-        Project source = createProject(owner, "Invalid sources", "unlisted", "Description", null);
+        Project source = createProject(owner, "Invalid sources", "private", "Description", null);
+        addViewer(source, forker);
         long trailId = createTrail(owner, source, "Trail");
         long itemId = createItem(owner, trailId, "Note");
         String content = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":\"{\"},{\"type\":\"music\",\"abc\":\"unfinished [\"}]}}";
@@ -91,7 +92,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void forkAcceptsContentFromOlderPublishedSnapshot() throws Exception {
         User owner = createUser("legacyforkowner");
         User forker = createUser("legacyforkreader");
-        Project source = createProject(owner, "Legacy", "unlisted", "Description", null);
+        Project source = createProject(owner, "Legacy", "private", "Description", null);
+        addViewer(source, forker);
         long trailId = createTrail(owner, source, "Trail");
         createItem(owner, trailId, "Note");
         publish(owner, source);
@@ -106,7 +108,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void forkFromLiveTablesCopiesItemContentAndTrailStructure() throws Exception {
         User owner = createUser("flowner3");
         User forker = createUser("flforker3");
-        Project source = createProject(owner, "Structured", "unlisted", "A description", null);
+        Project source = createProject(owner, "Structured", "private", "A description", null);
+        addViewer(source, forker);
         long trailId = createTrail(owner, source, "Chapter one");
         long itemId = createItem(owner, trailId, "Only item");
         setContent(owner, itemId, lexicalText("live body"));
@@ -198,7 +201,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void forkCopiesLooseNotes(boolean published) throws Exception {
         User owner = createUser("fsowner6");
         User forker = createUser("fsforker6");
-        Project source = createProject(owner, "Loose", "unlisted", "A description", null);
+        Project source = createProject(owner, "Loose", "private", "A description", null);
+        addViewer(source, forker);
         long trailId = createTrail(owner, source, "T");
         long filedId = createItem(owner, trailId, "Filed");
         long looseId = postForId(owner, "/api/project/" + pid(source) + "/item", """
@@ -223,7 +227,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void forkRetargetsMentionLinksToCopiedNotes(boolean published) throws Exception {
         User owner = createUser("mentionowner");
         User forker = createUser("mentionforker");
-        Project source = createProject(owner, "Linked", "unlisted", "A description", null);
+        Project source = createProject(owner, "Linked", "private", "A description", null);
+        addViewer(source, forker);
         long trailId = createTrail(owner, source, "T");
         long first = createItem(owner, trailId, "First");
         long second = createItem(owner, trailId, "Second");
@@ -287,7 +292,8 @@ class ForkContentTest extends AbstractIntegrationTest {
     void itemSharedByTwoTrailsIsCopiedOnce() throws Exception {
         User owner = createUser("fsowner8");
         User forker = createUser("fsforker8");
-        Project source = createProject(owner, "Transcluded", "unlisted", "A description", null);
+        Project source = createProject(owner, "Transcluded", "private", "A description", null);
+        addViewer(source, forker);
         long trailA = createTrail(owner, source, "A");
         long trailB = createTrail(owner, source, "B");
         long itemId = createItem(owner, trailA, "Shared");

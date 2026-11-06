@@ -16,7 +16,7 @@ class ProductionConfigurationGuardTest {
                 "app.patreon.webhook-secret", "app.jwt.secret", "app.auth.refresh-derivation-key",
                 "app.security.bff-signing-key", "app.security.token-encryption-key", "app.project-id.salt",
                 "app.r2.account-id", "app.r2.access-key", "app.r2.secret-key", "app.r2.bucket",
-                "app.r2.private-bucket", "spring.mail.password"
+                "app.r2.private-bucket", "spring.mail.password", "app.collab.token-secret", "app.collab.internal-secret"
         }) environment.setProperty(property, "configured");
         environment.setProperty("spring.datasource.url", "jdbc:postgresql://db/tramo");
         for (String property : new String[]{"app.frontend-url", "app.patreon.redirect-uri",
@@ -30,7 +30,7 @@ class ProductionConfigurationGuardTest {
     void requiresSecretsAndHttpsInProduction() {
         assertThatCode(() -> new ProductionConfigurationGuard(configured())).doesNotThrowAnyException();
         for (String property : new String[]{"app.security.bff-signing-key", "app.captcha.secret-key",
-                "app.auth.refresh-derivation-key", "spring.mail.password"}) {
+                "app.auth.refresh-derivation-key", "spring.mail.password", "app.collab.token-secret", "app.collab.internal-secret"}) {
             assertThatThrownBy(() -> new ProductionConfigurationGuard(configured().withProperty(property, " ")))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining(property);
         }

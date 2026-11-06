@@ -89,7 +89,7 @@ class PublishedSecurityTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.content[0].forkedFromProjectId").isEmpty())
                 .andExpect(jsonPath("$.content[0].forkedFromTitle").isEmpty())
                 .andExpect(jsonPath("$.content[0].forkedFromOwnerUsername").isEmpty());
-        jdbcTemplate.update("update project set visibility = 'unlisted' where id = ?", source.getId());
+        jdbcTemplate.update("update project set visibility = 'published' where id = ?", source.getId());
         mockMvc.perform(get("/api/public/project/" + forkId)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.forkedFromProjectId").value(pid(source)))
                 .andExpect(jsonPath("$.forkedFromTitle").value("Public source"))

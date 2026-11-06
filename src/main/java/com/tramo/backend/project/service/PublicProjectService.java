@@ -30,7 +30,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 public class PublicProjectService {
@@ -49,6 +48,7 @@ public class PublicProjectService {
     private final PrivacyPolicy privacyPolicy;
     private final SnapshotLimits snapshotLimits;
     private final SnapshotCapture snapshotCapture;
+    private final ProjectShareLinkService shareLinkService;
 
     public PublicProjectService(AccessGuard accessGuard, ProjectRepository projectRepository,
                                  ProjectViewRepository projectViewRepository, ProjectVoteRepository projectVoteRepository,
@@ -57,7 +57,8 @@ public class PublicProjectService {
                                  CommentRepository commentRepository, UserBadgeRepository userBadgeRepository,
                                  UserRepository userRepository, BadgeService badgeService,
                                  ProjectThumbnailResolver thumbnailResolver, ProjectIdCodec projectIdCodec,
-                                 PrivacyPolicy privacyPolicy, SnapshotLimits snapshotLimits, SnapshotCapture snapshotCapture) {
+                                 PrivacyPolicy privacyPolicy, SnapshotLimits snapshotLimits, SnapshotCapture snapshotCapture,
+                                 ProjectShareLinkService shareLinkService) {
         this.accessGuard = accessGuard;
         this.projectRepository = projectRepository;
         this.projectViewRepository = projectViewRepository;
@@ -73,6 +74,7 @@ public class PublicProjectService {
         this.privacyPolicy = privacyPolicy;
         this.snapshotLimits = snapshotLimits;
         this.snapshotCapture = snapshotCapture;
+        this.shareLinkService = shareLinkService;
     }
 
     @Transactional
@@ -89,8 +91,7 @@ public class PublicProjectService {
             projectRepository.incrementViewCount(id);
             viewCount++;
 
-            if (project.getVisibility() == ProjectVisibility.PUBLISHED
-                    && userBadgeRepository.countByUserIdAndBadgeCodeIn(
+            if (userBadgeRepository.countByUserIdAndBadgeCodeIn(
                             project.getOwner().getId(), BadgeService.VIEW_BADGE_CODES) < BadgeService.VIEW_BADGE_CODES.size()) {
                 long viewsAfter = projectRepository.sumViewCountByOwnerIdAndPublished(project.getOwner().getId());
                 if (badgeService.crossedViewBadgeThreshold(viewsAfter - 1, viewsAfter)) {
@@ -99,31 +100,37 @@ public class PublicProjectService {
             }
         }
 
-        Optional<ProjectSnapshot> snapshotOpt = project.getVisibility() == ProjectVisibility.PUBLISHED
-                ? projectSnapshotRepository.findLatestPublishByProjectId(id)
-                : Optional.empty();
+        ProjectSnapshot snapshot = projectSnapshotRepository.findLatestPublishByProjectId(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Published version unavailable; owner must publish again"));
+        return toResponse(project, requester, snapshotLimits.read(snapshot.getContent()), snapshot.getCreatedDate(), false, viewCount,
+                privacyPolicy.canFork(project.getOwner()), privacyPolicy.canComment(project.getOwner(), requester));
+    }
 
-        if (project.getVisibility() == ProjectVisibility.PUBLISHED && snapshotOpt.isEmpty()) {
-            throw new ResourceNotFoundException("Published version unavailable; owner must publish again");
-        }
-        ProjectSnapshotData data = snapshotOpt.isPresent() ? snapshotLimits.read(snapshotOpt.get().getContent())
-                : snapshotCapture.capture(id);
-        Date displayDate = snapshotOpt.isPresent() ? snapshotOpt.get().getCreatedDate() : project.getModifiedDate();
+    @Transactional
+    public PublicProjectResponseDTO getSharedProject(String token, User requester) {
+        Project project = shareLinkService.viewable(token, requester);
+        return toResponse(project, requester, snapshotCapture.capture(project.getId()), project.getModifiedDate(), true,
+                project.getViewCount(), false, false);
+    }
+
+    private PublicProjectResponseDTO toResponse(Project project, User requester, ProjectSnapshotData data, Date displayDate,
+                                                boolean live, long viewCount, boolean canFork, boolean canComment) {
+        Long id = project.getId();
         List<PublicTrailDTO> trails = data.trails().stream()
                 .map(t -> new PublicTrailDTO(
                         t.id(), t.title(), t.description(), t.version(),
                         t.forkedFromId() != null ? String.valueOf(t.forkedFromId()) : null,
-                        t.items().stream().map(item -> toPublicItem(item, snapshotOpt.isEmpty())).toList()
+                        t.items().stream().map(item -> toPublicItem(item, live)).toList()
                 ))
                 .toList();
-        List<PublicItemDTO> looseItems = data.looseItems().stream().map(item -> toPublicItem(item, snapshotOpt.isEmpty())).toList();
+        List<PublicItemDTO> looseItems = data.looseItems().stream().map(item -> toPublicItem(item, live)).toList();
 
         Project publicSource = project.getForkedFrom();
         if (publicSource != null && !privacyPolicy.isProjectViewable(publicSource, requester)) {
             publicSource = null;
         }
         return new PublicProjectResponseDTO(
-                projectIdCodec.encode(project.getId()),
+                projectIdCodec.encode(id),
                 data.title(),
                 data.description(),
                 project.getOwner().getUsername(),
@@ -143,8 +150,8 @@ public class PublicProjectService {
                 publicSource != null ? projectIdCodec.encode(publicSource.getId()) : null,
                 publicSource != null ? project.getForkedFromTitle() : null,
                 publicSource != null ? publicSource.getOwner().getUsername() : null,
-                privacyPolicy.canFork(project.getOwner()),
-                privacyPolicy.canComment(project.getOwner(), requester)
+                canFork,
+                canComment
         );
     }
 

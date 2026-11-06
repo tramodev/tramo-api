@@ -71,7 +71,9 @@ public class ProjectResponseMapper {
                 storageBytes,
                 source != null ? projectIdCodec.encode(source.getId()) : null,
                 source != null ? project.getForkedFromTitle() : null,
-                source != null ? source.getOwner().getUsername() : null
+                source != null ? source.getOwner().getUsername() : null,
+                project.getOwner().getUsername(),
+                null
         );
     }
 

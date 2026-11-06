@@ -133,7 +133,8 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     void forksCannotBypassTextQuota() throws Exception {
         User owner = createUser("forkquotaowner");
         User forker = createUser("forkquotareader");
-        Project project = createProject(owner, "Source", "unlisted", "Description", null);
+        Project project = createProject(owner, "Source", "private", "Description", null);
+        addViewer(project, forker);
         save(owner, note(owner, project), "source text").andExpect(status().isNoContent());
         reserve(forker, 8192 - 1);
         mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(forker)))
@@ -303,7 +304,8 @@ class StorageQuotaTest extends AbstractIntegrationTest {
     void forkedTrailDescriptionsCannotBypassQuota() throws Exception {
         User owner = createUser("trailforkowner");
         User forker = createUser("trailforkreader");
-        Project project = createProject(owner, "Trail fork", "unlisted");
+        Project project = createProject(owner, "Trail fork", "private");
+        addViewer(project, forker);
         postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\",\"description\":\"description\"}");
         reserve(forker, 8192 - 1);
         mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(forker)))

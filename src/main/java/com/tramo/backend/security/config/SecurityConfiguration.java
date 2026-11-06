@@ -8,6 +8,9 @@ import com.tramo.backend.security.jwt.JwtAuthFilter;
 import com.tramo.backend.security.ratelimit.RateLimitFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -39,6 +42,13 @@ public class SecurityConfiguration {
     @Autowired
     @Qualifier("handlerExceptionResolver")
     private HandlerExceptionResolver exceptionResolver;
+    @Value("${app.metrics.secret:}")
+    private String metricsSecret;
+
+    private boolean metricsAllowed(String supplied) {
+        return !metricsSecret.isBlank() && supplied != null
+                && MessageDigest.isEqual(metricsSecret.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
+    }
 
     @Bean
     public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
@@ -67,11 +77,15 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authRequest ->
                         authRequest
                                 .requestMatchers("/actuator/health").permitAll()
+                                .requestMatchers(request -> "/actuator/prometheus".equals(request.getRequestURI())
+                                        && metricsAllowed(request.getHeader("X-Metrics-Secret"))).permitAll()
+                                .requestMatchers("/actuator/**").denyAll()
                                 .requestMatchers("/api/auth/patreon/connect", "/api/auth/patreon/complete").authenticated()
                                 .requestMatchers("/api/auth/birth-date").authenticated()
                                 .requestMatchers("/api/auth/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()
                                 .requestMatchers("/api/webhooks/**").permitAll()
+                                .requestMatchers("/internal/collab/**").permitAll()
                                 .requestMatchers("/api/admin/**").hasAuthority("ADMIN")
                                 .anyRequest().authenticated()
                 )

@@ -5,6 +5,7 @@ package com.tramo.backend.user.service;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.notification.service.NotificationService;
 import com.tramo.backend.project.dto.PageResponseDTO;
+import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.user.dto.BlockResponseDTO;
 import com.tramo.backend.user.dto.BlockedUserDTO;
 import com.tramo.backend.user.entity.BlockedUser;
@@ -26,13 +27,16 @@ public class BlockedUserService {
     private final BlockedUserRepository blockedUserRepository;
     private final FollowRepository followRepository;
     private final NotificationService notificationService;
+    private final ProjectMemberRepository memberRepository;
 
     public BlockedUserService(UserRepository userRepository, BlockedUserRepository blockedUserRepository,
-                               FollowRepository followRepository, NotificationService notificationService) {
+                               FollowRepository followRepository, NotificationService notificationService,
+                               ProjectMemberRepository memberRepository) {
         this.userRepository = userRepository;
         this.blockedUserRepository = blockedUserRepository;
         this.followRepository = followRepository;
         this.notificationService = notificationService;
+        this.memberRepository = memberRepository;
     }
 
     @Transactional
@@ -57,6 +61,7 @@ public class BlockedUserService {
             blocked = true;
             followRepository.findByFollowerIdAndFollowedId(blocker.getId(), target.getId()).ifPresent(followRepository::delete);
             followRepository.findByFollowerIdAndFollowedId(target.getId(), blocker.getId()).ifPresent(followRepository::delete);
+            memberRepository.deleteBetween(blocker.getId(), target.getId());
         }
         notificationService.publishUnreadCount(blocker);
         notificationService.publishUnreadCount(target);

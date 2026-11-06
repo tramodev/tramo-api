@@ -26,7 +26,6 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
     record Fixture(User user, Project project, long trail, long other, long source, long last) {}
     static final String ORIGINAL = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"before selected after\",\"format\":3}]}]}}";
     static final String EXTRACTED = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"selected\",\"format\":3}]}]}}";
-    static final String WITHOUT_LINK = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"before  after\",\"format\":3}]}]}}";
     Fixture fixture() throws Exception {
         User user = createUser("extractowner"); Project project = createProject(user, "Notes", "PRIVATE");
         long trail = postForId(user, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Current\"}");
@@ -37,43 +36,12 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         return new Fixture(user, project, trail, other, source, last);
     }
     ExtractSelectionRequest request(Fixture f, boolean step, UUID id) {
-        String replacement = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"text\":\"before \"},{\"type\":\"link\",\"url\":\"#\",\"rel\":\"tramo-extraction:" + id + "\",\"children\":[{\"type\":\"text\",\"text\":\"Extracted\"}]},{\"type\":\"text\",\"text\":\" after\"}]}]}}";
-        return new ExtractSelectionRequest(id, "Extracted", ORIGINAL, 0, replacement, EXTRACTED, step ? f.trail : null, step ? List.of(f.source, f.last) : null, false, null);
+        return new ExtractSelectionRequest(id, "Extracted", EXTRACTED, step ? f.trail : null, step ? List.of(f.source, f.last) : null, false);
     }
     JsonNode send(Fixture f, ExtractSelectionRequest request) throws Exception {
         String response = mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return mapper.readTree(response);
-    }
-    @Test
-    void extractsWithoutReplacementLinkAndRetriesWithoutDuplicates() throws Exception {
-        Fixture f = fixture(); long count = repository.count();
-        var request = new ExtractSelectionRequest(UUID.randomUUID(), "Untitled", ORIGINAL, 0, WITHOUT_LINK, EXTRACTED,
-                f.trail, List.of(f.source, f.last), true, false);
-        JsonNode result = send(f, request); long id = result.path("item").path("id").asLong();
-        assertThat(result.path("item").path("title").asText()).isEqualTo("Untitled");
-        assertThat(result.path("sourceContent").asText()).isEqualTo(WITHOUT_LINK);
-        assertThat(result.path("extractionEpoch").asInt()).isEqualTo(1);
-        assertThat(items.getContent(id, f.user).getContent()).isEqualTo(EXTRACTED);
-        assertThat(items.getAllForTrail(f.trail, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source, f.last, id);
-        assertThat(items.getAllForTrail(f.other, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source);
-        assertThat(send(f, request).path("item").path("id").asLong()).isEqualTo(id);
-        assertThat(repository.count()).isEqualTo(count + 1);
-    }
-    @Test
-    void validatesLinkChoiceAndKeepsLegacyRequestsUnchanged() throws Exception {
-        Fixture f = fixture(); long count = repository.count();
-        var draft = request(f, false, UUID.randomUUID());
-        assertThat(mapper.readTree(mapper.writeValueAsString(draft)).has("leaveLink")).isFalse();
-        for (Boolean leaveLink : new Boolean[]{null, true, false}) {
-            var invalid = new ExtractSelectionRequest(draft.operationId(), draft.title(), ORIGINAL, 0,
-                    Boolean.FALSE.equals(leaveLink) ? draft.sourceContent() : WITHOUT_LINK, EXTRACTED, null, null, false, leaveLink);
-            mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract")
-                    .header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(invalid)))
-                    .andExpect(status().isConflict());
-        }
-        assertThat(repository.count()).isEqualTo(count);
-        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(ORIGINAL);
     }
     @Test
     void movesContentToLooseNoteKeepsSharedSourceIdentity() throws Exception {
@@ -82,11 +50,11 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         assertThat(repository.count()).isEqualTo(count + 1);
         assertThat(result.path("item").path("unfiled").asBoolean()).isTrue();
         assertThat(items.getContent(id, f.user).getContent()).isEqualTo(EXTRACTED);
-        assertThat(items.getContent(f.source, f.user).getContent()).contains("tramo-idea:" + id, "before ", " after").doesNotContain("selected");
+        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(ORIGINAL);
+        assertThat(items.getContent(f.source, f.user).getExtractionEpoch()).isZero();
         assertThat(items.getAllForTrail(f.trail, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source, f.last);
         assertThat(items.getAllForTrail(f.other, f.user)).extracting(TrailItemDTO::id).containsExactly(f.source);
         items.updateContent(id, "", f.user); items.delete(id, f.user);
-        assertThat(items.getContent(f.source, f.user).getContent()).contains("tramo-idea:" + id);
         assertThat(repository.findById(f.source)).isPresent();
     }
     @Test
@@ -101,8 +69,7 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
     @Test
     void appendsToCurrentTrailPreservesStepsAndRetriesWithoutDuplicates() throws Exception {
         Fixture f = fixture(); var draft = request(f, true, UUID.randomUUID());
-        var request = new ExtractSelectionRequest(draft.operationId(), draft.title(), draft.expectedContent(), draft.extractionEpoch(),
-                draft.sourceContent(), draft.extractedContent(), draft.trailId(), draft.expectedOrder(), true, null);
+        var request = new ExtractSelectionRequest(draft.operationId(), draft.title(), draft.extractedContent(), draft.trailId(), draft.expectedOrder(), true);
         var previous = items.getAllForTrail(f.trail, f.user).get(1);
         long count = repository.count();
         long id = send(f, request).path("item").path("id").asLong();
@@ -125,13 +92,11 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         assertThat(repository.count()).isEqualTo(count + 1); assertThat(items.getAllForTrail(f.trail, f.user)).hasSize(3);
     }
     @Test
-    void rejectsStaleSourceAndTrailWithoutCreatingAnything() throws Exception {
+    void rejectsStaleTrailWithoutCreatingAnything() throws Exception {
         Fixture f = fixture(); var request = request(f, true, UUID.randomUUID()); long count = repository.count();
         items.reorderTrailItems(f.trail, List.of(f.last, f.source), f.user);
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
-        items.updateContent(f.source, lexicalText("changed"), f.user);
-        mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
-        assertThat(repository.count()).isEqualTo(count); assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(lexicalText("changed"));
+        assertThat(repository.count()).isEqualTo(count);
     }
     @Test
     void rejectsForeignUserAndProjectAndUnsupportedSelection() throws Exception {
@@ -140,30 +105,9 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(stranger)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isNotFound());
         Project elsewhere = createProject(f.user, "Elsewhere", "PRIVATE");
         mockMvc.perform(post("/api/project/" + pid(elsewhere) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(request))).andExpect(status().isConflict());
-        var unsupported = new ExtractSelectionRequest(request.operationId(), request.title(), request.expectedContent(), 0, request.sourceContent(), "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\"}]}}", null, null, false, null);
+        var unsupported = new ExtractSelectionRequest(request.operationId(), request.title(), "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"image\"}]}}", null, null, false);
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/item/" + f.source + "/extract").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(unsupported))).andExpect(status().isConflict());
         assertThat(repository.count()).isEqualTo(count); assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(ORIGINAL);
-    }
-    @Test
-    void staleAutosaveCannotRestoreExtractedContentButSubsequentEditsCanSave() throws Exception {
-        Fixture f = fixture(); JsonNode result = send(f, request(f, false, UUID.randomUUID()));
-        mockMvc.perform(put("/api/item/" + f.source + "/content").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(Map.of("content", ORIGINAL, "expectedContent", ORIGINAL, "extractionEpoch", 0)))).andExpect(status().isConflict());
-        String confirmed = result.path("sourceContent").asText();
-        mockMvc.perform(put("/api/item/" + f.source + "/content").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(Map.of("content", confirmed, "expectedContent", confirmed, "extractionEpoch", 1)))).andExpect(status().isNoContent());
-        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(confirmed);
-        items.updateContent(f.source, lexicalText("other tab"), 1, f.user);
-        mockMvc.perform(put("/api/item/" + f.source + "/content").header("Authorization", bearer(f.user)).contentType("application/json").content(mapper.writeValueAsString(Map.of("content", confirmed, "expectedContent", confirmed, "extractionEpoch", 1)))).andExpect(status().isConflict());
-        assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(lexicalText("other tab"));
-    }
-    @Test
-    void failureAfterCreationRollsBackNewNoteAndAllSourceChanges() throws Exception {
-        Fixture f = fixture(); var request = request(f, false, UUID.randomUUID()); long count = repository.count();
-        JsonNode replacement = mapper.readTree(request.sourceContent());
-        ((tools.jackson.databind.node.ArrayNode) replacement.path("root").path("children")).add(mapper.readTree("{\"type\":\"image\",\"version\":2,\"imageId\":\"" + UUID.randomUUID() + "\"}"));
-        var missingImage = new ExtractSelectionRequest(request.operationId(), request.title(), request.expectedContent(), 0, mapper.writeValueAsString(replacement), request.extractedContent(), null, null, false, null);
-        assertThatThrownBy(() -> extracts.extract(f.project.getId(), f.source, missingImage, f.user)).isInstanceOf(RuntimeException.class);
-        assertThat(repository.count()).isEqualTo(count); assertThat(items.getContent(f.source, f.user).getContent()).isEqualTo(ORIGINAL);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM note_extraction", Long.class)).isZero();
     }
     @Test
     void rejectsAttachingSharedNotesToAnotherProject() throws Exception {
@@ -187,11 +131,8 @@ class ExtractSelectionTest extends AbstractIntegrationTest {
         JsonNode image = mapper.readTree("{\"type\":\"image\",\"version\":2,\"imageId\":\"" + imageId + "\"}");
         ((tools.jackson.databind.node.ArrayNode) original.path("root").path("children")).add(image);
         String source = mapper.writeValueAsString(original); items.updateContent(f.source, source, f.user);
-        var request = request(f, false, UUID.randomUUID()); JsonNode replacement = mapper.readTree(request.sourceContent());
-        ((tools.jackson.databind.node.ArrayNode) replacement.path("root").path("children")).add(image);
-        var withImage = new ExtractSelectionRequest(request.operationId(), request.title(), source, 0, mapper.writeValueAsString(replacement), EXTRACTED, null, null, false, null);
-        JsonNode result = send(f, withImage); long newId = result.path("item").path("id").asLong(); items.delete(newId, f.user);
-        assertThat(items.getContent(f.source, f.user).getContent()).contains(imageId.toString(), "tramo-idea:" + newId);
+        JsonNode result = send(f, request(f, false, UUID.randomUUID())); long newId = result.path("item").path("id").asLong(); items.delete(newId, f.user);
+        assertThat(items.getContent(f.source, f.user).getContent()).contains(imageId.toString());
         assertThat(images.visibleImageIds(f.project.getId(), null)).contains(imageId);
         assertThat(images.findAll(List.of(imageId)).get(0).state()).isEqualTo("READY");
     }

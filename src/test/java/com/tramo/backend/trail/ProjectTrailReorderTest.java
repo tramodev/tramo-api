@@ -28,7 +28,7 @@ class ProjectTrailReorderTest extends AbstractIntegrationTest {
 
     Fixture fixture() throws Exception {
         User owner = createUser("trailorder");
-        Project project = createProject(owner, "Ordered", "unlisted", "A description", "tag");
+        Project project = createProject(owner, "Ordered", "private", "A description", "tag");
         long first = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"First\"}");
         long second = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Second\"}");
         long third = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Third\"}");
@@ -51,7 +51,11 @@ class ProjectTrailReorderTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/editor").header("Authorization", bearer(f.owner)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.trails[*].id", contains((int) f.third, (int) f.first, (int) f.second)))
                 .andExpect(jsonPath("$.selectedTrailId").value(f.third));
-        mockMvc.perform(get("/api/public/project/" + pid(f.project)))
+        String link = mockMvc.perform(put("/api/project/" + pid(f.project) + "/share-link").header("Authorization", bearer(f.owner))
+                .contentType("application/json").content("{\"role\":\"VIEWER\"}")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        mockMvc.perform(post("/api/public/share-links/project").contentType("application/json")
+                        .content("{\"token\":\"%s\"}".formatted(com.jayway.jsonpath.JsonPath.<String>read(link, "$.token"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.trails[*].id", contains((int) f.third, (int) f.first, (int) f.second)));
         mockMvc.perform(post("/api/project/" + pid(f.project) + "/start").header("Authorization", bearer(f.owner)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.trailId").value(f.third));
@@ -93,6 +97,7 @@ class ProjectTrailReorderTest extends AbstractIntegrationTest {
     void liveAndPublishedForksKeepAuthorOrderAndPublishedOrderStaysFrozen() throws Exception {
         Fixture f = fixture();
         User reader = createUser("trailreader");
+        addViewer(f.project, reader);
         reorder(f, f.owner, List.of(f.third, f.first, f.second), 204);
         String liveFork = postForProjectId(reader, "/api/project/" + pid(f.project) + "/fork", "");
         assertThat(trails.findByProjectId(projectIdCodec.decode(liveFork))).extracting(Trail::getTitle).containsExactly("Third", "First", "Second");

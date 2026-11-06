@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.notification.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.common.Pagination;
 import com.tramo.backend.common.SafeLog;
@@ -54,11 +55,13 @@ public class NotificationService {
     private final Map<Long, CopyOnWriteArrayList<Connection>> emitters = new ConcurrentHashMap<>();
     private final long sseTimeoutMs;
     private final UserRepository userRepository;
+    private final CollabClient collab;
 
     public NotificationService(NotificationRepository notificationRepository, ProjectIdCodec projectIdCodec,
                                 @Value("${app.notifications.sse-timeout-ms:1800000}") long sseTimeoutMs,
-                                UserRepository userRepository) {
+                                UserRepository userRepository, CollabClient collab) {
         this.notificationRepository = notificationRepository;
+        this.collab = collab;
         this.projectIdCodec = projectIdCodec;
         this.sseTimeoutMs = sseTimeoutMs;
         this.userRepository = userRepository;
@@ -152,6 +155,32 @@ public class NotificationService {
         sendUnreadCount(recipient);
     }
 
+    public void sendEvent(Long userId, String name, Object data) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deliverEvent(userId, name, data);
+                }
+            });
+            return;
+        }
+        deliverEvent(userId, name, data);
+    }
+
+    private void deliverEvent(Long userId, String name, Object data) {
+        CopyOnWriteArrayList<Connection> userEmitters = emitters.get(userId);
+        if (userEmitters == null || userEmitters.isEmpty()) return;
+
+        try {
+            UserRepository.SessionState state = userRepository.findSessionStates(List.of(userId))
+                    .stream().findFirst().orElse(null);
+            sendToAll(userId, userEmitters, state, SseEmitter.event().name(name).data(data));
+        } catch (Exception failure) {
+            SafeLog.failure(log, "notification_delivery_failed", "INTERNAL_ERROR", failure);
+        }
+    }
+
     private void sendUnreadCount(User recipient) {
         CopyOnWriteArrayList<Connection> userEmitters = emitters.get(recipient.getId());
         if (userEmitters == null || userEmitters.isEmpty()) return;
@@ -183,6 +212,7 @@ public class NotificationService {
     }
 
     public void revokeSessionsAfterCommit(Long userId) {
+        collab.revokeAfterCommit(userId);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -229,12 +259,21 @@ public class NotificationService {
 
     @Transactional
     public void recordModeration(User recipient, Project project, User admin, String message) {
+        recordNotice(recipient, NotificationTypes.MODERATION, project, admin, message);
+    }
+
+    @Transactional
+    public void recordShareLinkChanged(User owner, Project project) {
+        recordNotice(owner, NotificationTypes.SHARE_LINK, project, owner, null);
+    }
+
+    private void recordNotice(User recipient, String type, Project project, User actor, String message) {
         if (recipient == null) return;
         Notification notification = new Notification();
         notification.setRecipient(recipient);
         notification.setProject(project);
-        notification.setLatestActor(admin);
-        notification.setType(NotificationTypes.MODERATION);
+        notification.setLatestActor(actor);
+        notification.setType(type);
         notification.setMessage(message);
         notification.setCreatedDate(new Date());
         notification.setUpdatedDate(notification.getCreatedDate());

@@ -16,7 +16,8 @@ public class ProductionConfigurationGuard {
                 "app.patreon.client-secret", "app.patreon.webhook-secret", "app.jwt.secret",
                 "app.auth.refresh-derivation-key", "app.security.bff-signing-key",
                 "app.security.token-encryption-key", "app.project-id.salt", "app.r2.account-id",
-                "app.r2.access-key", "app.r2.secret-key", "app.r2.bucket", "app.r2.private-bucket"
+                "app.r2.access-key", "app.r2.secret-key", "app.r2.bucket", "app.r2.private-bucket",
+                "app.collab.token-secret", "app.collab.internal-secret"
         }) {
             require(environment, property);
         }

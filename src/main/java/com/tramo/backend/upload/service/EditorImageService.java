@@ -9,6 +9,7 @@ import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.LimitExceededException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.entity.Project;
+import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectSnapshot;
 import com.tramo.backend.project.entity.ProjectVisibility;
 import com.tramo.backend.project.repository.ProjectRepository;
@@ -74,17 +75,18 @@ public class EditorImageService {
     }
 
     public EditorImagePresignResponse presign(EditorImagePresignRequest request, User user) {
-        Project project = request.projectId() == null ? null : access.getOwnedProject(codec.decode(request.projectId()), user);
+        Project project = request.projectId() == null ? null : access.getProject(codec.decode(request.projectId()), user, ProjectRole.EDITOR);
         if (request.contentBytes() > maxBytes) throw new RequestValidationException(RequestErrorCode.IMAGE_SIZE_LIMIT_EXCEEDED);
         if (!limiter.resolveBucket("upload-bytes:" + user.getId(), bytesPerHour, bytesPerHour, Duration.ofHours(1))
                 .tryConsume(request.contentBytes())) throw new LimitExceededException("Upload throughput limit reached. Try again later.");
+        User payer = project == null ? user : project.getOwner();
         EditorImage image = transactions.execute(status -> {
-            images.lockUser(user.getId());
-            subscriptions.assertUploadAllowed(user, request.contentBytes(), subscriptions.isSupporter(user));
+            images.lockUser(payer.getId());
+            subscriptions.assertUploadAllowed(payer, request.contentBytes(), subscriptions.isSupporter(payer));
             UUID imageId = UUID.randomUUID();
             UUID objectId = UUID.randomUUID();
             images.createObject(objectId, request.contentType(), request.contentBytes(), request.contentHash());
-            createImage(imageId, objectId, project, user, request.contentBytes());
+            createImage(imageId, objectId, project, payer, request.contentBytes());
             return new EditorImage(imageId, objectId, project == null ? null : project.getId(), request.contentType(), request.contentBytes(), "PENDING", request.contentHash());
         });
         return new EditorImagePresignResponse(image.id(), storage.presignUpload(image));
@@ -94,7 +96,7 @@ public class EditorImageService {
         EditorImage image = findOne(id);
         if (image.projectId() == null) {
             if (!images.isOwnedUnattached(id, user.getId())) throw missing();
-        } else access.getOwnedProject(image.projectId(), user);
+        } else access.getProject(image.projectId(), user, ProjectRole.EDITOR);
         UUID attempt = images.withObjectLock(image.objectId(), () ->
                 transactions.execute(status -> images.claimCompletion(image.objectId())));
         if (attempt == null) return;
@@ -114,8 +116,17 @@ public class EditorImageService {
     }
 
     public EditorImageResolveResponse resolve(Long projectId, EditorImageResolveRequest request, User user, boolean publicRead) {
-        Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getOwnedProject(projectId, user);
-        if (publicRead) access.assertViewable(project, user);
+        return resolve(projectId, request, user, publicRead, false);
+    }
+
+    public EditorImageResolveResponse resolveShared(Long projectId, EditorImageResolveRequest request) {
+        if (request.snapshotId() != null || request.versionId() != null) throw missing();
+        return resolve(projectId, request, null, true, true);
+    }
+
+    private EditorImageResolveResponse resolve(Long projectId, EditorImageResolveRequest request, User user, boolean publicRead, boolean shared) {
+        Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getProject(projectId, user, ProjectRole.VIEWER);
+        if (publicRead && !shared) access.assertViewable(project, user);
         Long snapshotId = request.snapshotId();
         if (request.versionId() != null) {
             if (publicRead || snapshotId != null || !images.versionBelongsTo(request.versionId(), projectId)) throw missing();
@@ -130,7 +141,7 @@ public class EditorImageService {
             ProjectSnapshot snapshot = snapshots.findById(snapshotId).orElseThrow(this::missing);
             if (!snapshot.getProject().getId().equals(projectId) || (publicRead && (!"PUBLISH".equals(snapshot.getTrigger())
                     || project.getFirstPublishedDate() == null))) throw missing();
-        } else if (publicRead && project.getVisibility() == ProjectVisibility.PUBLISHED) {
+        } else if (publicRead && !shared && project.getVisibility() == ProjectVisibility.PUBLISHED) {
             snapshotId = snapshots.findLatestPublishByProjectId(projectId)
                     .map(ProjectSnapshot::getId).orElseThrow(this::missing);
         }
