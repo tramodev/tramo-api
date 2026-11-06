@@ -7,6 +7,7 @@ import com.tramo.backend.collab.dto.CollabSessionDTO;
 import com.tramo.backend.collab.dto.CollabStoreRequest;
 import com.tramo.backend.collab.service.CollabService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,7 +38,7 @@ public class CollabInternalController {
     }
 
     @PostMapping("/check")
-    public List<Integer> check(@RequestBody List<@Valid CollabSessionDTO> sessions,
+    public List<Integer> check(@RequestBody List<@Valid @NotNull CollabSessionDTO> sessions,
                                @RequestHeader(value = "X-Collab-Secret", required = false) String secret) {
         collab.assertInternal(secret);
         return collab.check(sessions);

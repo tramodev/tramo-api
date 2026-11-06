@@ -198,6 +198,8 @@ class CollabTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$").value(org.hamcrest.Matchers.contains(2)));
         check(java.util.List.of(Map.of("userId", owner.getId(), "perm", "edit", "sv", "x")))
                 .andExpect(status().isBadRequest());
+        check(java.util.Collections.singletonList(null))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
