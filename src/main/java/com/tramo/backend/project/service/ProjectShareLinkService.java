@@ -61,13 +61,7 @@ public class ProjectShareLinkService {
         Project project = accessGuard.getOwnedProject(projectId, requester);
         ProjectShareLink link = linkRepository.findActiveForUpdate(projectId).orElse(null);
         if (link == null) {
-            String token = OpaqueToken.generate();
-            link = new ProjectShareLink();
-            link.setProject(project);
-            link.setTokenHash(OpaqueToken.hash(token));
-            link.setTokenCiphertext(cipher.convertToDatabaseColumn(token));
-            link.setCreatedBy(requester);
-            link.setCreatedAt(new Date());
+            link = newLink(project, requester);
         } else if (link.getRole() != role) {
             if (link.getRole().atLeast(ProjectRole.EDITOR) && !role.atLeast(ProjectRole.EDITOR)) {
                 memberRepository.findUserIdsByShareLinkId(link.getId()).forEach(collab::revokeAfterCommit);
@@ -79,9 +73,28 @@ public class ProjectShareLinkService {
     }
 
     @Transactional
+    public void convertUnlisted(Project project) {
+        if (linkRepository.findActiveForUpdate(project.getId()).isEmpty()) {
+            ProjectShareLink link = newLink(project, project.getOwner());
+            link.setRole(ProjectRole.VIEWER);
+            linkRepository.save(link);
+        }
+        notificationService.recordShareLinkChanged(project.getOwner(), project);
+    }
+
+    @Transactional
     public void clear(Long projectId, User requester) {
         accessGuard.getOwnedProject(projectId, requester);
         linkRepository.findActiveForUpdate(projectId).ifPresent(this::revoke);
+    }
+
+    @Transactional
+    public Project viewable(String token, User requester) {
+        ProjectShareLink link = linkRepository.findByTokenHash(OpaqueToken.hash(token))
+                .orElseThrow(() -> new ResourceNotFoundException("Share link not found"));
+        assertUsable(link, requester, new Date());
+        if (link.getRole() != ProjectRole.VIEWER) throw new ResourceNotFoundException("Share link not found");
+        return link.getProject();
     }
 
     @Transactional
@@ -91,10 +104,7 @@ public class ProjectShareLinkService {
         Project project = link.getProject();
         User owner = project.getOwner();
         Date now = new Date();
-        if (link.getRevokedAt() != null || (link.getExpiresAt() != null && !link.getExpiresAt().after(now))
-                || owner.isBanned() || blockedUserRepository.existsEitherDirection(owner.getId(), requester.getId())) {
-            throw new ResourceNotFoundException("Share link not found");
-        }
+        assertUsable(link, requester, now);
         if (!owner.getId().equals(requester.getId())) {
             ProjectMember member = memberRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).orElse(null);
             if (member == null) {
@@ -109,6 +119,25 @@ public class ProjectShareLinkService {
             link.setLastUsedAt(now);
         }
         return codec.encode(project.getId());
+    }
+
+    private ProjectShareLink newLink(Project project, User createdBy) {
+        String token = OpaqueToken.generate();
+        ProjectShareLink link = new ProjectShareLink();
+        link.setProject(project);
+        link.setTokenHash(OpaqueToken.hash(token));
+        link.setTokenCiphertext(cipher.convertToDatabaseColumn(token));
+        link.setCreatedBy(createdBy);
+        link.setCreatedAt(new Date());
+        return link;
+    }
+
+    private void assertUsable(ProjectShareLink link, User requester, Date now) {
+        User owner = link.getProject().getOwner();
+        if (link.getRevokedAt() != null || (link.getExpiresAt() != null && !link.getExpiresAt().after(now)) || owner.isBanned()
+                || (requester != null && blockedUserRepository.existsEitherDirection(owner.getId(), requester.getId()))) {
+            throw new ResourceNotFoundException("Share link not found");
+        }
     }
 
     private void revoke(ProjectShareLink link) {

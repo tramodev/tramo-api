@@ -107,7 +107,7 @@ class ProjectMemberAccessTest extends AbstractIntegrationTest {
         mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(editor))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"visibility\":\"UNLISTED\"}"))
+                        .content("{\"visibility\":\"published\"}"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/project/" + pid(project))
                         .header("Authorization", bearer(editor))

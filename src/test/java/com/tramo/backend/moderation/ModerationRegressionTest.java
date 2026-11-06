@@ -107,7 +107,7 @@ class ModerationRegressionTest extends AbstractIntegrationTest {
         project.setDescription("Description"); projectRepository.save(project);
         moderation.unpublishProject(project.getId(), admin, "Policy violation");
         mockMvc.perform(post("/api/project/" + pid(project) + "/publish").header("Authorization", bearer(owner))).andExpect(status().isForbidden());
-        for (String visibility : List.of("published", "unlisted")) {
+        for (String visibility : List.of("published")) {
             mockMvc.perform(put("/api/project/" + pid(project)).header("Authorization", bearer(owner)).contentType("application/json")
                             .content("{\"visibility\":\"" + visibility + "\"}"))
                     .andExpect(status().isForbidden());

@@ -69,19 +69,6 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void unlistedProjectStaysLive() throws Exception {
-        User owner = createUser("snapsrcowner3");
-        Project project = createProject(owner, "Unlisted Original", "private", "Original description", "tag");
-        setVisibility(owner, project, "unlisted");
-
-        renameProject(owner, project, "Unlisted Edited Live");
-
-        mockMvc.perform(get("/api/public/project/" + pid(project)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Unlisted Edited Live"));
-    }
-
-    @Test
     void legacyPublishedProjectWithoutSnapshotDoesNotExposeLiveData() throws Exception {
         User owner = createUser("snapsrcowner4");
         User forker = createUser("snapsrcforker4");
@@ -127,18 +114,6 @@ class PublicSnapshotSourcingTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId)
                         .header("Authorization", bearer(otherUser)))
                 .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void publicVersionStaysReadableWhenUnlisted() throws Exception {
-        User owner = createUser("snapsrcowner6");
-        Project project = createProject(owner, "Will Be Unlisted", "private", "Original description", "tag");
-        long snapshotId = publishAndCaptureSnapshotId(owner, project);
-
-        setVisibility(owner, project, "unlisted");
-
-        mockMvc.perform(get("/api/public/project/" + pid(project) + "/versions/" + snapshotId))
-                .andExpect(status().isOk());
     }
 
     @Test

@@ -279,6 +279,11 @@ public abstract class AbstractIntegrationTest {
         return "ratetest" + IDENTITY_COUNTER.incrementAndGet() + "@example.com";
     }
 
+    protected void addViewer(Project project, User user) {
+        jdbcTemplate.update("INSERT INTO project_member (project_id, user_id, role, created_at) VALUES (?, ?, 'VIEWER', now())",
+                project.getId(), user.getId());
+    }
+
     protected Project createProject(User owner, String title, String visibility) {
         return createProject(owner, title, visibility, null, null);
     }

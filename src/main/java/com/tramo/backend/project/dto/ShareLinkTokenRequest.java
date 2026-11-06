@@ -5,4 +5,4 @@ package com.tramo.backend.project.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record AcceptShareLinkRequest(@NotBlank @Size(max = 64) String token) {}
+public record ShareLinkTokenRequest(@NotBlank @Size(max = 64) String token) {}

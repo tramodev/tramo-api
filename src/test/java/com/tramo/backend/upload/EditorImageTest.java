@@ -272,15 +272,23 @@ class EditorImageTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void unlistedImagesRespectBlocksAndCannotBecomePublicThumbnails() throws Exception {
-        User owner = createUser("unlistedowner");
-        User reader = createUser("unlistedreader");
-        Project project = createProject(owner, "Unlisted", "UNLISTED");
+    void viewLinkImagesRespectTheLinkProjectAndBlocks() throws Exception {
+        User owner = createUser("viewlinkowner");
+        User reader = createUser("viewlinkreader");
+        Project project = createProject(owner, "Linked", "PRIVATE");
+        Project other = createProject(owner, "Other", "PRIVATE");
         UUID image = upload(project, owner);
         saveImage(project, owner, image);
-        resolve(project, null, image, true, null, 200);
+        String token = viewLink(owner, project);
+        resolve(project, null, image, true, null, 404);
+        resolveShared(project, null, image, token, 200);
+        resolveShared(other, null, image, token, 404);
+        resolveShared(project, null, image, "x" + token.substring(1), 404);
         jdbcTemplate.update("INSERT INTO blocked_user(id, blocker_id, blocked_id) VALUES (999999, ?, ?)", owner.getId(), reader.getId());
-        resolve(project, reader, image, true, null, 404);
+        resolveShared(project, reader, image, token, 404);
+        mockMvc.perform(put("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"role\":\"EDITOR\"}")).andExpect(status().isOk());
+        resolveShared(project, null, image, token, 404);
         mockMvc.perform(put("/api/project/" + pid(project) + "/thumbnail").header("Authorization", bearer(owner))
                 .contentType("application/json").content("{\"type\":\"PROJECT_IMAGE\",\"imageUrl\":\"https://test-bucket.example.com/editor-image/1/hash.jpg\"}"))
                 .andExpect(status().isBadRequest());
@@ -290,19 +298,20 @@ class EditorImageTest extends AbstractIntegrationTest {
     void legacySharedItemAndItsImagesSurviveDeletingTheirOriginalProject() throws Exception {
         User owner = createUser("transcluder");
         Project original = createProject(owner, "Original", "PRIVATE");
-        Project target = createProject(owner, "Target", "UNLISTED");
+        Project target = createProject(owner, "Target", "PRIVATE");
+        String token = viewLink(owner, target);
         UUID image = upload(original, owner);
         long item = saveImage(original, owner, image);
         long trail = postForId(owner, "/api/project/" + pid(target) + "/trail", "{\"title\":\"Shared trail\"}");
         jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) "
                 + "VALUES (nextval('trail_item_seq'), ?, ?, 0)", trail, item);
-        resolve(target, null, image, true, null, 200);
+        resolveShared(target, null, image, token, 200);
         mockMvc.perform(delete("/api/project/" + pid(original)).header("Authorization", bearer(owner)))
                 .andExpect(status().isNoContent());
-        resolve(target, null, image, true, null, 200);
+        resolveShared(target, null, image, token, 200);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM upload_record WHERE user_id = ?", Integer.class, owner.getId())).isEqualTo(1);
         images.purge();
-        resolve(target, null, image, true, null, 200);
+        resolveShared(target, null, image, token, 200);
         updateContent(item, owner, content(image), 204);
     }
 
@@ -707,6 +716,18 @@ class EditorImageTest extends AbstractIntegrationTest {
                 .contentType("application/json").content("{\"imageIds\":[\"" + image + "\"]" + (snapshot == null ? "" : ",\"snapshotId\":" + snapshot) + "}");
         if (user != null) request.header("Authorization", bearer(user));
         return mockMvc.perform(request).andExpect(status().is(expected)).andReturn().getResponse().getContentAsString();
+    }
+    private void resolveShared(Project project, User user, UUID image, String token, int expected) throws Exception {
+        var request = post("/api/public/project/" + pid(project) + "/editor-images/resolve").header("X-Share-Token", token)
+                .contentType("application/json").content("{\"imageIds\":[\"" + image + "\"]}");
+        if (user != null) request.header("Authorization", bearer(user));
+        mockMvc.perform(request).andExpect(status().is(expected));
+    }
+    private String viewLink(User owner, Project project) throws Exception {
+        String response = mockMvc.perform(put("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner))
+                .contentType("application/json").content("{\"role\":\"VIEWER\"}")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(response, "$.token");
     }
     @Autowired com.tramo.backend.project.service.ProjectVersionService versions;
     @Autowired com.tramo.backend.trail.service.ItemService itemService;

@@ -19,7 +19,6 @@ class SitemapTest extends AbstractIntegrationTest {
         User owner = createUser("sitemapprojectowner");
         var published = createProject(owner, "Published one", "published");
         createProject(owner, "Private one", "private");
-        createProject(owner, "Unlisted one", "unlisted");
 
         mockMvc.perform(get("/api/public/sitemap/projects"))
                 .andExpect(status().isOk())

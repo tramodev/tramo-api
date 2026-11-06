@@ -116,8 +116,17 @@ public class EditorImageService {
     }
 
     public EditorImageResolveResponse resolve(Long projectId, EditorImageResolveRequest request, User user, boolean publicRead) {
+        return resolve(projectId, request, user, publicRead, false);
+    }
+
+    public EditorImageResolveResponse resolveShared(Long projectId, EditorImageResolveRequest request) {
+        if (request.snapshotId() != null || request.versionId() != null) throw missing();
+        return resolve(projectId, request, null, true, true);
+    }
+
+    private EditorImageResolveResponse resolve(Long projectId, EditorImageResolveRequest request, User user, boolean publicRead, boolean shared) {
         Project project = publicRead ? projects.findById(projectId).orElseThrow(this::missing) : access.getProject(projectId, user, ProjectRole.VIEWER);
-        if (publicRead) access.assertViewable(project, user);
+        if (publicRead && !shared) access.assertViewable(project, user);
         Long snapshotId = request.snapshotId();
         if (request.versionId() != null) {
             if (publicRead || snapshotId != null || !images.versionBelongsTo(request.versionId(), projectId)) throw missing();
@@ -132,7 +141,7 @@ public class EditorImageService {
             ProjectSnapshot snapshot = snapshots.findById(snapshotId).orElseThrow(this::missing);
             if (!snapshot.getProject().getId().equals(projectId) || (publicRead && (!"PUBLISH".equals(snapshot.getTrigger())
                     || project.getFirstPublishedDate() == null))) throw missing();
-        } else if (publicRead && project.getVisibility() == ProjectVisibility.PUBLISHED) {
+        } else if (publicRead && !shared && project.getVisibility() == ProjectVisibility.PUBLISHED) {
             snapshotId = snapshots.findLatestPublishByProjectId(projectId)
                     .map(ProjectSnapshot::getId).orElseThrow(this::missing);
         }

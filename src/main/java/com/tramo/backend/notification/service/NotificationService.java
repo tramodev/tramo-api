@@ -259,12 +259,21 @@ public class NotificationService {
 
     @Transactional
     public void recordModeration(User recipient, Project project, User admin, String message) {
+        recordNotice(recipient, NotificationTypes.MODERATION, project, admin, message);
+    }
+
+    @Transactional
+    public void recordShareLinkChanged(User owner, Project project) {
+        recordNotice(owner, NotificationTypes.SHARE_LINK, project, owner, null);
+    }
+
+    private void recordNotice(User recipient, String type, Project project, User actor, String message) {
         if (recipient == null) return;
         Notification notification = new Notification();
         notification.setRecipient(recipient);
         notification.setProject(project);
-        notification.setLatestActor(admin);
-        notification.setType(NotificationTypes.MODERATION);
+        notification.setLatestActor(actor);
+        notification.setType(type);
         notification.setMessage(message);
         notification.setCreatedDate(new Date());
         notification.setUpdatedDate(notification.getCreatedDate());

@@ -57,6 +57,11 @@ public class RateLimitFilter implements Filter {
         String ip = clientIp.from(req);
         String path = req.getRequestURI();
 
+        if ("POST".equals(req.getMethod()) && "/api/public/share-links/project".equals(path)) {
+            Bucket bucket = rateLimiterService.resolveBucket(ip + ":share-view", 30, 30, Duration.ofMinutes(1));
+            if (!tryConsumeOrReject(bucket, res)) return;
+        }
+
         if (path.startsWith("/api/public/") && path.endsWith("/editor-images/resolve")) {
             Bucket bucket = rateLimiterService.resolveBucket(ip + ":image-resolve", 120, 120, Duration.ofMinutes(1));
             if (!tryConsumeOrReject(bucket, res)) return;

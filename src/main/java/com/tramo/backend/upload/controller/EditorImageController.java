@@ -3,6 +3,8 @@
 package com.tramo.backend.upload.controller;
 
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.exception.ResourceNotFoundException;
+import com.tramo.backend.project.service.ProjectShareLinkService;
 import com.tramo.backend.upload.dto.*;
 import com.tramo.backend.upload.service.EditorImageService;
 import com.tramo.backend.user.entity.User;
@@ -17,8 +19,12 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class EditorImageController {
     private final EditorImageService images;
+    private final ProjectShareLinkService links;
     private final ProjectIdCodec codec;
-    public EditorImageController(EditorImageService images, ProjectIdCodec codec) { this.images = images; this.codec = codec; }
+
+    public EditorImageController(EditorImageService images, ProjectShareLinkService links, ProjectIdCodec codec) {
+        this.images = images; this.links = links; this.codec = codec;
+    }
 
     @PostMapping("/uploads/editor-images/presign")
     public ResponseEntity<EditorImagePresignResponse> presign(@Valid @RequestBody EditorImagePresignRequest request,
@@ -40,7 +46,11 @@ public class EditorImageController {
 
     @PostMapping("/public/project/{projectId}/editor-images/resolve")
     public ResponseEntity<EditorImageResolveResponse> resolvePublic(@PathVariable String projectId,
-            @Valid @RequestBody EditorImageResolveRequest request, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(images.resolve(codec.decode(projectId), request, user, true));
+            @Valid @RequestBody EditorImageResolveRequest request, @AuthenticationPrincipal User user,
+            @RequestHeader(value = "X-Share-Token", required = false) String shareToken) {
+        Long id = codec.decode(projectId);
+        if (shareToken == null) return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(images.resolve(id, request, user, true));
+        if (!links.viewable(shareToken, user).getId().equals(id)) throw new ResourceNotFoundException("Image not found");
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(images.resolveShared(id, request));
     }
 }

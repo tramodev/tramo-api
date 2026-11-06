@@ -3,13 +3,16 @@
 package com.tramo.backend.project.controller;
 
 import com.tramo.backend.common.ProjectIdCodec;
-import com.tramo.backend.project.dto.AcceptShareLinkRequest;
+import com.tramo.backend.project.dto.ShareLinkTokenRequest;
+import com.tramo.backend.project.dto.PublicProjectResponseDTO;
 import com.tramo.backend.project.dto.ShareLinkDTO;
 import com.tramo.backend.project.dto.ShareLinkRequest;
 import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.service.ProjectShareLinkService;
+import com.tramo.backend.project.service.PublicProjectService;
 import com.tramo.backend.user.entity.User;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,10 +24,11 @@ import java.util.Map;
 @RequestMapping("/api")
 public class ProjectShareLinkController {
     private final ProjectShareLinkService links;
+    private final PublicProjectService publicProjects;
     private final ProjectIdCodec codec;
 
-    public ProjectShareLinkController(ProjectShareLinkService links, ProjectIdCodec codec) {
-        this.links = links; this.codec = codec;
+    public ProjectShareLinkController(ProjectShareLinkService links, PublicProjectService publicProjects, ProjectIdCodec codec) {
+        this.links = links; this.publicProjects = publicProjects; this.codec = codec;
     }
 
     @GetMapping("/project/{id}/share-link")
@@ -45,7 +49,12 @@ public class ProjectShareLinkController {
     }
 
     @PostMapping("/share-links/accept")
-    public Map<String, String> accept(@Valid @RequestBody AcceptShareLinkRequest request, @AuthenticationPrincipal User user) {
+    public Map<String, String> accept(@Valid @RequestBody ShareLinkTokenRequest request, @AuthenticationPrincipal User user) {
         return Map.of("projectId", links.accept(request.token(), user));
+    }
+
+    @PostMapping("/public/share-links/project")
+    public ResponseEntity<PublicProjectResponseDTO> view(@Valid @RequestBody ShareLinkTokenRequest request, @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(publicProjects.getSharedProject(request.token(), user));
     }
 }

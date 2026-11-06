@@ -104,7 +104,7 @@ class ModerationTest extends AbstractIntegrationTest {
     void existingReportDoesNotBypassProjectVisibility() throws Exception {
         User owner = createUser("existingreportowner");
         User reporter = createUser("existingreporter");
-        Project project = createProject(owner, "Unlisted", "unlisted");
+        Project project = createProject(owner, "Published", "published");
         mockMvc.perform(post("/api/project/" + pid(project) + "/report")
                         .header("Authorization", bearer(reporter))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"spam\"}"))
@@ -331,7 +331,7 @@ class ModerationTest extends AbstractIntegrationTest {
                     .andExpect(jsonPath("$.message").value("Resource not found"));
         }
         assertThat(commentReportRepository.count()).isZero();
-        jdbcTemplate.update("UPDATE project SET visibility = 'unlisted' WHERE id = ?", project.getId());
+        jdbcTemplate.update("UPDATE project SET visibility = 'published' WHERE id = ?", project.getId());
         for (int i = 0; i < 2; i++) {
             mockMvc.perform(post("/api/comment/" + commentId + "/report")
                             .header("Authorization", bearer(reporter))

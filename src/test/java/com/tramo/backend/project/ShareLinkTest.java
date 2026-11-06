@@ -7,7 +7,9 @@ import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.auth.service.OpaqueToken;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.user.entity.User;
+import com.tramo.backend.project.service.UnlistedShareLinkBackfillRunner;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -183,5 +185,67 @@ class ShareLinkTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
         accept(owner, token).andExpect(status().isOk());
         assertThat(role(project, owner)).isNull();
+    }
+
+    private ResultActions view(User user, String token) throws Exception {
+        var request = post("/api/public/share-links/project")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"token\":\"%s\"}".formatted(token));
+        if (user != null) request.header("Authorization", bearer(user));
+        return mockMvc.perform(request);
+    }
+
+    @Test
+    void viewLinkOpensTheLiveProjectWithoutLoginAndGrantsNothingElse() throws Exception {
+        User owner = createUser("slowner8");
+        User reader = createUser("slreader8");
+        Project project = createProject(owner, "Live title", "private");
+        String token = token(setLink(owner, project, "VIEWER"));
+
+        view(null, token).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.id").value(pid(project)))
+                .andExpect(jsonPath("$.title").value("Live title"))
+                .andExpect(jsonPath("$.canComment").value(false))
+                .andExpect(jsonPath("$.canFork").value(false));
+        view(reader, token).andExpect(status().isOk());
+        assertThat(role(project, reader)).isNull();
+        mockMvc.perform(get("/api/public/project/" + pid(project))).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(reader)))
+                .andExpect(status().isNotFound());
+        view(null, "x" + token.substring(1)).andExpect(status().isNotFound());
+
+        jdbcTemplate.update("INSERT INTO blocked_user(id, blocker_id, blocked_id) VALUES (999998, ?, ?)", owner.getId(), reader.getId());
+        view(reader, token).andExpect(status().isNotFound());
+        setLink(owner, project, "EDITOR");
+        view(null, token).andExpect(status().isNotFound());
+        setLink(owner, project, "VIEWER");
+        clearLink(owner, project).andExpect(status().isNoContent());
+        view(null, token).andExpect(status().isNotFound());
+    }
+
+    @Autowired UnlistedShareLinkBackfillRunner unlistedBackfill;
+
+    @Test
+    void unlistedBackfillMakesProjectsPrivateWithAViewLinkOnce() throws Exception {
+        User owner = createUser("slowner9");
+        Project unlisted = createProject(owner, "Was unlisted", "private");
+        Project linked = createProject(owner, "Had editor link", "private");
+        setLink(owner, linked, "EDITOR");
+        jdbcTemplate.update("UPDATE project SET visibility = 'unlisted' WHERE id IN (?, ?)", unlisted.getId(), linked.getId());
+
+        unlistedBackfill.run(null);
+        unlistedBackfill.run(null);
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM project WHERE visibility = 'unlisted'", Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForList("SELECT role FROM project_share_link WHERE project_id = ? AND revoked_at IS NULL",
+                String.class, unlisted.getId())).containsExactly("VIEWER");
+        assertThat(jdbcTemplate.queryForList("SELECT role FROM project_share_link WHERE project_id = ? AND revoked_at IS NULL",
+                String.class, linked.getId())).containsExactly("EDITOR");
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM notification WHERE recipient_id = ? AND type = 'SHARE_LINK'",
+                Long.class, owner.getId())).isEqualTo(2);
+        String token = JsonPath.read(mockMvc.perform(get("/api/project/" + pid(unlisted) + "/share-link").header("Authorization", bearer(owner)))
+                .andReturn().getResponse().getContentAsString(), "$.token");
+        view(null, token).andExpect(status().isOk()).andExpect(jsonPath("$.visibility").value("private"));
     }
 }

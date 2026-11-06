@@ -23,4 +23,6 @@ public interface ProjectShareLinkRepository extends JpaRepository<ProjectShareLi
     Optional<ProjectShareLink> findActiveForUpdate(@Param("projectId") Long projectId);
 
     Optional<ProjectShareLink> findByProjectIdAndRevokedAtIsNull(Long projectId);
+
+    Optional<ProjectShareLink> findByTokenHash(String tokenHash);
 }
