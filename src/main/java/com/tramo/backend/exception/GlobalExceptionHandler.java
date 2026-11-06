@@ -19,6 +19,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -284,7 +285,7 @@ public class GlobalExceptionHandler {
         return handled(ex, errorResponse, HttpStatus.BAD_REQUEST);
     }
 
-    @ExceptionHandler({MethodArgumentTypeMismatchException.class, MissingServletRequestParameterException.class})
+    @ExceptionHandler({MethodArgumentTypeMismatchException.class, MissingServletRequestParameterException.class, HandlerMethodValidationException.class})
     public ResponseEntity<ErrorResponse> handleInvalidParameter(Exception ex) {
         return handled(ex, new ErrorResponse(400, RequestErrorCode.BAD_REQUEST.getMessage(), LocalDateTime.now()), HttpStatus.BAD_REQUEST);
     }
