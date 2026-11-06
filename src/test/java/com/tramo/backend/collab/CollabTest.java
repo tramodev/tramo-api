@@ -162,6 +162,7 @@ class CollabTest extends AbstractIntegrationTest {
         assertThat(own.path("role").asString()).isEqualTo("OWNER");
         assertThat(own.path("project").asString()).isEqualTo(project.getId().toString());
         assertThat(own.has("item")).isFalse();
+        assertThat(own.path("name").asString()).isEqualTo(owner.getUsername());
         assertThat(projectClaims(editor, project).path("perm").asString()).isEqualTo("edit");
         JsonNode view = projectClaims(viewer, project);
         assertThat(view.path("perm").asString()).isEqualTo("view");

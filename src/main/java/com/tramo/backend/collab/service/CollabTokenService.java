@@ -60,6 +60,8 @@ public class CollabTokenService {
                 .claim("perm", role.atLeast(ProjectRole.EDITOR) ? "edit" : "view")
                 .claim("role", role.name())
                 .claim("sv", Objects.toString(user.getSessionVersion(), null))
+                .claim("name", user.getUsername())
+                .claim("picture", user.getImageUrl())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + TTL_MS))
                 .signWith(key, Jwts.SIG.HS256)
