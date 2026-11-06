@@ -22,6 +22,7 @@ import java.util.Set;
 public class RateLimitFilter implements Filter {
 
     private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "DELETE", "PATCH");
+    private static final Set<String> COLLAB_TOKEN_PATHS = Set.of("/api/collab/token", "/api/collab/project-token");
     private static final Set<String> TIGHT_TIER_PATHS = Set.of(
             "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign",
             "/api/subscription/patreon/sync", "/api/project/draft-commit"
@@ -85,7 +86,7 @@ public class RateLimitFilter implements Filter {
             }
         }
 
-        if ("POST".equals(req.getMethod()) && "/api/collab/token".equals(path)) {
+        if ("POST".equals(req.getMethod()) && COLLAB_TOKEN_PATHS.contains(path)) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
                 Bucket bucket = rateLimiterService.resolveBucket("user:collab-token:" + user.getId(), 120, 120, Duration.ofMinutes(1));
@@ -144,7 +145,7 @@ public class RateLimitFilter implements Filter {
                 return;
             }
         } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?")))
-                && !path.startsWith("/api/admin/") && !"/api/collab/token".equals(path)) {
+                && !path.startsWith("/api/admin/") && !COLLAB_TOKEN_PATHS.contains(path)) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
                 boolean historyRead = "GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?");

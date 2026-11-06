@@ -65,6 +65,24 @@ class CollabTest extends AbstractIntegrationTest {
         return MAPPER.readTree(Base64.getUrlDecoder().decode(token.split("\\.")[1]));
     }
 
+    private ResultActions projectToken(User user, Project project) throws Exception {
+        return mockMvc.perform(post("/api/collab/project-token")
+                .header("Authorization", bearer(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"projectId\":\"" + pid(project) + "\"}"));
+    }
+
+    private JsonNode projectClaims(User user, Project project) throws Exception {
+        String token = MAPPER.readTree(projectToken(user, project).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("token").asString();
+        return MAPPER.readTree(Base64.getUrlDecoder().decode(token.split("\\.")[1]));
+    }
+
+    private static Map<String, Object> projectSession(User user, Project project, String perm) {
+        var session = new java.util.HashMap<String, Object>(Map.of("userId", user.getId(), "projectId", project.getId(), "perm", perm));
+        session.put("sv", java.util.Objects.toString(user.getSessionVersion(), null));
+        return session;
+    }
+
     private ResultActions load(long item) throws Exception {
         return mockMvc.perform(get("/internal/collab/items/" + item).header("X-Collab-Secret", TEST_COLLAB_SECRET));
     }
@@ -127,6 +145,56 @@ class CollabTest extends AbstractIntegrationTest {
         assertThat(view.path("sub").asString()).isEqualTo(viewer.getId().toString());
         assertThat(view.path("aud").toString()).contains("tramo-collab");
         token(stranger, item).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void projectTokenFollowsProjectRole() throws Exception {
+        User owner = createUser("collabprojowner");
+        User editor = createUser("collabprojeditor");
+        User viewer = createUser("collabprojviewer");
+        User stranger = createUser("collabprojstranger");
+        Project project = createProject(owner, "Presence", "private");
+        addMember(owner, project, editor, "EDITOR");
+        addMember(owner, project, viewer, "VIEWER");
+
+        JsonNode own = projectClaims(owner, project);
+        assertThat(own.path("perm").asString()).isEqualTo("edit");
+        assertThat(own.path("role").asString()).isEqualTo("OWNER");
+        assertThat(own.path("project").asString()).isEqualTo(project.getId().toString());
+        assertThat(own.has("item")).isFalse();
+        assertThat(projectClaims(editor, project).path("perm").asString()).isEqualTo("edit");
+        JsonNode view = projectClaims(viewer, project);
+        assertThat(view.path("perm").asString()).isEqualTo("view");
+        assertThat(view.path("role").asString()).isEqualTo("VIEWER");
+        projectToken(stranger, project).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void projectTokensDoNotStarveEdits() throws Exception {
+        User owner = createUser("collabprojlimit");
+        Project project = createProject(owner, "Tokens", "private");
+        for (int i = 0; i < 70; i++) projectToken(owner, project).andExpect(status().isOk());
+        postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Still editable\"}");
+    }
+
+    @Test
+    void checkFlagsLostProjectAccess() throws Exception {
+        User owner = createUser("collabprojowner7");
+        User editor = createUser("collabprojeditor7");
+        User removed = createUser("collabprojremoved7");
+        Project project = createProject(owner, "Presence", "private");
+        addMember(owner, project, editor, "EDITOR");
+        addMember(owner, project, removed, "VIEWER");
+        mockMvc.perform(delete("/api/project/" + pid(project) + "/members/" + removed.getUsername())
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isNoContent());
+
+        check(java.util.List.of(
+                projectSession(owner, project, "edit"),
+                projectSession(editor, project, "edit"),
+                projectSession(removed, project, "view")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(org.hamcrest.Matchers.contains(2)));
     }
 
     @Test

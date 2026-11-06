@@ -13,6 +13,8 @@ import com.tramo.backend.exception.ExtractionConflictException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectRole;
+import com.tramo.backend.project.repository.ProjectRepository;
+import com.tramo.backend.project.service.AccessGuard;
 import com.tramo.backend.project.service.ProjectVersionCapture;
 import com.tramo.backend.trail.entity.Item;
 import com.tramo.backend.trail.repository.ItemRepository;
@@ -37,15 +39,20 @@ public class CollabService {
     private final ItemYdocRepository ydocs;
     private final UserRepository users;
     private final ProjectVersionCapture history;
+    private final ProjectRepository projects;
+    private final AccessGuard accessGuard;
     private final byte[] secret;
 
     public CollabService(ItemService itemService, ItemRepository items, ItemYdocRepository ydocs, UserRepository users,
-                         ProjectVersionCapture history, @Value("${app.collab.internal-secret:}") String secret) {
+                         ProjectVersionCapture history, ProjectRepository projects, AccessGuard accessGuard,
+                         @Value("${app.collab.internal-secret:}") String secret) {
         this.itemService = itemService;
         this.items = items;
         this.ydocs = ydocs;
         this.users = users;
         this.history = history;
+        this.projects = projects;
+        this.accessGuard = accessGuard;
         this.secret = secret.getBytes(StandardCharsets.UTF_8);
     }
 
@@ -99,7 +106,9 @@ public class CollabService {
             User user = byId.get(session.userId());
             ProjectRole role = user == null || !user.isEnabled() || !user.isAccountNonLocked()
                     || !Objects.equals(Objects.toString(user.getSessionVersion(), null), session.sv())
-                    ? null : roles.computeIfAbsent(session.userId() + ":" + session.itemId(), key -> roleOrNull(session.itemId(), user));
+                    ? null : session.projectId() != null
+                    ? roles.computeIfAbsent(session.userId() + ":project:" + session.projectId(), key -> projectRoleOrNull(session.projectId(), user))
+                    : roles.computeIfAbsent(session.userId() + ":" + session.itemId(), key -> roleOrNull(session.itemId(), user));
             if (role == null || ("edit".equals(session.perm()) && !role.atLeast(ProjectRole.EDITOR))) invalid.add(index);
         }
         return invalid;
@@ -111,6 +120,10 @@ public class CollabService {
         } catch (ResourceNotFoundException gone) {
             return null;
         }
+    }
+
+    private ProjectRole projectRoleOrNull(Long projectId, User user) {
+        return projects.findById(projectId).map(project -> accessGuard.roleOf(project, user)).orElse(null);
     }
 
     private static int epoch(Item item) {
