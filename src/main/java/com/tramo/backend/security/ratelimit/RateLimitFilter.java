@@ -88,7 +88,7 @@ public class RateLimitFilter implements Filter {
         if ("POST".equals(req.getMethod()) && "/api/collab/token".equals(path)) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
-                Bucket bucket = rateLimiterService.resolveBucket("user:collab-token:" + user.getId(), 30, 30, Duration.ofMinutes(1));
+                Bucket bucket = rateLimiterService.resolveBucket("user:collab-token:" + user.getId(), 120, 120, Duration.ofMinutes(1));
                 if (!tryConsumeOrReject(bucket, res)) return;
             }
         }
@@ -143,7 +143,8 @@ public class RateLimitFilter implements Filter {
             if (bucket != null && !tryConsumeOrReject(bucket, res)) {
                 return;
             }
-        } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?"))) && !path.startsWith("/api/admin/")) {
+        } else if ((MUTATING_METHODS.contains(req.getMethod()) || ("GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?")))
+                && !path.startsWith("/api/admin/") && !"/api/collab/token".equals(path)) {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof User user) {
                 boolean historyRead = "GET".equals(req.getMethod()) && path.matches("/api/project/[^/]+/history(?:/[^/]+)?");

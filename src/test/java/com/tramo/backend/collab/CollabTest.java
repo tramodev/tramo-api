@@ -99,6 +99,15 @@ class CollabTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void collabTokensHaveTheirOwnLimitAndDoNotStarveEdits() throws Exception {
+        User owner = createUser("collabtokenlimit");
+        Project project = createProject(owner, "Tokens", "private");
+        long item = createItem(owner, project);
+        for (int i = 0; i < 70; i++) token(owner, item).andExpect(status().isOk());
+        postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Still editable\"}");
+    }
+
+    @Test
     void tokenFollowsProjectRole() throws Exception {
         User owner = createUser("collabowner1");
         User editor = createUser("collabeditor1");
