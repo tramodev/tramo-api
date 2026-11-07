@@ -2,5 +2,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.tramo.backend.collab.dto;
 
-public record CollabDocumentDTO(byte[] state, String content, int extractionEpoch) {
+public record CollabDocumentDTO(byte[] state, String content, int extractionEpoch, String title) {
 }

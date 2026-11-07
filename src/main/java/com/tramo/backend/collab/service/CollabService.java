@@ -69,14 +69,15 @@ public class CollabService {
         Item item = items.findByIdWithContent(itemId).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         int epoch = epoch(item);
         byte[] state = ydocs.findById(itemId).filter(ydoc -> ydoc.getExtractionEpoch() == epoch).map(ItemYdoc::getState).orElse(null);
-        return new CollabDocumentDTO(state, content(item), epoch);
+        return new CollabDocumentDTO(state, content(item), epoch, item.getTitle());
     }
 
     @Transactional
     public String store(Long itemId, CollabStoreRequest request) {
         ContentLimits.assertNote(request.content());
         User author = users.findById(request.authorId()).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        Project project = history.lockItem(itemId, author);
+        List<Long> affected = history.itemProjects(itemId);
+        Project project = history.lockItem(itemId, author, affected);
         items.lockById(itemId).orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         if (!itemService.roleOf(itemId, author).atLeast(ProjectRole.EDITOR))
             throw new AccessDeniedException("Insufficient project role");
@@ -87,6 +88,12 @@ public class CollabService {
         ItemYdoc ydoc = ydocs.findById(itemId).filter(existing -> existing.getExtractionEpoch() == epoch).orElse(null);
         if (request.bootstrapHash() == null ? ydoc == null : ydoc != null || !request.bootstrapHash().equals(hash(content(item))))
             throw new ExtractionConflictException("This note changed while it was opening.");
+        String title = request.title() == null ? "" : request.title().trim();
+        if (!title.isEmpty() && !title.equals(item.getTitle())) {
+            history.beforeStructureChange(project, affected);
+            item.setTitle(title);
+            item.setModifiedDate(new Date());
+        }
         itemService.applyContent(item, project, request.content(), null);
         String sanitized = LexicalContent.sanitizeLinks(request.content());
         if (ydoc == null) ydoc = ydocs.findById(itemId).orElseGet(() -> new ItemYdoc(itemId));
