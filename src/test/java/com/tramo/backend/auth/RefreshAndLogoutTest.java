@@ -282,6 +282,23 @@ class RefreshAndLogoutTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void logoutRotatesSessionVersionAndKeepsOtherDevices() throws Exception {
+        User user = createUser("leaver-collab");
+        java.util.UUID before = user.getSessionVersion();
+        String token = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+        String otherDevice = issueRefreshToken(user, Instant.now().plus(30, ChronoUnit.DAYS));
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"refreshToken":"%s"}""".formatted(token)))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getSessionVersion()).isNotEqualTo(before);
+        refresh(otherDevice).andExpect(status().isOk());
+    }
+
+    @Test
     void purgeDeletesExpiredAndStaleRevokedTokens() {
         User user = createUser("purgeable");
         RefreshToken expiredRevoked = refreshTokenRepository.findByTokenHash(OpaqueToken.hash(

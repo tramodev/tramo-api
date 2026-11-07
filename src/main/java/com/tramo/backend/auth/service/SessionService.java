@@ -158,7 +158,13 @@ public class SessionService {
 
     @Transactional
     public void logout(RefreshTokenRequestDTO request) {
-        refreshTokenRepository.deleteByTokenHash(OpaqueToken.hash(request.getRefreshToken()));
+        String hash = OpaqueToken.hash(request.getRefreshToken());
+        refreshTokenRepository.findUserIdByTokenHash(hash).flatMap(userRepository::findById).ifPresent(user -> {
+            user.setSessionVersion(UUID.randomUUID());
+            userRepository.save(user);
+            notifications.revokeSessionsAfterCommit(user.getId());
+        });
+        refreshTokenRepository.deleteByTokenHash(hash);
     }
 
     @Scheduled(cron = "0 0 3 * * *")
