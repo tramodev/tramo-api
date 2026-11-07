@@ -15,12 +15,15 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class CollabClient {
     private static final Logger log = LoggerFactory.getLogger(CollabClient.class);
+    private static final Object STRUCTURE_CHANGES = new Object();
 
     private final RestClient restClient;
     private final String secret;
@@ -43,6 +46,37 @@ public class CollabClient {
 
     public void resetAfterCommit(Collection<Long> itemIds) {
         if (!itemIds.isEmpty()) afterCommit("/internal/reset", Map.of("itemIds", List.copyOf(itemIds)));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void structureAfterCommit(Long projectId) {
+        if (restClient == null) return;
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            sendStructure(projectId);
+            return;
+        }
+        Set<Long> pending = (Set<Long>) TransactionSynchronizationManager.getResource(STRUCTURE_CHANGES);
+        if (pending == null) {
+            Set<Long> projects = new LinkedHashSet<>();
+            TransactionSynchronizationManager.bindResource(STRUCTURE_CHANGES, projects);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    projects.forEach(CollabClient.this::sendStructure);
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    TransactionSynchronizationManager.unbindResourceIfPossible(STRUCTURE_CHANGES);
+                }
+            });
+            pending = projects;
+        }
+        pending.add(projectId);
+    }
+
+    private void sendStructure(Long projectId) {
+        send("/internal/structure", Map.of("projectId", projectId));
     }
 
     private void afterCommit(String path, Object body) {

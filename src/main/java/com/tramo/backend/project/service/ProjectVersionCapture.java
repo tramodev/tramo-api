@@ -1,5 +1,6 @@
 package com.tramo.backend.project.service;
 
+import com.tramo.backend.collab.service.CollabClient;
 import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.exception.*;
@@ -39,14 +40,15 @@ public class ProjectVersionCapture {
     private final ObjectMapper mapper;
     private final JdbcTemplate jdbc;
     private final ProjectIdCodec codec;
+    private final CollabClient collab;
 
     public ProjectVersionCapture(AccessGuard access, EntityManager em, SubscriptionService subscriptions,
             ItemRepository items, TrailRepository trails, TrailItemRepository memberships,
             ProjectVersionRepository versions, SnapshotLimits limits, EditorImageService images,
-            ObjectMapper mapper, JdbcTemplate jdbc, ProjectIdCodec codec) {
+            ObjectMapper mapper, JdbcTemplate jdbc, ProjectIdCodec codec, CollabClient collab) {
         this.access = access; this.em = em; this.subscriptions = subscriptions;
         this.items = items; this.trails = trails; this.memberships = memberships;
-        this.versions = versions; this.limits = limits; this.images = images; this.mapper = mapper; this.jdbc = jdbc; this.codec = codec;
+        this.versions = versions; this.limits = limits; this.images = images; this.mapper = mapper; this.jdbc = jdbc; this.codec = codec; this.collab = collab;
     }
 
     public Project lock(Long id, User user) {
@@ -58,14 +60,21 @@ public class ProjectVersionCapture {
     }
 
     private Project lockProject(Long id, User user) {
-        return lockProject(id, user, ProjectRole.EDITOR);
+        return lockProject(id, user, ProjectRole.EDITOR, List.of());
     }
 
     private Project lockProject(Long id, User user, ProjectRole min) {
+        return lockProject(id, user, min, List.of());
+    }
+
+    private Project lockProject(Long id, User user, ProjectRole min, Collection<Long> also) {
         em.flush();
         List<Long> owners = jdbc.queryForList("SELECT user_id FROM project WHERE id = ?", Long.class, id);
         if (owners.isEmpty()) throw new ResourceNotFoundException("Project not found");
         subscriptions.lockStorage(em.getReference(User.class, owners.get(0)));
+        Set<Long> rows = new TreeSet<>(also);
+        rows.add(id);
+        if (rows.size() > 1) jdbc.queryForList("SELECT id FROM project WHERE id IN (" + String.join(",", Collections.nCopies(rows.size(), "?")) + ") ORDER BY id FOR UPDATE", Long.class, rows.toArray());
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
         access.assertRole(project, user, min);
@@ -79,11 +88,19 @@ public class ProjectVersionCapture {
     }
 
     public Project lockItem(Long id, User user) {
+        return lockItem(id, user, List.of());
+    }
+
+    public List<Long> itemProjects(Long id) {
+        return jdbc.queryForList("SELECT project_id FROM item WHERE id = ? AND project_id IS NOT NULL UNION SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id WHERE ti.item_id = ? ORDER BY 1", Long.class, id, id);
+    }
+
+    public Project lockItem(Long id, User user, Collection<Long> also) {
         em.flush();
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String context = attributes.getRequest().getHeader("X-Project-Id");
             if (context != null) {
-                Project project = lockProject(codec.decode(context), user);
+                Project project = lockProject(codec.decode(context), user, ProjectRole.EDITOR, also);
                 if (!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM item i WHERE i.id = ? AND (i.project_id = ? OR EXISTS (SELECT 1 FROM trail_item ti JOIN trail t ON t.id = ti.trail_id WHERE ti.item_id = i.id AND t.project_id = ?)))", Boolean.class, id, project.getId(), project.getId())))
                     throw new ProjectVersionConflictException("This note no longer belongs to the project. Reload before saving; your changes are kept locally.");
                 return project;
@@ -91,7 +108,7 @@ public class ProjectVersionCapture {
         }
         List<Long> ids = jdbc.queryForList("SELECT COALESCE(i.project_id, (SELECT t.project_id FROM trail_item ti JOIN trail t ON t.id = ti.trail_id JOIN project p ON p.id = t.project_id WHERE ti.item_id = i.id AND (p.user_id = ? OR EXISTS (SELECT 1 FROM project_member m WHERE m.project_id = p.id AND m.user_id = ? AND m.role = 'EDITOR')) ORDER BY t.project_id LIMIT 1)) FROM item i WHERE i.id = ?", Long.class, user.getId(), user.getId(), id);
         if (ids.isEmpty() || ids.get(0) == null) throw new ResourceNotFoundException("Item not found");
-        return lockProject(ids.get(0), user);
+        return lockProject(ids.get(0), user, ProjectRole.EDITOR, also);
     }
 
     public Project lockTrail(Long id, User user) {
@@ -99,6 +116,23 @@ public class ProjectVersionCapture {
         List<Long> ids = jdbc.queryForList("SELECT project_id FROM trail WHERE id = ?", Long.class, id);
         if (ids.isEmpty()) throw new ResourceNotFoundException("Trail not found");
         return lockProject(ids.get(0), user);
+    }
+
+    public void beforeStructureChange(Project project) {
+        beforeStructureChange(project, List.of());
+    }
+
+    public void beforeStructureChange(Project project, Collection<Long> also) {
+        beforeChange(project);
+        Set<Long> ids = new TreeSet<>(also);
+        ids.add(project.getId());
+        structureChanged(ids);
+    }
+
+    public void structureChanged(Collection<Long> projectIds) {
+        if (projectIds.isEmpty()) return;
+        jdbc.update("UPDATE project SET structure_version = structure_version + 1 WHERE id IN (" + String.join(",", Collections.nCopies(projectIds.size(), "?")) + ")", projectIds.toArray());
+        projectIds.forEach(collab::structureAfterCommit);
     }
 
     public void beforeChange(Project project) {

@@ -108,7 +108,7 @@ public class ItemService {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Trail trail = trailService.getOwnedTrailForUpdate(trailId, requester);
-        history.beforeChange(trail.getProject());
+        history.beforeStructureChange(trail.getProject());
 
         ItemContent content = new ItemContent();
         content.setContent("");
@@ -140,7 +140,7 @@ public class ItemService {
             throw new RequestValidationException(RequestErrorCode.TITLE_REQUIRED);
         }
         Project project = history.lock(projectId, requester);
-        history.beforeChange(project);
+        history.beforeStructureChange(project);
 
         ItemContent content = new ItemContent();
         content.setContent("");
@@ -290,7 +290,7 @@ public class ItemService {
             throw new RequestValidationException(RequestErrorCode.TRAIL_ORDER_INVALID);
         }
         if (steps.stream().map(step -> step.getItem().getId()).toList().equals(itemIds)) return;
-        history.beforeChange(trail.getProject());
+        history.beforeStructureChange(trail.getProject());
         for (int index = 0; index < itemIds.size(); index++) {
             byItemId.get(itemIds.get(index)).setOrderIndex(index);
         }
@@ -323,13 +323,14 @@ public class ItemService {
     
     @Transactional
     public ItemResponseDTO update(Long id, ItemRequestDTO request, User requester) {
-        Project project = history.lockItem(id, requester);
+        List<Long> affected = history.itemProjects(id);
+        Project project = history.lockItem(id, requester, affected);
         Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
         boolean changed = (request.getTitle() != null && !request.getTitle().isBlank() && !Objects.equals(request.getTitle(), item.getTitle()))
                 || (request.getType() != null && !Objects.equals(request.getType(), item.getType()))
                 || (request.getTitleAlign() != null && !Objects.equals(request.getTitleAlign(), item.getTitleAlign()));
         if (!changed) return toResponse(item);
-        history.beforeChange(project);
+        history.beforeStructureChange(project, affected);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             item.setTitle(request.getTitle());
         }
@@ -345,9 +346,10 @@ public class ItemService {
 
     @Transactional
     public void delete(Long id, User requester) {
-        Project project = history.lockItem(id, requester);
+        List<Long> affected = history.itemProjects(id);
+        Project project = history.lockItem(id, requester, affected);
         Item item = getOwnedItem(id, requester, ProjectRole.EDITOR);
-        history.beforeChange(project);
+        history.beforeStructureChange(project, affected);
         deleteItemCompletely(item, project.getOwner().getId());
     }
 
@@ -460,7 +462,7 @@ public class ItemService {
         if (trailItemRepository.existsByTrailIdAndItemId(trail.getId(), item.getId())) {
             return;
         }
-        history.beforeChange(trail.getProject());
+        history.beforeStructureChange(trail.getProject());
         TrailItem trailItem = new TrailItem();
         trailItem.setTrail(trail);
         trailItem.setItem(item);
@@ -475,7 +477,7 @@ public class ItemService {
 
         var membership = trailItemRepository.findByTrailIdAndItemId(trailId, item.getId());
         if (membership.isEmpty()) return;
-        history.beforeChange(trail.getProject());
+        history.beforeStructureChange(trail.getProject());
         trailItemRepository.delete(membership.get());
 
         

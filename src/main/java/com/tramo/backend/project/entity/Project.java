@@ -54,6 +54,8 @@ public class Project {
     private Date lastEditedDate;
     @Column(nullable = false)
     private long restoreEpoch;
+    @Column(nullable = false, insertable = false, updatable = false)
+    private long structureVersion;
     @Column(nullable = false)
     private boolean historyUnavailable;
     private Date lastAutoVersionDate;

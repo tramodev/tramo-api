@@ -10,6 +10,8 @@ import com.tramo.backend.collab.entity.ItemYdoc;
 import com.tramo.backend.collab.repository.ItemYdocRepository;
 import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.exception.ExtractionConflictException;
+import com.tramo.backend.exception.RequestErrorCode;
+import com.tramo.backend.exception.RequestValidationException;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectRole;
@@ -112,6 +114,13 @@ public class CollabService {
             if (role == null || ("edit".equals(session.perm()) && !role.atLeast(ProjectRole.EDITOR))) invalid.add(index);
         }
         return invalid;
+    }
+
+    public Map<Long, Long> structureVersions(List<Long> projectIds) {
+        if (projectIds.isEmpty()) return Map.of();
+        if (projectIds.size() > 500) throw new RequestValidationException(RequestErrorCode.INVALID_REQUEST);
+        return projects.findStructureVersions(projectIds).stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
     }
 
     private ProjectRole roleOrNull(Long itemId, User user) {
