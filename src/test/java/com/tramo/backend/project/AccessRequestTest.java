@@ -76,6 +76,7 @@ class AccessRequestTest extends AbstractIntegrationTest {
         String missing = pid(other);
         jdbcTemplate.update("DELETE FROM project WHERE id = ?", other.getId());
         request(blocked, missing).andExpect(status().isAccepted()).andExpect(content().string(""));
+        request(blocked, "Qz7kP2").andExpect(status().isAccepted()).andExpect(content().string(""));
 
         assertThat(requests(project)).isZero();
         assertThat(notifications(owner)).isZero();

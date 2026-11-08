@@ -29,7 +29,7 @@ public class ProjectAccessRequestController {
     @PostMapping("/access-request")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void request(@PathVariable String id, @AuthenticationPrincipal User user) {
-        requests.request(codec.decode(id), user);
+        codec.tryDecode(id).ifPresent(projectId -> requests.request(projectId, user));
     }
 
     @GetMapping("/access-requests")
