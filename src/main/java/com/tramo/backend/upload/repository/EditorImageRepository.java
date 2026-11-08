@@ -152,11 +152,17 @@ public class EditorImageRepository {
     }
 
     public List<UUID> visibleImageIds(Long projectId, Long snapshotId) {
+        return visibleImageIds(projectId, snapshotId, false);
+    }
+
+    public List<UUID> visibleImageIds(Long projectId, Long snapshotId, boolean includeUploads) {
         if (snapshotId != null) return jdbc.queryForList(
                 "SELECT image_id FROM editor_image_snapshot_reference WHERE snapshot_id = ?", UUID.class, snapshotId);
-        return jdbc.queryForList("SELECT DISTINCT r.image_id FROM editor_image_item_reference r JOIN item i ON i.id = r.item_id " +
+        String referenced = "SELECT DISTINCT r.image_id FROM editor_image_item_reference r JOIN item i ON i.id = r.item_id " +
                 "WHERE i.project_id = ? OR EXISTS (SELECT 1 FROM trail_item ti JOIN trail t ON t.id = ti.trail_id " +
-                "WHERE ti.item_id = i.id AND t.project_id = ?)", UUID.class, projectId, projectId);
+                "WHERE ti.item_id = i.id AND t.project_id = ?)";
+        if (!includeUploads) return jdbc.queryForList(referenced, UUID.class, projectId, projectId);
+        return jdbc.queryForList(referenced + " UNION SELECT id FROM editor_image WHERE project_id = ?", UUID.class, projectId, projectId, projectId);
     }
 
     public List<UUID> editableImageIds(Collection<UUID> ids, Long projectId, Long itemId) {

@@ -135,11 +135,26 @@ class EditorImageTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void membersResolveFreshUploadsBeforeAnyNoteReferencesThem() throws Exception {
+        User owner = createUser("freshupload");
+        User viewer = createUser("freshviewer");
+        Project project = createProject(owner, "Fresh", "PRIVATE");
+        addViewer(project, viewer);
+        UUID image = upload(project, owner);
+        resolve(project, owner, image, false, null, 200);
+        resolve(project, viewer, image, false, null, 200);
+        resolve(project, createUser("freshstranger"), image, false, null, 404);
+        resolve(project, null, image, true, null, 404);
+        resolve(project, owner, pending(project, owner), false, null, 404);
+        resolve(createProject(owner, "Elsewhere", "PRIVATE"), owner, image, false, null, 404);
+    }
+
+    @Test
     void privateReadsRequireContextAndReferencesAndUseFiveMinuteUrls() throws Exception {
         User owner = createUser("reader");
         Project project = createProject(owner, "Private", "PRIVATE");
         UUID id = upload(project, owner);
-        resolve(project, owner, id, false, null, 404);
+        resolve(project, owner, id, false, null, 200);
         saveImage(project, owner, id);
         String response = resolve(project, owner, id, false, null, 200);
         assertThat((String) JsonPath.read(response, "$.images[0].url")).contains("X-Amz-Expires=300").doesNotContain("r2.dev");
@@ -250,7 +265,7 @@ class EditorImageTest extends AbstractIntegrationTest {
                 .content("{\"imageIds\":[\"" + first + "\",\"" + second + "\"]}"))
                 .andExpect(status().isOk()));
         assertThat(batchQueries).isLessThanOrEqualTo(singleQueries);
-        verify(imageRepository, times(1)).visibleImageIds(project.getId(), null);
+        verify(imageRepository, times(1)).visibleImageIds(project.getId(), null, true);
         verify(imageRepository, times(1)).findAll(any());
     }
 
