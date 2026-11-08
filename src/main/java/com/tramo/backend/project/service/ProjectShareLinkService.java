@@ -13,6 +13,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectMember;
 import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectShareLink;
+import com.tramo.backend.project.repository.ProjectAccessRequestRepository;
 import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.project.repository.ProjectShareLinkRepository;
 import com.tramo.backend.security.crypto.EncryptedStringConverter;
@@ -29,6 +30,7 @@ public class ProjectShareLinkService {
     private final AccessGuard accessGuard;
     private final ProjectShareLinkRepository linkRepository;
     private final ProjectMemberRepository memberRepository;
+    private final ProjectAccessRequestRepository requestRepository;
     private final ProjectMemberService memberService;
     private final BlockedUserRepository blockedUserRepository;
     private final NotificationService notificationService;
@@ -37,12 +39,13 @@ public class ProjectShareLinkService {
     private final CollabClient collab;
 
     public ProjectShareLinkService(AccessGuard accessGuard, ProjectShareLinkRepository linkRepository,
-                                   ProjectMemberRepository memberRepository, ProjectMemberService memberService,
+                                   ProjectMemberRepository memberRepository, ProjectAccessRequestRepository requestRepository, ProjectMemberService memberService,
                                    BlockedUserRepository blockedUserRepository, NotificationService notificationService,
                                    ProjectIdCodec codec, EncryptedStringConverter cipher, CollabClient collab) {
         this.accessGuard = accessGuard;
         this.linkRepository = linkRepository;
         this.memberRepository = memberRepository;
+        this.requestRepository = requestRepository;
         this.memberService = memberService;
         this.blockedUserRepository = blockedUserRepository;
         this.notificationService = notificationService;
@@ -109,6 +112,7 @@ public class ProjectShareLinkService {
             ProjectMember member = memberRepository.findByProjectIdAndUserId(project.getId(), requester.getId()).orElse(null);
             if (member == null) {
                 memberRepository.save(memberService.newMember(project, requester, link.getRole(), null, link));
+                requestRepository.deleteByProjectIdAndRequesterId(project.getId(), requester.getId());
                 notificationService.recordEvent(owner, NotificationTypes.MEMBER_JOINED, project, requester, now);
             } else if (member.getShareLink() != null && link.getRole().compareTo(member.getRole()) > 0) {
                 member.setRole(link.getRole());

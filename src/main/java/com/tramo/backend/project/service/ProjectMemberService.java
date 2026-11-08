@@ -14,6 +14,7 @@ import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectMember;
 import com.tramo.backend.project.entity.ProjectRole;
 import com.tramo.backend.project.entity.ProjectShareLink;
+import com.tramo.backend.project.repository.ProjectAccessRequestRepository;
 import com.tramo.backend.project.repository.ProjectMemberRepository;
 import com.tramo.backend.user.entity.User;
 import com.tramo.backend.user.repository.BlockedUserRepository;
@@ -34,6 +35,7 @@ public class ProjectMemberService {
 
     private final AccessGuard accessGuard;
     private final ProjectMemberRepository memberRepository;
+    private final ProjectAccessRequestRepository requestRepository;
     private final UserRepository userRepository;
     private final BlockedUserRepository blockedUserRepository;
     private final NotificationService notificationService;
@@ -41,11 +43,12 @@ public class ProjectMemberService {
     private final CollabClient collab;
     private final int maxMembers;
 
-    public ProjectMemberService(AccessGuard accessGuard, ProjectMemberRepository memberRepository, UserRepository userRepository,
+    public ProjectMemberService(AccessGuard accessGuard, ProjectMemberRepository memberRepository, ProjectAccessRequestRepository requestRepository, UserRepository userRepository,
                                 BlockedUserRepository blockedUserRepository, NotificationService notificationService,
                                 ProjectIdCodec codec, CollabClient collab, @Value("${app.projects.max-members:20}") int maxMembers) {
         this.accessGuard = accessGuard;
         this.memberRepository = memberRepository;
+        this.requestRepository = requestRepository;
         this.userRepository = userRepository;
         this.blockedUserRepository = blockedUserRepository;
         this.notificationService = notificationService;
@@ -85,6 +88,7 @@ public class ProjectMemberService {
             member.setShareLink(null);
         }
         memberRepository.save(member);
+        requestRepository.deleteByProjectIdAndRequesterId(projectId, target.getId());
         notificationService.recordEvent(target, NotificationTypes.MEMBER_ADDED, project, requester, new Date());
         return toDto(member);
     }
