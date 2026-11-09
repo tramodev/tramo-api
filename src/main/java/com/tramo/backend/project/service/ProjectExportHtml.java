@@ -148,7 +148,7 @@ public class ProjectExportHtml {
     public static String escape(String value) {
         return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
-    private static String alignment(String value) { return Set.of("left", "right", "center").contains(value == null ? "" : value) ? value : "center"; }
+    static String alignment(String value) { return Set.of("left", "right", "center").contains(value == null ? "" : value) ? value : "center"; }
     private static String dimension(JsonNode node, String field) { int value = node.path(field).asInt(0); return value > 0 && value <= 10000 ? " " + field + "=\"" + value + "\"" : ""; }
     private static String safeStyle(String value) {
         StringBuilder safe = new StringBuilder();
@@ -161,7 +161,7 @@ public class ProjectExportHtml {
         }
         return safe.toString();
     }
-    private static boolean safeUrl(String value) {
+    static boolean safeUrl(String value) {
         if (value.chars().anyMatch(c -> c <= 32 || c == 127)) return false;
         try { URI uri = URI.create(value); String scheme = uri.getScheme(); return scheme != null && (Set.of("http", "https").contains(scheme.toLowerCase(Locale.ROOT)) && uri.getHost() != null || "mailto".equalsIgnoreCase(scheme)); }
         catch (IllegalArgumentException invalid) { return false; }

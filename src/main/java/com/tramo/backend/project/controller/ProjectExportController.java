@@ -1,6 +1,7 @@
 package com.tramo.backend.project.controller;
 
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.project.service.ProjectExportFormat;
 import com.tramo.backend.project.service.ProjectExportService;
 import com.tramo.backend.user.entity.User;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,11 +18,12 @@ public class ProjectExportController {
     public ProjectExportController(ProjectExportService exports, ProjectIdCodec codec) { this.exports = exports; this.codec = codec; }
 
     @GetMapping("/{id}/export")
-    public void export(@PathVariable String id, @AuthenticationPrincipal User user, HttpServletResponse response) throws IOException {
-        var archive = exports.prepare(codec.decode(id), user);
+    public void export(@PathVariable String id, @RequestParam(defaultValue = "html") String format, @AuthenticationPrincipal User user, HttpServletResponse response) throws IOException {
+        var type = ProjectExportFormat.parse(format);
+        var archive = exports.prepare(codec.decode(id), user, type);
         try {
-            response.setContentType("application/zip");
-            response.setHeader("Content-Disposition", "attachment; filename=\"tramo-project-" + codec.encode(codec.decode(id)) + ".zip\"");
+            response.setContentType(type.contentType());
+            response.setHeader("Content-Disposition", "attachment; filename=\"tramo-project-" + codec.encode(codec.decode(id)) + type.suffix() + "\"");
             response.setHeader("Cache-Control", "private, no-store");
             response.setContentLengthLong(Files.size(archive));
             Files.copy(archive, response.getOutputStream());

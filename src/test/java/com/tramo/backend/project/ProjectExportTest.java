@@ -41,7 +41,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
     @Autowired com.tramo.backend.trail.repository.ItemImageReferenceRepository legacyReferences;
     @MockitoSpyBean ItemRepository items;
     private final ObjectMapper mapper = new ObjectMapper();
-    private static final byte[] PNG = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6vV0AAAAASUVORK5CYII=");
+    private static final byte[] PNG = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4XmNgYGAAAAAEAAEP0q3kAAAAAElFTkSuQmCC");
     record Fixture(User owner, Project project, long first, long second, long shared, long loose) {}
 
     Fixture fixture() throws Exception {
@@ -281,5 +281,60 @@ class ProjectExportTest extends AbstractIntegrationTest {
         org.mockito.Mockito.clearInvocations(items);
         assertThatThrownBy(() -> exports.prepare(f.project.getId(), f.owner)).isInstanceOf(ProjectExportException.class).hasMessageContaining("limits");
         verify(items, never()).findForExport(any());
+    }
+
+    byte[] download(Fixture f, String format, String type, String suffix) throws Exception {
+        return mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("format", format).header("Authorization", bearer(f.owner)))
+                .andExpect(status().isOk()).andExpect(content().contentType(type))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"tramo-project-" + pid(f.project) + suffix + "\""))
+                .andReturn().getResponse().getContentAsByteArray();
+    }
+
+    @Test
+    void markdownPdfAndWordCarryNotesAndImages() throws Exception {
+        Fixture f = fixture(); UUID id = image(f, true);
+        String content = mapper.writeValueAsString(Map.of("root", Map.of("type", "root", "children", List.of(
+                Map.of("type", "heading", "tag", "h2", "children", List.of(Map.of("type", "text", "text", "Heading"))),
+                Map.of("type", "paragraph", "children", List.of(Map.of("type", "text", "text", "Bold *star*", "format", 1))),
+                Map.of("type", "list", "listType", "number", "start", 3, "children", List.of(Map.of("type", "listitem", "checked", true, "children", List.of(Map.of("type", "text", "text", "Checked"))))),
+                Map.of("type", "paragraph", "children", List.of(
+                        Map.of("type", "link", "url", "#", "rel", "tramo-idea:" + f.loose, "children", List.of(Map.of("type", "text", "text", "Internal"))),
+                        Map.of("type", "link", "url", "https://example.com", "children", List.of(Map.of("type", "text", "text", "External"))),
+                        Map.of("type", "equation", "equation", "x^2+1", "inline", true))),
+                Map.of("type", "table", "children", List.of(Map.of("type", "tablerow", "children", List.of(Map.of("type", "tablecell", "children", List.of(Map.of("type", "text", "text", "Cell"))))))),
+                Map.of("type", "paragraph", "children", List.of(Map.of("type", "image", "imageId", id.toString(), "altText", "Offline picture", "caption", "Caption")))))));
+        jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", content, f.shared);
+        when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new ResponseInputStream<>(GetObjectResponse.builder().contentLength((long) PNG.length).build(), new ByteArrayInputStream(PNG)));
+
+        var archive = unzip(download(f, "md", "application/zip", "-md.zip"));
+        assertThat(archive).containsKeys("project.json", "assets/" + id + ".png");
+        assertThat(new String(archive.get("index.md"), StandardCharsets.UTF_8)).contains("# \\<script\\>alert('title')\\</script\\>", "## Heading", "**Bold \\*star\\***",
+                "3. [x] Checked", "[Internal](#note-" + f.loose + ")", "[External](https://example.com)", "$x^2+1$", "| Cell |", "![Offline picture](assets/" + id + ".png)<br>*Caption*");
+
+        byte[] pdf = download(f, "pdf", "application/pdf", ".pdf");
+        try (var document = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(document)).contains("Heading", "Bold *star*", "Checked", "External", "x^2+1", "Cell", "Caption");
+            boolean picture = false;
+            for (var page : document.getPages()) for (var name : page.getResources().getXObjectNames()) picture |= page.getResources().isImageXObject(name);
+            assertThat(picture).isTrue();
+        }
+
+        byte[] docx = download(f, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx");
+        try (var document = new org.apache.poi.xwpf.usermodel.XWPFDocument(new ByteArrayInputStream(docx));
+             var extractor = new org.apache.poi.xwpf.extractor.XWPFWordExtractor(document)) {
+            assertThat(extractor.getText()).contains("Heading", "Bold *star*", "Checked", "External", "x^2+1", "Cell", "Caption");
+            assertThat(document.getAllPictures()).isNotEmpty();
+            assertThat(document.getTables()).isNotEmpty();
+        }
+    }
+
+    @Test
+    void unknownFormatsAreRejectedAndStrangersGetNoFormat() throws Exception {
+        Fixture f = fixture();
+        mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("format", "exe").header("Authorization", bearer(f.owner)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("EXPORT_FORMAT_INVALID"));
+        User stranger = createUser("formatstranger");
+        for (String format : List.of("md", "pdf", "docx"))
+            mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("format", format).header("Authorization", bearer(stranger))).andExpect(status().isNotFound());
     }
 }

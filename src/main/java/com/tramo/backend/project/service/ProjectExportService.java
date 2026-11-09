@@ -18,6 +18,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import javax.imageio.ImageIO;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -59,6 +60,10 @@ public class ProjectExportService {
     private record Snapshot(ProjectExportDTO data, List<Resource> resources) {}
 
     public Path prepare(Long projectId, User requester) throws IOException {
+        return prepare(projectId, requester, ProjectExportFormat.HTML);
+    }
+
+    public Path prepare(Long projectId, User requester, ProjectExportFormat format) throws IOException {
         access.getProject(projectId, requester, ProjectRole.VIEWER);
         if (!preparations.tryAcquire()) throw new ProjectExportException(429, "EXPORT_BUSY", "Project exports are busy. Please try again shortly.");
         Path archive = null;
@@ -66,32 +71,31 @@ public class ProjectExportService {
         try {
             Snapshot snapshot = reads.execute(status -> capture(projectId, requester));
             Set<String> warnings = new LinkedHashSet<>();
-            String html = new ProjectExportHtml(mapper, snapshot.data(), warnings).render();
             var source = snapshot.data();
-            var data = new ProjectExportDTO(3, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
-                    source.assets(), List.copyOf(warnings));
-            archive = Files.createTempFile("tramo-export-", ".zip");
-            long total = 0;
-            try (var zip = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(archive)))) {
-                total = text(zip, "index.html", html, total);
-                total = text(zip, "project.json", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data), total);
-                Set<String> written = new HashSet<>();
-                byte[] buffer = new byte[64 * 1024];
-                for (Resource resource : snapshot.resources()) {
-                    if (!written.add(resource.path())) continue;
-                    try (InputStream stream = resource.image() != null ? privateStorage.openForExport(resource.image()) : publicStorage.openForExport(resource.url())) {
+            archive = Files.createTempFile("tramo-export-", format.suffix());
+            if (format == ProjectExportFormat.PDF || format == ProjectExportFormat.DOCX) {
+                Map<String, byte[]> assets = load(snapshot.resources());
+                try (var out = new BufferedOutputStream(Files.newOutputStream(archive))) {
+                    if (format == ProjectExportFormat.PDF) ProjectExportPdf.write(new ProjectExportHtml(mapper, source, warnings).render(), assets, out);
+                    else new ProjectExportDocx(mapper, source, warnings, assets).write(out);
+                }
+            } else {
+                boolean markdown = format == ProjectExportFormat.MD;
+                String index = markdown ? new ProjectExportMarkdown(mapper, source, warnings).render() : new ProjectExportHtml(mapper, source, warnings).render();
+                var data = new ProjectExportDTO(3, source.exportedAt(), source.project(), source.items(), source.trails(), source.looseItemIds(),
+                        source.assets(), List.copyOf(warnings));
+                long total = 0;
+                try (var zip = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(archive)))) {
+                    total = text(zip, markdown ? "index.md" : "index.html", index, total);
+                    total = text(zip, "project.json", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data), total);
+                    Set<String> written = new HashSet<>();
+                    byte[] buffer = new byte[64 * 1024];
+                    for (Resource resource : snapshot.resources()) {
+                        if (!written.add(resource.path())) continue;
                         zip.putNextEntry(new ZipEntry(resource.path()));
-                        long resourceBytes = 0;
-                        int read;
-                        while ((read = stream.read(buffer)) != -1) {
-                            resourceBytes += read; total += read;
-                            if (total > MAX_BYTES || resourceBytes > 25L * 1024 * 1024) throw ProjectExportException.tooLarge();
-                            zip.write(buffer, 0, read);
-                        }
-                        if (resourceBytes == 0 || (resource.image() != null && resourceBytes != resource.image().bytes())) throw ProjectExportException.resource(resource.reference());
+                        total = copy(resource, zip, buffer, total);
                         zip.closeEntry();
-                    } catch (ProjectExportException failure) { throw failure; }
-                    catch (RuntimeException | IOException failure) { throw ProjectExportException.resource(resource.reference()); }
+                    }
                 }
             }
             if (Files.size(archive) > MAX_BYTES + 1024 * 1024) throw ProjectExportException.tooLarge();
@@ -100,6 +104,45 @@ public class ProjectExportService {
         } finally {
             if (!complete) discard(archive);
         }
+    }
+
+    private Map<String, byte[]> load(List<Resource> resources) {
+        Map<String, byte[]> loaded = new HashMap<>();
+        byte[] buffer = new byte[64 * 1024];
+        long total = 0;
+        for (Resource resource : resources) {
+            if (loaded.containsKey(resource.path())) continue;
+            var bytes = new ByteArrayOutputStream();
+            total = copy(resource, bytes, buffer, total);
+            byte[] data = bytes.toByteArray();
+            loaded.put(resource.path(), data.length > 1 && (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 ? data : png(data, resource.reference()));
+        }
+        return loaded;
+    }
+
+    private long copy(Resource resource, OutputStream out, byte[] buffer, long total) {
+        try (InputStream stream = resource.image() != null ? privateStorage.openForExport(resource.image()) : publicStorage.openForExport(resource.url())) {
+            long resourceBytes = 0;
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                resourceBytes += read; total += read;
+                if (total > MAX_BYTES || resourceBytes > 25L * 1024 * 1024) throw ProjectExportException.tooLarge();
+                out.write(buffer, 0, read);
+            }
+            if (resourceBytes == 0 || (resource.image() != null && resourceBytes != resource.image().bytes())) throw ProjectExportException.resource(resource.reference());
+            return total;
+        } catch (ProjectExportException failure) { throw failure; }
+        catch (RuntimeException | IOException failure) { throw ProjectExportException.resource(resource.reference()); }
+    }
+
+    private static byte[] png(byte[] source, String reference) {
+        try {
+            var image = ImageIO.read(new ByteArrayInputStream(source));
+            if (image == null) throw ProjectExportException.resource(reference);
+            var out = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", out);
+            return out.toByteArray();
+        } catch (IOException failure) { throw ProjectExportException.resource(reference); }
     }
 
     public void discard(Path archive) throws IOException {
