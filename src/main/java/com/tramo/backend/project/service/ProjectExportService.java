@@ -58,12 +58,13 @@ public class ProjectExportService {
 
     private record Resource(String reference, String path, EditorImage image, String url) {}
     private record Snapshot(ProjectExportDTO data, List<Resource> resources) {}
+    public record Prepared(Path file, String title) {}
 
     public Path prepare(Long projectId, User requester) throws IOException {
-        return prepare(projectId, requester, ProjectExportFormat.HTML);
+        return prepare(projectId, requester, ProjectExportFormat.HTML).file();
     }
 
-    public Path prepare(Long projectId, User requester, ProjectExportFormat format) throws IOException {
+    public Prepared prepare(Long projectId, User requester, ProjectExportFormat format) throws IOException {
         access.getProject(projectId, requester, ProjectRole.VIEWER);
         if (!preparations.tryAcquire()) throw new ProjectExportException(429, "EXPORT_BUSY", "Project exports are busy. Please try again shortly.");
         Path archive = null;
@@ -72,7 +73,7 @@ public class ProjectExportService {
             Snapshot snapshot = reads.execute(status -> capture(projectId, requester));
             Set<String> warnings = new LinkedHashSet<>();
             var source = snapshot.data();
-            archive = Files.createTempFile("tramo-export-", format.suffix());
+            archive = Files.createTempFile("tramo-export-", format.extension());
             if (format == ProjectExportFormat.PDF || format == ProjectExportFormat.DOCX) {
                 Map<String, byte[]> assets = load(snapshot.resources());
                 try (var out = new BufferedOutputStream(Files.newOutputStream(archive))) {
@@ -100,7 +101,7 @@ public class ProjectExportService {
             }
             if (Files.size(archive) > MAX_BYTES + 1024 * 1024) throw ProjectExportException.tooLarge();
             complete = true;
-            return archive;
+            return new Prepared(archive, source.project().title());
         } finally {
             if (!complete) discard(archive);
         }

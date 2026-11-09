@@ -3,6 +3,7 @@ package com.tramo.backend.project;
 import com.tramo.backend.AbstractIntegrationTest;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.repository.ProjectRepository;
+import com.tramo.backend.project.service.ProjectExportFormat;
 import com.tramo.backend.project.service.ProjectExportService;
 import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.upload.entity.UploadRecord;
@@ -283,11 +284,25 @@ class ProjectExportTest extends AbstractIntegrationTest {
         verify(items, never()).findForExport(any());
     }
 
-    byte[] download(Fixture f, String format, String type, String suffix) throws Exception {
-        return mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("format", format).header("Authorization", bearer(f.owner)))
-                .andExpect(status().isOk()).andExpect(content().contentType(type))
-                .andExpect(header().string("Content-Disposition", "attachment; filename=\"tramo-project-" + pid(f.project) + suffix + "\""))
-                .andReturn().getResponse().getContentAsByteArray();
+    byte[] download(Fixture f, String format, String type, String filename) throws Exception {
+        var response = mockMvc.perform(get("/api/project/" + pid(f.project) + "/export").param("format", format).header("Authorization", bearer(f.owner)))
+                .andExpect(status().isOk()).andExpect(content().contentType(type)).andReturn().getResponse();
+        var disposition = org.springframework.http.ContentDisposition.parse(response.getHeader("Content-Disposition"));
+        assertThat(disposition.isAttachment()).isTrue();
+        assertThat(disposition.getFilename()).isEqualTo(filename);
+        return response.getContentAsByteArray();
+    }
+
+    @Test
+    void filenamesComeFromTheProjectTitleAndAreSafeOnEverySystem() {
+        assertThat(ProjectExportFormat.PDF.filename("Año ñandú: notas/2026?")).isEqualTo("Año ñandú notas 2026.pdf");
+        assertThat(ProjectExportFormat.MD.filename("Mi proyecto")).isEqualTo("Mi proyecto (Markdown).zip");
+        assertThat(ProjectExportFormat.HTML.filename("Mi proyecto")).isEqualTo("Mi proyecto (HTML).zip");
+        assertThat(ProjectExportFormat.DOCX.filename("  ..oculto. \n")).isEqualTo("oculto.docx");
+        assertThat(ProjectExportFormat.PDF.filename("Line\r\nContent-Type: x\"")).isEqualTo("Line Content-Type x.pdf");
+        for (String empty : new String[] { null, "", "   ", "...", "CON", "lpt1.txt", "<>|" })
+            assertThat(ProjectExportFormat.PDF.filename(empty)).isEqualTo("Untitled project.pdf");
+        assertThat(ProjectExportFormat.PDF.filename("😀".repeat(150))).isEqualTo("😀".repeat(100) + ".pdf");
     }
 
     @Test
@@ -306,12 +321,12 @@ class ProjectExportTest extends AbstractIntegrationTest {
         jdbcTemplate.update("UPDATE item_content SET content = ? WHERE id = (SELECT content_id FROM item WHERE id = ?)", content, f.shared);
         when(s3Client.getObject(any(GetObjectRequest.class))).thenAnswer(call -> new ResponseInputStream<>(GetObjectResponse.builder().contentLength((long) PNG.length).build(), new ByteArrayInputStream(PNG)));
 
-        var archive = unzip(download(f, "md", "application/zip", "-md.zip"));
+        var archive = unzip(download(f, "md", "application/zip", "script alert('title') script (Markdown).zip"));
         assertThat(archive).containsKeys("project.json", "assets/" + id + ".png");
         assertThat(new String(archive.get("index.md"), StandardCharsets.UTF_8)).contains("# \\<script\\>alert('title')\\</script\\>", "## Heading", "**Bold \\*star\\***",
                 "3. [x] Checked", "[Internal](#note-" + f.loose + ")", "[External](https://example.com)", "$x^2+1$", "| Cell |", "![Offline picture](assets/" + id + ".png)<br>*Caption*");
 
-        byte[] pdf = download(f, "pdf", "application/pdf", ".pdf");
+        byte[] pdf = download(f, "pdf", "application/pdf", "script alert('title') script.pdf");
         try (var document = org.apache.pdfbox.Loader.loadPDF(pdf)) {
             assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(document)).contains("Heading", "Bold *star*", "Checked", "External", "x^2+1", "Cell", "Caption");
             boolean picture = false;
@@ -326,7 +341,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
             assertThat(document.getDocumentCatalog().getPageMode()).isEqualTo(org.apache.pdfbox.pdmodel.PageMode.USE_OUTLINES);
         }
 
-        byte[] docx = download(f, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx");
+        byte[] docx = download(f, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "script alert('title') script.docx");
         try (var document = new org.apache.poi.xwpf.usermodel.XWPFDocument(new ByteArrayInputStream(docx));
              var extractor = new org.apache.poi.xwpf.extractor.XWPFWordExtractor(document)) {
             assertThat(extractor.getText()).contains("Heading", "Bold *star*", "Checked", "External", "x^2+1", "Cell", "Caption");

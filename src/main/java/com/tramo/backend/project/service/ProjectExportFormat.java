@@ -4,16 +4,25 @@ import com.tramo.backend.exception.ProjectExportException;
 import java.util.Locale;
 
 public enum ProjectExportFormat {
-    HTML("application/zip", ".zip"),
-    MD("application/zip", "-md.zip"),
-    PDF("application/pdf", ".pdf"),
-    DOCX("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx");
+    HTML("application/zip", " (HTML)", ".zip"),
+    MD("application/zip", " (Markdown)", ".zip"),
+    PDF("application/pdf", "", ".pdf"),
+    DOCX("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "", ".docx");
 
     private final String contentType;
-    private final String suffix;
-    ProjectExportFormat(String contentType, String suffix) { this.contentType = contentType; this.suffix = suffix; }
+    private final String label;
+    private final String extension;
+    ProjectExportFormat(String contentType, String label, String extension) { this.contentType = contentType; this.label = label; this.extension = extension; }
     public String contentType() { return contentType; }
-    public String suffix() { return suffix; }
+    public String extension() { return extension; }
+
+    public String filename(String title) {
+        String name = (title == null ? "" : title).replaceAll("[\\p{Cntrl}/\\\\:*?\"<>|]", " ").replaceAll("\\s+", " ").strip();
+        if (name.codePointCount(0, name.length()) > 100) name = name.substring(0, name.offsetByCodePoints(0, 100));
+        name = name.replaceAll("^[. ]+|[. ]+$", "");
+        if (name.isEmpty() || name.matches("(?i)(con|prn|aux|nul|com\\d|lpt\\d)(\\..*)?")) name = "Untitled project";
+        return name + label + extension;
+    }
 
     public static ProjectExportFormat parse(String value) {
         for (ProjectExportFormat format : values()) if (format.name().toLowerCase(Locale.ROOT).equals(value)) return format;
