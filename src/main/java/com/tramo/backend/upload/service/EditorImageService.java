@@ -146,7 +146,7 @@ public class EditorImageService {
                     .map(ProjectSnapshot::getId).orElseThrow(this::missing);
         }
         Set<UUID> requested = new LinkedHashSet<>(request.imageIds());
-        if (!new HashSet<>(images.visibleImageIds(projectId, snapshotId)).containsAll(requested)) throw missing();
+        if (!new HashSet<>(images.visibleImageIds(projectId, snapshotId, !publicRead && snapshotId == null)).containsAll(requested)) throw missing();
         List<EditorImage> found = images.findAll(requested);
         if (found.size() != requested.size() || found.stream().anyMatch(i -> !"READY".equals(i.state()))) throw missing();
         Instant expires = Instant.now().plusSeconds(300);

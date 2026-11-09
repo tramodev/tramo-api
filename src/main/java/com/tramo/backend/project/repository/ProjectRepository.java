@@ -95,6 +95,9 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     long countByOwnerIdAndVisibility(Long ownerId, ProjectVisibility visibility);
     long countByForkedFromOwnerIdAndOwnerIdNot(Long forkedFromOwnerId, Long ownerId);
 
+    @Query("SELECT p.id, p.structureVersion FROM Project p WHERE p.id IN :ids")
+    List<Object[]> findStructureVersions(@Param("ids") List<Long> ids);
+
     @Query("SELECT COUNT(DISTINCT p.owner.id) FROM Project p WHERE p.forkedFrom.owner.id = :ownerId AND p.owner.id <> :ownerId")
     long countDistinctForkersByOwnerId(@Param("ownerId") Long ownerId);
     boolean existsByIdAndOwnerId(Long id, Long ownerId);

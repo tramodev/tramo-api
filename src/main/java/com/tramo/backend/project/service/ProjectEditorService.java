@@ -1,9 +1,12 @@
 package com.tramo.backend.project.service;
 
 import com.tramo.backend.common.ProjectIdCodec;
+import com.tramo.backend.exception.ResourceNotFoundException;
 import com.tramo.backend.project.dto.EditorBootstrapDTO;
+import com.tramo.backend.project.dto.ProjectStructureDTO;
 import com.tramo.backend.project.entity.Project;
 import com.tramo.backend.project.entity.ProjectRole;
+import com.tramo.backend.project.repository.ProjectRepository;
 import com.tramo.backend.trail.dto.ItemTextStatsDTO;
 import com.tramo.backend.trail.dto.TrailItemContentDTO;
 import com.tramo.backend.trail.entity.Item;
@@ -16,6 +19,7 @@ import com.tramo.backend.trail.repository.TrailRepository;
 import com.tramo.backend.trail.service.ItemService;
 import com.tramo.backend.user.entity.User;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
@@ -32,10 +36,15 @@ public class ProjectEditorService {
     private final TrailItemRepository trailItemRepository;
     private final ItemRepository itemRepository;
     private final ItemService itemService;
+    private final ProjectRepository projectRepository;
+
+    private record Structure(List<Trail> trails, Map<Long, List<Long>> itemIdsByTrail, Map<Long, Item> items,
+            List<EditorBootstrapDTO.EditorTrailDTO> trailDtos, List<EditorBootstrapDTO.EditorItemDTO> itemDtos) {}
 
     public ProjectEditorService(AccessGuard accessGuard, ProjectIdCodec projectIdCodec,
             ProjectResponseMapper responseMapper, TrailRepository trailRepository,
-            TrailItemRepository trailItemRepository, ItemRepository itemRepository, ItemService itemService) {
+            TrailItemRepository trailItemRepository, ItemRepository itemRepository, ItemService itemService,
+            ProjectRepository projectRepository) {
         this.accessGuard = accessGuard;
         this.projectIdCodec = projectIdCodec;
         this.responseMapper = responseMapper;
@@ -43,11 +52,19 @@ public class ProjectEditorService {
         this.trailItemRepository = trailItemRepository;
         this.itemRepository = itemRepository;
         this.itemService = itemService;
+        this.projectRepository = projectRepository;
     }
 
-    @Transactional(readOnly = true)
-    public EditorBootstrapDTO get(Long projectId, Long preferredItemId, Long preferredTrailId, User requester) {
-        Project project = accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ProjectStructureDTO structure(Long projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        Structure structure = load(projectId);
+        return new ProjectStructureDTO(project.getStructureVersion(), project.getRestoreEpoch(),
+                structure.trailDtos(), structure.itemDtos());
+    }
+
+    private Structure load(Long projectId) {
         List<Trail> trails = trailRepository.findByProjectId(projectId);
         List<TrailItem> steps = trailItemRepository.findEditorSteps(projectId);
         Map<Long, List<Long>> itemIdsByTrail = steps.stream().collect(Collectors.groupingBy(
@@ -58,6 +75,26 @@ public class ProjectEditorService {
         for (Item item : itemRepository.findEditorItems(projectId)) items.putIfAbsent(item.getId(), item);
         Map<Long, ItemTextStatsDTO> stats = itemRepository.findTextStatsByProjectId(projectId).stream()
                 .collect(Collectors.toMap(ItemTextStatsDTO::id, stat -> stat));
+        List<EditorBootstrapDTO.EditorTrailDTO> trailDtos = trails.stream().map(trail ->
+                new EditorBootstrapDTO.EditorTrailDTO(trail.getId(), trail.getTitle(), trail.getDescription(),
+                        trail.getVersion(), trail.getForkedFrom() == null ? null : trail.getForkedFrom().getId(),
+                        itemIdsByTrail.getOrDefault(trail.getId(), List.of()))).toList();
+        List<EditorBootstrapDTO.EditorItemDTO> itemDtos = items.values().stream().map(item -> {
+            ItemTextStatsDTO stat = stats.get(item.getId());
+            return new EditorBootstrapDTO.EditorItemDTO(item.getId(), item.getTitle(), item.getTitleAlign(),
+                    Boolean.TRUE.equals(item.getUnfiled()), stat == null ? 0 : stat.words(),
+                    stat == null ? 0 : stat.characters());
+        }).toList();
+        return new Structure(trails, itemIdsByTrail, items, trailDtos, itemDtos);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public EditorBootstrapDTO get(Long projectId, Long preferredItemId, Long preferredTrailId, User requester) {
+        Project project = accessGuard.getProject(projectId, requester, ProjectRole.VIEWER);
+        Structure structure = load(projectId);
+        List<Trail> trails = structure.trails();
+        Map<Long, List<Long>> itemIdsByTrail = structure.itemIdsByTrail();
+        Map<Long, Item> items = structure.items();
 
         Long selectedItemId = items.containsKey(preferredItemId) ? preferredItemId : null;
         Long selectedTrailId = null;
@@ -94,20 +131,11 @@ public class ProjectEditorService {
                     content == null ? "" : content.getContent(), content == null ? 0 : content.getExtractionEpoch()));
         }
 
-        List<EditorBootstrapDTO.EditorTrailDTO> trailDtos = trails.stream().map(trail ->
-                new EditorBootstrapDTO.EditorTrailDTO(trail.getId(), trail.getTitle(), trail.getDescription(),
-                        trail.getVersion(), trail.getForkedFrom() == null ? null : trail.getForkedFrom().getId(),
-                        itemIdsByTrail.getOrDefault(trail.getId(), List.of()))).toList();
-        List<EditorBootstrapDTO.EditorItemDTO> itemDtos = items.values().stream().map(item -> {
-            ItemTextStatsDTO stat = stats.get(item.getId());
-            return new EditorBootstrapDTO.EditorItemDTO(item.getId(), item.getTitle(), item.getTitleAlign(),
-                    Boolean.TRUE.equals(item.getUnfiled()), stat == null ? 0 : stat.words(),
-                    stat == null ? 0 : stat.characters());
-        }).toList();
         return new EditorBootstrapDTO(projectIdCodec.encode(projectId), project.getTitle(),
                 project.getDescription(), project.getGraphColors(), project.getVisibility(),
-                responseMapper.resolveTagNames(project), trailDtos, itemDtos,
-                selectedItemId, selectedTrailId, contents, requester.getUsername(), requester.getImageUrl(), project.getRestoreEpoch(), project.isHistoryUnavailable(),
+                responseMapper.resolveTagNames(project), structure.trailDtos(), structure.itemDtos(),
+                selectedItemId, selectedTrailId, contents, requester.getUsername(), requester.getImageUrl(), project.getRestoreEpoch(),
+                project.getStructureVersion(), project.isHistoryUnavailable(),
                 accessGuard.roleOf(project, requester));
     }
 }

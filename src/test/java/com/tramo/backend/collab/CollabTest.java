@@ -23,6 +23,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -88,8 +90,13 @@ class CollabTest extends AbstractIntegrationTest {
     }
 
     private ResultActions store(long item, User author, String content, int epoch, String bootstrapHash) throws Exception {
+        return store(item, author, content, epoch, bootstrapHash, null);
+    }
+
+    private ResultActions store(long item, User author, String content, int epoch, String bootstrapHash, String title) throws Exception {
         var body = new java.util.HashMap<String, Object>(Map.of("state", STATE, "content", content, "extractionEpoch", epoch, "authorId", author.getId()));
         if (bootstrapHash != null) body.put("bootstrapHash", bootstrapHash);
+        if (title != null) body.put("title", title);
         return mockMvc.perform(put("/internal/collab/items/" + item)
                 .header("X-Collab-Secret", TEST_COLLAB_SECRET)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -111,6 +118,103 @@ class CollabTest extends AbstractIntegrationTest {
 
     private static String hash(String content) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private long structureVersion(long project) {
+        return jdbcTemplate.queryForObject("SELECT structure_version FROM project WHERE id = ?", Long.class, project);
+    }
+
+    private ResultActions renameItem(User user, long item, String title) throws Exception {
+        return mockMvc.perform(put("/api/item/" + item).header("Authorization", bearer(user))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"" + title + "\"}"));
+    }
+
+    @Test
+    void structuralChangesBumpTheVersionAndNotifyButContentSavesDoNot() throws Exception {
+        User owner = createUser("collabstructure1");
+        Project project = createProject(owner, "Structure", "private");
+        long start = structureVersion(project.getId());
+        long trail = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Trail\"}");
+        long first = postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"One\"}");
+        long second = postForId(owner, "/api/trail/" + trail + "/item", "{\"title\":\"Two\"}");
+        assertThat(structureVersion(project.getId())).isEqualTo(start + 3);
+        verify(collabClient, atLeastOnce()).structureAfterCommit(project.getId());
+
+        long beforeRename = structureVersion(project.getId());
+        renameItem(owner, first, "Renamed").andExpect(status().isOk());
+        assertThat(structureVersion(project.getId())).isEqualTo(beforeRename + 1);
+
+        clearInvocations(collabClient);
+        long unchanged = structureVersion(project.getId());
+        renameItem(owner, first, "Renamed").andExpect(status().isOk());
+        mockMvc.perform(put("/api/item/" + first + "/content").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content(contentRequest(lexicalText("body"))))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(structureVersion(project.getId())).isEqualTo(unchanged);
+        verify(collabClient, never()).structureAfterCommit(project.getId());
+
+        mockMvc.perform(put("/api/trail/" + trail + "/item/order").header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"itemIds\":[" + second + "," + first + "]}"))
+                .andExpect(status().is2xxSuccessful());
+        mockMvc.perform(delete("/api/trail/" + trail).header("Authorization", bearer(owner)))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(structureVersion(project.getId())).isEqualTo(unchanged + 2);
+        verify(collabClient, atLeastOnce()).structureAfterCommit(project.getId());
+    }
+
+    @Test
+    void renamingOrDeletingASharedNoteBumpsEveryProjectItBelongsTo() throws Exception {
+        User owner = createUser("collabshared1");
+        User other = createUser("collabshared2");
+        Project home = createProject(owner, "Home", "private");
+        Project away = createProject(other, "Away", "private");
+        long item = createItem(owner, home);
+        long awayTrail = postForId(other, "/api/project/" + pid(away) + "/trail", "{\"title\":\"Away trail\"}");
+        jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) VALUES (nextval('trail_item_seq'), ?, ?, 0)", awayTrail, item);
+        clearInvocations(collabClient);
+        long homeBefore = structureVersion(home.getId());
+        long awayBefore = structureVersion(away.getId());
+
+        renameItem(owner, item, "Shared rename").andExpect(status().isOk());
+        assertThat(structureVersion(home.getId())).isEqualTo(homeBefore + 1);
+        assertThat(structureVersion(away.getId())).isEqualTo(awayBefore + 1);
+        verify(collabClient).structureAfterCommit(home.getId());
+        verify(collabClient).structureAfterCommit(away.getId());
+
+        mockMvc.perform(delete("/api/item/" + item).header("Authorization", bearer(owner))).andExpect(status().is2xxSuccessful());
+        assertThat(structureVersion(home.getId())).isEqualTo(homeBefore + 2);
+        assertThat(structureVersion(away.getId())).isEqualTo(awayBefore + 2);
+    }
+
+    @Test
+    void internalStructureReadsAConsistentSnapshot() throws Exception {
+        User owner = createUser("collabstructure3");
+        Project project = createProject(owner, "Snapshot", "private");
+        long item = createItem(owner, project);
+        mockMvc.perform(get("/internal/collab/projects/" + project.getId() + "/structure")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/internal/collab/projects/" + project.getId() + "/structure").header("X-Collab-Secret", "wrong"))
+                .andExpect(status().isForbidden());
+        long version = structureVersion(project.getId());
+        mockMvc.perform(get("/internal/collab/projects/" + project.getId() + "/structure").header("X-Collab-Secret", TEST_COLLAB_SECRET))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(version))
+                .andExpect(jsonPath("$.restoreEpoch").value(0))
+                .andExpect(jsonPath("$.trails[0].itemIds[0]").value(item))
+                .andExpect(jsonPath("$.items[0].id").value(item))
+                .andExpect(jsonPath("$.items[0].title").value("Note"));
+        mockMvc.perform(get("/api/project/" + pid(project) + "/editor").header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.structureVersion").value(version));
+        mockMvc.perform(post("/internal/collab/projects/structure-versions").header("X-Collab-Secret", TEST_COLLAB_SECRET)
+                        .contentType(MediaType.APPLICATION_JSON).content("[" + project.getId() + ", 999999999]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$['" + project.getId() + "']").value(version))
+                .andExpect(jsonPath("$['999999999']").doesNotExist());
+        mockMvc.perform(post("/internal/collab/projects/structure-versions")
+                        .contentType(MediaType.APPLICATION_JSON).content("[" + project.getId() + "]"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/internal/collab/projects/999999999/structure").header("X-Collab-Secret", TEST_COLLAB_SECRET))
+                .andExpect(status().isNotFound());
     }
 
     private String storedContent(long item) {
@@ -235,6 +339,41 @@ class CollabTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void collabStoresApplyLiveTitlesAsRenamesOfEveryProjectTheNoteIsIn() throws Exception {
+        User owner = createUser("collabtitle1");
+        User other = createUser("collabtitle2");
+        Project home = createProject(owner, "Home", "private");
+        Project away = createProject(other, "Away", "private");
+        long item = createItem(owner, home);
+        long awayTrail = postForId(other, "/api/project/" + pid(away) + "/trail", "{\"title\":\"Away trail\"}");
+        jdbcTemplate.update("INSERT INTO trail_item (id, trail_id, item_id, order_index) VALUES (nextval('trail_item_seq'), ?, ?, 0)", awayTrail, item);
+        load(item).andExpect(status().isOk()).andExpect(jsonPath("$.title").value("Note"));
+        store(item, owner, lexicalText("body"), 0, hash("")).andExpect(status().isNoContent());
+        clearInvocations(collabClient);
+        long homeBefore = structureVersion(home.getId());
+        long awayBefore = structureVersion(away.getId());
+
+        store(item, owner, lexicalText("body"), 0, null, "  Live title  ").andExpect(status().isNoContent());
+        assertThat(jdbcTemplate.queryForObject("SELECT title FROM item WHERE id = ?", String.class, item)).isEqualTo("Live title");
+        assertThat(structureVersion(home.getId())).isEqualTo(homeBefore + 1);
+        assertThat(structureVersion(away.getId())).isEqualTo(awayBefore + 1);
+        verify(collabClient).structureAfterCommit(home.getId());
+        verify(collabClient).structureAfterCommit(away.getId());
+        load(item).andExpect(jsonPath("$.title").value("Live title"));
+
+        clearInvocations(collabClient);
+        for (String title : new String[]{null, "", "   ", "Live title"}) {
+            store(item, owner, lexicalText("body " + title), 0, null, title).andExpect(status().isNoContent());
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT title FROM item WHERE id = ?", String.class, item)).isEqualTo("Live title");
+        assertThat(structureVersion(home.getId())).isEqualTo(homeBefore + 1);
+        verify(collabClient, never()).structureAfterCommit(home.getId());
+
+        store(item, owner, lexicalText("body"), 0, null, "x".repeat(256)).andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject("SELECT title FROM item WHERE id = ?", String.class, item)).isEqualTo("Live title");
+    }
+
+    @Test
     void bootstrapRejectsContentChangedSinceLoad() throws Exception {
         User owner = createUser("collabowner4");
         long item = createItem(owner, createProject(owner, "Private", "private"));
@@ -332,12 +471,16 @@ class CollabTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("id").asLong();
         long removed = createItem(owner, project);
+        clearInvocations(collabClient);
+        long before = structureVersion(project.getId());
 
         mockMvc.perform(post("/api/project/" + pid(project) + "/history/" + version + "/restore")
                         .header("Authorization", bearer(owner)).header("X-Project-Epoch", "0"))
                 .andExpect(status().isOk());
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM item WHERE id = ?", Long.class, removed)).isZero();
         verify(collabClient).resetAfterCommit(argThat(ids -> ids.contains(kept) && ids.contains(removed)));
+        verify(collabClient).structureAfterCommit(project.getId());
+        assertThat(structureVersion(project.getId())).isGreaterThan(before);
     }
 
     @Test
@@ -403,7 +546,7 @@ class CollabTest extends AbstractIntegrationTest {
             var storing = pool.submit(() -> {
                 latch.await();
                 try {
-                    collab.store(item, new CollabStoreRequest(new byte[]{9}, lexicalText("racing"), 0, owner.getId(), null));
+                    collab.store(item, new CollabStoreRequest(new byte[]{9}, lexicalText("racing"), 0, owner.getId(), null, null));
                     return true;
                 } catch (com.tramo.backend.exception.ExtractionConflictException restoredFirst) {
                     return false;

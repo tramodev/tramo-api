@@ -39,6 +39,29 @@ class EditorQueryCountTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void internalStructureQueryCountDoesNotScaleWithTrailOrItemCount() throws Exception {
+        User owner = createUser("eqcstructure");
+        Project project = createProject(owner, "Structure", "private");
+        long firstTrail = createTrail(owner, project, "First");
+        createItem(owner, firstTrail, "First note");
+
+        long small = queryCount(() -> mockMvc.perform(get("/internal/collab/projects/" + project.getId() + "/structure")
+                        .header("X-Collab-Secret", TEST_COLLAB_SECRET))
+                .andExpect(status().isOk()));
+
+        long secondTrail = createTrail(owner, project, "Second");
+        for (int i = 0; i < 6; i++) createItem(owner, firstTrail, "First " + i);
+        for (int i = 0; i < 6; i++) createItem(owner, secondTrail, "Second " + i);
+
+        long large = queryCount(() -> mockMvc.perform(get("/internal/collab/projects/" + project.getId() + "/structure")
+                        .header("X-Collab-Secret", TEST_COLLAB_SECRET))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items.length()").value(13)));
+
+        assertThat(large).isEqualTo(small);
+    }
+
+    @Test
     void editorBootstrapSelectsRequestedTrailAndRejectsAnotherOwner() throws Exception {
         User owner = createUser("eqcselection");
         User other = createUser("eqcother");

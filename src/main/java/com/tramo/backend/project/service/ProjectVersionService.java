@@ -83,6 +83,7 @@ public class ProjectVersionService {
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
         List<Item> current = items.findForExport(id);
         collab.resetAfterCommit(current.stream().map(Item::getId).toList());
+        capture.structureChanged(List.of(id));
         members.notifyRestored(project);
         Map<Long, Item> currentById = current.stream().collect(Collectors.toMap(Item::getId, i -> i));
         Set<Long> shared = em.createQuery("select distinct ti.item.id from TrailItem ti where ti.item.id in :ids and ti.trail.project.id <> :project", Long.class)

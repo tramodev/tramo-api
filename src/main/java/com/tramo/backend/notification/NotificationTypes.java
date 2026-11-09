@@ -18,6 +18,7 @@ public final class NotificationTypes {
     public static final String MEMBER_ADDED = "MEMBER_ADDED";
     public static final String MEMBER_JOINED = "MEMBER_JOINED";
     public static final String SHARE_LINK = "SHARE_LINK";
+    public static final String ACCESS_REQUEST = "ACCESS_REQUEST";
 
     public static final List<String> ALL = List.of(UPVOTE, COMMENT, FORK, FOLLOW, PUBLISH, SHARE, BADGE, FEATURED, MEMBER_ADDED, MEMBER_JOINED);
 

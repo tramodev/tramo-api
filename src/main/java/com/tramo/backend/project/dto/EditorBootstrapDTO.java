@@ -8,7 +8,7 @@ import java.util.List;
 public record EditorBootstrapDTO(String id, String title, String description, String graphColors,
         ProjectVisibility visibility, List<String> tags, List<EditorTrailDTO> trails, List<EditorItemDTO> items,
         Long selectedItemId, Long selectedTrailId, List<TrailItemContentDTO> contents,
-        String username, String imageUrl, long restoreEpoch, boolean historyUnavailable, ProjectRole role) {
+        String username, String imageUrl, long restoreEpoch, long structureVersion, boolean historyUnavailable, ProjectRole role) {
     public record EditorTrailDTO(Long id, String title, String description, int version,
             Long forkedFromId, List<Long> itemIds) {}
 

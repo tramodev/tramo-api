@@ -7,6 +7,8 @@ import org.hashids.Hashids;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 @Component
 public class ProjectIdCodec {
     private final Hashids hashids;
@@ -20,10 +22,11 @@ public class ProjectIdCodec {
     }
 
     public Long decode(String hash) {
+        return tryDecode(hash).orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+    }
+
+    public Optional<Long> tryDecode(String hash) {
         long[] decoded = hashids.decode(hash);
-        if (decoded.length == 0) {
-            throw new ResourceNotFoundException("Project not found");
-        }
-        return decoded[0];
+        return decoded.length == 0 ? Optional.empty() : Optional.of(decoded[0]);
     }
 }

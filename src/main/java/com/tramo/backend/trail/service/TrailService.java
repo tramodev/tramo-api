@@ -65,7 +65,7 @@ public class TrailService {
         ContentLimits.assertTrailDescription(request.getDescription());
         long bytes = ContentLimits.bytes(request.getDescription());
         if (bytes > 0) subscriptions.assertUploadAllowed(project.getOwner(), bytes, subscriptions.isSupporter(project.getOwner()));
-        history.beforeChange(project);
+        history.beforeStructureChange(project);
         Trail trail = new Trail();
         trail.setTitle(request.getTitle());
         trail.setDescription(request.getDescription());
@@ -97,7 +97,7 @@ public class TrailService {
             throw new RequestValidationException(RequestErrorCode.PROJECT_TRAIL_ORDER_INVALID);
         }
         if (trails.stream().map(Trail::getId).toList().equals(trailIds)) return;
-        history.beforeChange(project);
+        history.beforeStructureChange(project);
         for (int index = 0; index < trailIds.size(); index++) byId.get(trailIds.get(index)).setOrderIndex(index);
         trailRepository.saveAll(trails);
     }
@@ -111,7 +111,7 @@ public class TrailService {
                 || (request.getDescription() != null && !java.util.Objects.equals(request.getDescription(), trail.getDescription()))
                 || (request.getVisibility() != null && !java.util.Objects.equals(request.getVisibility(), trail.getVisibility()));
         if (!changed) return toResponse(trail);
-        history.beforeChange(project);
+        history.beforeStructureChange(project);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
             trail.setTitle(request.getTitle());
         }
@@ -130,7 +130,7 @@ public class TrailService {
     @Transactional
     public void delete(Long id, User requester) {
         Trail trail = getOwnedTrailForUpdate(id, requester);
-        history.beforeChange(trail.getProject());
+        history.beforeStructureChange(trail.getProject());
         clearThumbnailReference(trail);
         List<TrailItem> memberships = trailItemRepository.findByTrailIdOrderByOrderIndexAsc(id);
         for (TrailItem membership : memberships) {
