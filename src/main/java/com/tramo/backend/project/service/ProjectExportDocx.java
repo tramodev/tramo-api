@@ -6,6 +6,8 @@ import com.tramo.backend.project.dto.ProjectExportDTO;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.*;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTStyle;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STStyleType;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import javax.imageio.ImageIO;
@@ -37,6 +39,8 @@ public class ProjectExportDocx {
 
     public void write(OutputStream out) throws IOException {
         try (document) {
+            headingStyle(1);
+            headingStyle(2);
             title(document.createParagraph(), data.project().title(), 24);
             text(document.createParagraph(), data.project().description());
             String thumbnail = data.project().thumbnailImageUrl();
@@ -226,9 +230,18 @@ public class ProjectExportDocx {
     }
 
     private static XWPFParagraph outline(XWPFParagraph p, int level) {
-        var pPr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
-        pPr.addNewOutlineLvl().setVal(BigInteger.valueOf(level));
+        p.setStyle("Heading" + (level + 1));
         return p;
+    }
+
+    private void headingStyle(int level) {
+        var style = CTStyle.Factory.newInstance();
+        style.setType(STStyleType.PARAGRAPH);
+        style.setStyleId("Heading" + level);
+        style.addNewName().setVal("heading " + level);
+        style.addNewQFormat();
+        style.addNewPPr().addNewOutlineLvl().setVal(BigInteger.valueOf(level - 1));
+        document.createStyles().addStyle(new XWPFStyle(style));
     }
 
     private static void title(XWPFParagraph p, String value, int size) {

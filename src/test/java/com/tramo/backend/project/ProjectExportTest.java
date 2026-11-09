@@ -349,8 +349,9 @@ class ProjectExportTest extends AbstractIntegrationTest {
             assertThat(document.getTables()).isNotEmpty();
             List<String> outline = new ArrayList<>();
             for (var paragraph : document.getParagraphs())
-                if (paragraph.getCTP().isSetPPr() && paragraph.getCTP().getPPr().isSetOutlineLvl()) outline.add(paragraph.getCTP().getPPr().getOutlineLvl().getVal() + ":" + paragraph.getText());
-            assertThat(outline).containsExactly("0:Repeated", "1:Repeated", "0:Repeated", "1:Repeated", "0:Notes outside trails", "1:Repeated");
+                if (paragraph.getStyle() != null) outline.add(document.getStyles().getStyle(paragraph.getStyle()).getName() + ":" + paragraph.getText());
+            assertThat(outline).containsExactly("heading 1:Repeated", "heading 2:Repeated", "heading 1:Repeated", "heading 2:Repeated", "heading 1:Notes outside trails", "heading 2:Repeated");
+            assertThat(document.getStyles().getStyle("Heading1").getCTStyle().getPPr().getOutlineLvl().getVal()).isEqualTo(java.math.BigInteger.ZERO);
         }
     }
 
