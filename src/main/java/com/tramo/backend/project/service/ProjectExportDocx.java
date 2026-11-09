@@ -10,6 +10,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import javax.imageio.ImageIO;
 import java.io.*;
+import java.math.BigInteger;
 import java.util.*;
 
 public class ProjectExportDocx {
@@ -41,11 +42,11 @@ public class ProjectExportDocx {
             String thumbnail = data.project().thumbnailImageUrl();
             if (thumbnail != null && data.assets().containsKey(thumbnail)) picture(document.createParagraph(), data.assets().get(thumbnail), 0, "", thumbnail);
             for (var trail : data.trails()) {
-                title(document.createParagraph(), trail.title(), 18);
+                title(outline(document.createParagraph(), 0), trail.title(), 18);
                 text(document.createParagraph(), trail.description());
                 for (var step : trail.steps()) note(step.itemId());
             }
-            title(document.createParagraph(), "Notes outside trails", 18);
+            title(outline(document.createParagraph(), 0), "Notes outside trails", 18);
             for (Long id : data.looseItemIds()) note(id);
             if (sourceEmbeds > 0) warnings.add(sourceEmbeds + " equations or music scores exported as source. Review the original source for rendering errors.");
             if (!warnings.isEmpty()) {
@@ -59,9 +60,9 @@ public class ProjectExportDocx {
 
     private void note(Long id) {
         var item = items.get(id);
-        XWPFParagraph heading = document.createParagraph();
+        XWPFParagraph heading = outline(document.createParagraph(), 1);
         heading.setAlignment(ParagraphAlignment.valueOf(ProjectExportHtml.alignment(item.titleAlign()).toUpperCase(Locale.ROOT)));
-        title(heading, item.title(), 14);
+        title(heading, item.title() == null || item.title().isBlank() ? "Untitled note" : item.title(), 14);
         String content = item.content();
         if (content == null || content.isBlank()) return;
         JsonNode root;
@@ -222,6 +223,12 @@ public class ProjectExportDocx {
 
     private XWPFParagraph paragraph(IBody body) {
         return body instanceof XWPFTableCell cell ? cell.addParagraph() : document.createParagraph();
+    }
+
+    private static XWPFParagraph outline(XWPFParagraph p, int level) {
+        var pPr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
+        pPr.addNewOutlineLvl().setVal(BigInteger.valueOf(level));
+        return p;
     }
 
     private static void title(XWPFParagraph p, String value, int size) {

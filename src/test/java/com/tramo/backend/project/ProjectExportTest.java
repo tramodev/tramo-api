@@ -317,6 +317,13 @@ class ProjectExportTest extends AbstractIntegrationTest {
             boolean picture = false;
             for (var page : document.getPages()) for (var name : page.getResources().getXObjectNames()) picture |= page.getResources().isImageXObject(name);
             assertThat(picture).isTrue();
+            var outline = document.getDocumentCatalog().getDocumentOutline();
+            List<String> trails = new ArrayList<>();
+            List<Integer> notes = new ArrayList<>();
+            for (var trail : outline.children()) { trails.add(trail.getTitle()); int count = 0; for (var note : trail.children()) { assertThat(note.getTitle()).isEqualTo("Repeated"); count++; } notes.add(count); }
+            assertThat(trails).containsExactly("Repeated", "Repeated", "Notes outside trails");
+            assertThat(notes).containsExactly(1, 1, 1);
+            assertThat(document.getDocumentCatalog().getPageMode()).isEqualTo(org.apache.pdfbox.pdmodel.PageMode.USE_OUTLINES);
         }
 
         byte[] docx = download(f, "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx");
@@ -325,6 +332,10 @@ class ProjectExportTest extends AbstractIntegrationTest {
             assertThat(extractor.getText()).contains("Heading", "Bold *star*", "Checked", "External", "x^2+1", "Cell", "Caption");
             assertThat(document.getAllPictures()).isNotEmpty();
             assertThat(document.getTables()).isNotEmpty();
+            List<String> outline = new ArrayList<>();
+            for (var paragraph : document.getParagraphs())
+                if (paragraph.getCTP().isSetPPr() && paragraph.getCTP().getPPr().isSetOutlineLvl()) outline.add(paragraph.getCTP().getPPr().getOutlineLvl().getVal() + ":" + paragraph.getText());
+            assertThat(outline).containsExactly("0:Repeated", "1:Repeated", "0:Repeated", "1:Repeated", "0:Notes outside trails", "1:Repeated");
         }
     }
 
