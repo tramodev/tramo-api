@@ -78,6 +78,7 @@ public class ProjectVersionCapture {
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
         access.assertRole(project, user, min);
+        project.setEditor(user.getId());
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes && attributes.getRequest().getRequestURI().startsWith("/api/")) {
             String supplied = attributes.getRequest().getHeader("X-Project-Epoch");
             if (supplied == null && project.getRestoreEpoch() == 0) return project;
@@ -152,6 +153,13 @@ public class ProjectVersionCapture {
             }
         }
         project.setLastEditedDate(now);
+        recordEditor(project);
+    }
+
+    public void recordEditor(Project project) {
+        if (project.getEditor() == null) return;
+        jdbc.update("UPDATE project SET history_editor_ids = array_append(history_editor_ids, ?) WHERE id = ? AND NOT (? = ANY(history_editor_ids))",
+                project.getEditor(), project.getId(), project.getEditor());
     }
 
     public ProjectVersionData capture(Project project) {
@@ -182,10 +190,25 @@ public class ProjectVersionCapture {
         version.setProject(project); version.setSnapshot(snapshot); version.setType(type); version.setName(name);
         version.setCreatedAt(new Date()); version.setStateHash(hash(snapshot)); version.setSnapshotBytes(ContentLimits.bytes(snapshot));
         versions.saveAndFlush(version);
+        jdbc.update("UPDATE project_version v SET author_ids = CASE WHEN ? = 'AUTO' OR ?::bigint IS NULL OR ?::bigint = ANY(p.history_editor_ids) THEN p.history_editor_ids ELSE array_append(p.history_editor_ids, ?::bigint) END FROM project p WHERE p.id = v.project_id AND v.id = ?",
+                type.name(), project.getEditor(), project.getEditor(), project.getEditor(), version.getId());
+        jdbc.update("UPDATE project SET history_editor_ids = '{}' WHERE id = ?", project.getId());
         ProjectVersionData data = read(snapshot);
         images.retainVersion(version.getId(), data.items().stream().map(ProjectVersionData.ItemData::content).toList());
         jdbc.update("DELETE FROM project_version WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (ORDER BY id DESC) AS position, sum(snapshot_bytes) OVER (ORDER BY id DESC) AS bytes FROM project_version WHERE project_id = ? AND type = 'AUTO') retained WHERE position > 50 OR bytes > 67108864)", project.getId());
         return version;
+    }
+
+    public List<ProjectVersionSummaryDTO> withAuthors(List<ProjectVersionSummaryDTO> summaries) {
+        if (summaries.isEmpty()) return summaries;
+        Map<Long, List<ProjectVersionSummaryDTO.Author>> byVersion = new HashMap<>();
+        jdbc.query("SELECT v.id, u.id AS user_id, u.username FROM project_version v JOIN project p ON p.id = v.project_id "
+                + "CROSS JOIN LATERAL unnest(CASE WHEN cardinality(v.author_ids) = 0 THEN ARRAY[p.user_id] ELSE v.author_ids END) WITH ORDINALITY a(user_id, position) "
+                + "JOIN users u ON u.id = a.user_id WHERE v.id IN (" + String.join(",", Collections.nCopies(summaries.size(), "?")) + ") ORDER BY v.id, a.position",
+                (org.springframework.jdbc.core.RowCallbackHandler) row -> byVersion.computeIfAbsent(row.getLong("id"), key -> new ArrayList<>())
+                        .add(new ProjectVersionSummaryDTO.Author(row.getLong("user_id"), row.getString("username"))),
+                summaries.stream().map(ProjectVersionSummaryDTO::id).toArray());
+        return summaries.stream().map(summary -> summary.withAuthors(byVersion.getOrDefault(summary.id(), List.of()))).toList();
     }
 
     public ProjectVersionData read(String snapshot) {

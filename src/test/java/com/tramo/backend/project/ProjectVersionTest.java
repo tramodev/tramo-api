@@ -45,6 +45,35 @@ class ProjectVersionTest extends AbstractIntegrationTest {
 
 
     @Test
+    void versionsRecordEveryEditorSinceThePreviousVersion() {
+        var f = fixture();
+        User editor = createUser("historyeditor");
+        jdbcTemplate.update("INSERT INTO project_member (project_id, user_id, role, created_at) VALUES (?, ?, 'EDITOR', now())", f.project.getId(), editor.getId());
+        versions.create(f.project.getId(), "Start", f.user);
+        edit(f, "owner");
+        items.updateContent(f.item, lexicalText("editor"), editor);
+        var named = versions.create(f.project.getId(), "Both", editor);
+        assertThat(named.authors()).extracting(ProjectVersionSummaryDTO.Author::username).containsExactly("historyowner", "historyeditor");
+        edit(f, "owner again");
+        jdbcTemplate.update("update project set last_auto_version_date = now() - interval '31 minutes' where id = ?", f.project.getId());
+        items.updateContent(f.item, lexicalText("editor again"), editor);
+        var auto = versions.list(f.project.getId(), null, f.user).versions().get(0);
+        assertThat(auto.type()).isEqualTo(ProjectVersion.Type.AUTO);
+        assertThat(auto.authors()).extracting(ProjectVersionSummaryDTO.Author::username).containsExactly("historyowner");
+        assertThat(jdbcTemplate.queryForObject("select history_editor_ids[1] from project where id = ?", Long.class, f.project.getId())).isEqualTo(editor.getId());
+    }
+
+    @Test
+    void currentStateIsReadWithoutCreatingAVersion() throws Exception {
+        var f = fixture();
+        edit(f, "now");
+        long before = jdbcTemplate.queryForObject("select count(*) from project_version where project_id = ?", Long.class, f.project.getId());
+        mockMvc.perform(get("/api/project/" + pid(f.project) + "/history/current").header("Authorization", bearer(f.user)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].content").value(lexicalText("now")));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from project_version where project_id = ?", Long.class, f.project.getId())).isEqualTo(before);
+    }
+
+    @Test
     void fixingLegacyStylesPreservesExistingEmbeds() {
         var f = fixture();
         String legacy = "{\"root\":{\"type\":\"root\",\"children\":[{\"type\":\"equation\",\"equation\":42},{\"type\":\"music\",\"abc\":\"" + "x".repeat(10001) + "\"},{\"type\":\"text\",\"text\":\"fix me\",\"style\":\"color: red;\"}]}}";
@@ -360,7 +389,7 @@ class ProjectVersionTest extends AbstractIntegrationTest {
         assertThat(page.versions()).hasSize(20);
         assertThat(versions.list(f.project.getId(), page.nextCursor(), f.user).versions()).hasSize(2);
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/history").header("Authorization", bearer(f.user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.versions[0].authorUsername").value(f.user.getUsername()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.versions[0].authors[0].username").value(f.user.getUsername()))
                 .andExpect(jsonPath("$.versions[0].snapshot").doesNotExist());
     }
 

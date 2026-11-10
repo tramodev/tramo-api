@@ -24,6 +24,11 @@ public class ProjectVersionController {
         return versions.list(codec.decode(id), beforeId, user);
     }
 
+    @GetMapping("/current")
+    public ProjectVersionData current(@PathVariable String id, @AuthenticationPrincipal User user) {
+        return versions.current(codec.decode(id), user);
+    }
+
     @GetMapping("/{versionId}")
     public ProjectVersionService.Detail detail(@PathVariable String id, @PathVariable Long versionId, @AuthenticationPrincipal User user) {
         return versions.detail(codec.decode(id), versionId, user);
