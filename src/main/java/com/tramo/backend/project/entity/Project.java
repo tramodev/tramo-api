@@ -59,6 +59,8 @@ public class Project {
     @Column(nullable = false)
     private boolean historyUnavailable;
     private Date lastAutoVersionDate;
+    @Transient
+    private Long editor;
     
     private Date firstPublishedDate;
     private Date lastPublishedDate;

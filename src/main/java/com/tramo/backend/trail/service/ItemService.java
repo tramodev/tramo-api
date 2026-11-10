@@ -401,7 +401,7 @@ public class ItemService {
         if (expectedContent != null && !Objects.equals(expectedContent, previousContent == null ? "" : previousContent))
             throw new com.tramo.backend.exception.ExtractionConflictException("This note changed in another session. Your changes were kept locally; reload before saving.");
         if (Objects.equals(content, previousContent)) return;
-        history.beforeChange(project);
+        history.beforeChange(project, item.getId());
         if (itemContent == null) {
             itemContent = new ItemContent();
             item.setContent(itemContent);

@@ -55,24 +55,30 @@ public class ProjectVersionService {
     }
 
     public record History(List<ProjectVersionSummaryDTO> versions, Long nextCursor, boolean unavailable) {}
-    public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot) {}
+    public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot, Map<Long, List<ProjectVersionSummaryDTO.Author>> itemAuthors) {}
+    public record Current(ProjectVersionData snapshot, Map<Long, List<ProjectVersionSummaryDTO.Author>> itemAuthors) {}
 
     public History list(Long id, Long beforeId, User user) {
         Project project = access.getProject(id, user, ProjectRole.VIEWER);
         var rows = versions.summaries(id, beforeId, PageRequest.of(0, 21));
-        return new History(rows.stream().limit(20).toList(), rows.size() > 20 ? rows.get(19).id() : null, project.isHistoryUnavailable());
+        return new History(capture.withAuthors(rows.stream().limit(20).toList()), rows.size() > 20 ? rows.get(19).id() : null, project.isHistoryUnavailable());
     }
 
     public Detail detail(Long id, Long versionId, User user) {
         access.getProject(id, user, ProjectRole.VIEWER);
         ProjectVersion version = version(id, versionId);
-        return new Detail(summary(version, user), capture.read(version.getSnapshot()));
+        return new Detail(summary(version), capture.read(version.getSnapshot()), capture.versionItemAuthors(version.getId()));
+    }
+
+    @Transactional
+    public Current current(Long id, User user) {
+        return new Current(capture.capture(access.getProject(id, user, ProjectRole.VIEWER)), capture.pendingItemAuthors(id));
     }
 
     @Transactional
     public ProjectVersionSummaryDTO create(Long id, String name, User user) {
         Project project = capture.lock(id, user);
-        return summary(capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.MANUAL, name), user);
+        return summary(capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.MANUAL, name));
     }
 
     @Transactional
@@ -81,6 +87,7 @@ public class ProjectVersionService {
         ProjectVersionData data = capture.read(version(id, versionId).getSnapshot());
         for (var item : data.items()) ContentLimits.assertPreservedEditorNote(item.content());
         capture.save(project, limits.writeValue(capture.capture(project)), ProjectVersion.Type.RESTORE, null);
+        capture.recordEditor(project);
         List<Item> current = items.findForExport(id);
         collab.resetAfterCommit(current.stream().map(Item::getId).toList());
         capture.structureChanged(List.of(id));
@@ -165,7 +172,7 @@ public class ProjectVersionService {
         return versions.findByIdAndProjectId(versionId, id).orElseThrow(() -> new ResourceNotFoundException("Version not found"));
     }
 
-    private ProjectVersionSummaryDTO summary(ProjectVersion version, User user) {
-        return new ProjectVersionSummaryDTO(version.getId(), version.getCreatedAt(), version.getType(), version.getName(), user.getUsername());
+    private ProjectVersionSummaryDTO summary(ProjectVersion version) {
+        return capture.withAuthors(List.of(new ProjectVersionSummaryDTO(version.getId(), version.getCreatedAt(), version.getType(), version.getName()))).get(0);
     }
 }

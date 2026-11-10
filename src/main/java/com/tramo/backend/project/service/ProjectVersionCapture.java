@@ -78,6 +78,7 @@ public class ProjectVersionCapture {
         Project project = em.find(Project.class, id, LockModeType.PESSIMISTIC_WRITE);
         if (project == null) throw new ResourceNotFoundException("Project not found");
         access.assertRole(project, user, min);
+        project.setEditor(user.getId());
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes && attributes.getRequest().getRequestURI().startsWith("/api/")) {
             String supplied = attributes.getRequest().getHeader("X-Project-Epoch");
             if (supplied == null && project.getRestoreEpoch() == 0) return project;
@@ -136,6 +137,10 @@ public class ProjectVersionCapture {
     }
 
     public void beforeChange(Project project) {
+        beforeChange(project, null);
+    }
+
+    public void beforeChange(Project project, Long itemId) {
         Date now = new Date();
         Date lastAuto = project.getLastAutoVersionDate();
         boolean idle = project.getLastEditedDate() != null && now.getTime() - project.getLastEditedDate().getTime() >= 15 * 60_000L;
@@ -152,6 +157,15 @@ public class ProjectVersionCapture {
             }
         }
         project.setLastEditedDate(now);
+        recordEditor(project);
+        if (itemId != null && project.getEditor() != null)
+            jdbc.update("INSERT INTO item_history_editor (project_id, item_id, user_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", project.getId(), itemId, project.getEditor());
+    }
+
+    public void recordEditor(Project project) {
+        if (project.getEditor() == null) return;
+        jdbc.update("UPDATE project SET history_editor_ids = array_append(history_editor_ids, ?) WHERE id = ? AND NOT (? = ANY(history_editor_ids))",
+                project.getEditor(), project.getId(), project.getEditor());
     }
 
     public ProjectVersionData capture(Project project) {
@@ -182,10 +196,44 @@ public class ProjectVersionCapture {
         version.setProject(project); version.setSnapshot(snapshot); version.setType(type); version.setName(name);
         version.setCreatedAt(new Date()); version.setStateHash(hash(snapshot)); version.setSnapshotBytes(ContentLimits.bytes(snapshot));
         versions.saveAndFlush(version);
+        jdbc.update("UPDATE project_version v SET author_ids = CASE WHEN ? = 'AUTO' OR ?::bigint IS NULL OR ?::bigint = ANY(p.history_editor_ids) THEN p.history_editor_ids ELSE array_append(p.history_editor_ids, ?::bigint) END FROM project p WHERE p.id = v.project_id AND v.id = ?",
+                type.name(), project.getEditor(), project.getEditor(), project.getEditor(), version.getId());
+        jdbc.update("UPDATE project SET history_editor_ids = '{}' WHERE id = ?", project.getId());
+        jdbc.update("UPDATE project_version SET item_authors = COALESCE((SELECT jsonb_object_agg(item_id, users) FROM (SELECT item_id, array_agg(user_id ORDER BY user_id) AS users FROM item_history_editor WHERE project_id = ? GROUP BY item_id) pending), '{}') WHERE id = ?",
+                project.getId(), version.getId());
+        jdbc.update("DELETE FROM item_history_editor WHERE project_id = ?", project.getId());
         ProjectVersionData data = read(snapshot);
         images.retainVersion(version.getId(), data.items().stream().map(ProjectVersionData.ItemData::content).toList());
         jdbc.update("DELETE FROM project_version WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (ORDER BY id DESC) AS position, sum(snapshot_bytes) OVER (ORDER BY id DESC) AS bytes FROM project_version WHERE project_id = ? AND type = 'AUTO') retained WHERE position > 50 OR bytes > 67108864)", project.getId());
         return version;
+    }
+
+    public List<ProjectVersionSummaryDTO> withAuthors(List<ProjectVersionSummaryDTO> summaries) {
+        if (summaries.isEmpty()) return summaries;
+        Map<Long, List<ProjectVersionSummaryDTO.Author>> byVersion = new HashMap<>();
+        jdbc.query("SELECT v.id, u.id AS user_id, u.username FROM project_version v JOIN project p ON p.id = v.project_id "
+                + "CROSS JOIN LATERAL unnest(CASE WHEN cardinality(v.author_ids) = 0 THEN ARRAY[p.user_id] ELSE v.author_ids END) WITH ORDINALITY a(user_id, position) "
+                + "JOIN users u ON u.id = a.user_id WHERE v.id IN (" + String.join(",", Collections.nCopies(summaries.size(), "?")) + ") ORDER BY v.id, a.position",
+                (org.springframework.jdbc.core.RowCallbackHandler) row -> byVersion.computeIfAbsent(row.getLong("id"), key -> new ArrayList<>())
+                        .add(new ProjectVersionSummaryDTO.Author(row.getLong("user_id"), row.getString("username"))),
+                summaries.stream().map(ProjectVersionSummaryDTO::id).toArray());
+        return summaries.stream().map(summary -> summary.withAuthors(byVersion.getOrDefault(summary.id(), List.of()))).toList();
+    }
+
+    public Map<Long, List<ProjectVersionSummaryDTO.Author>> versionItemAuthors(Long versionId) {
+        return itemAuthors("SELECT e.key::bigint AS item_id, u.id AS user_id, u.username FROM project_version v CROSS JOIN LATERAL jsonb_each(v.item_authors) e "
+                + "CROSS JOIN LATERAL jsonb_array_elements_text(e.value) WITH ORDINALITY a(user_id, position) JOIN users u ON u.id = a.user_id::bigint WHERE v.id = ? ORDER BY 1, a.position", versionId);
+    }
+
+    public Map<Long, List<ProjectVersionSummaryDTO.Author>> pendingItemAuthors(Long projectId) {
+        return itemAuthors("SELECT h.item_id, u.id AS user_id, u.username FROM item_history_editor h JOIN users u ON u.id = h.user_id WHERE h.project_id = ? ORDER BY h.item_id, u.id", projectId);
+    }
+
+    private Map<Long, List<ProjectVersionSummaryDTO.Author>> itemAuthors(String sql, Long id) {
+        Map<Long, List<ProjectVersionSummaryDTO.Author>> byItem = new LinkedHashMap<>();
+        jdbc.query(sql, (org.springframework.jdbc.core.RowCallbackHandler) row -> byItem.computeIfAbsent(row.getLong("item_id"), key -> new ArrayList<>())
+                .add(new ProjectVersionSummaryDTO.Author(row.getLong("user_id"), row.getString("username"))), id);
+        return byItem;
     }
 
     public ProjectVersionData read(String snapshot) {
