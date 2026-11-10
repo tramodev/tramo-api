@@ -25,7 +25,7 @@ public class ProjectVersionController {
     }
 
     @GetMapping("/current")
-    public ProjectVersionData current(@PathVariable String id, @AuthenticationPrincipal User user) {
+    public ProjectVersionService.Current current(@PathVariable String id, @AuthenticationPrincipal User user) {
         return versions.current(codec.decode(id), user);
     }
 

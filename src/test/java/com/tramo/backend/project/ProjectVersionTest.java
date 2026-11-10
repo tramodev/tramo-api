@@ -64,12 +64,31 @@ class ProjectVersionTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void versionsAttributeChangesToEachNote() {
+        var f = fixture();
+        User editor = createUser("noteeditor");
+        jdbcTemplate.update("INSERT INTO project_member (project_id, user_id, role, created_at) VALUES (?, ?, 'EDITOR', now())", f.project.getId(), editor.getId());
+        Item other = new Item(); other.setTitle("Other"); other.setTitleAlign("center"); other.setProject(f.project);
+        ItemContent content = new ItemContent(); content.setContent(lexicalText("other")); other.setContent(content);
+        Long otherId = itemRepository.save(other).getId();
+        edit(f, "owner");
+        items.updateContent(otherId, lexicalText("editor"), editor);
+        assertThat(versions.current(f.project.getId(), f.user).itemAuthors()).containsOnlyKeys(f.item, otherId);
+        var named = versions.create(f.project.getId(), "Split", f.user);
+        var detail = versions.detail(f.project.getId(), named.id(), f.user);
+        assertThat(detail.itemAuthors().get(f.item)).extracting(ProjectVersionSummaryDTO.Author::username).containsExactly("historyowner");
+        assertThat(detail.itemAuthors().get(otherId)).extracting(ProjectVersionSummaryDTO.Author::username).containsExactly("noteeditor");
+        assertThat(versions.current(f.project.getId(), f.user).itemAuthors()).isEmpty();
+    }
+
+    @Test
     void currentStateIsReadWithoutCreatingAVersion() throws Exception {
         var f = fixture();
         edit(f, "now");
         long before = jdbcTemplate.queryForObject("select count(*) from project_version where project_id = ?", Long.class, f.project.getId());
         mockMvc.perform(get("/api/project/" + pid(f.project) + "/history/current").header("Authorization", bearer(f.user)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].content").value(lexicalText("now")));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.snapshot.items[0].content").value(lexicalText("now")))
+                .andExpect(jsonPath("$.itemAuthors['" + f.item + "'][0].username").value("historyowner"));
         assertThat(jdbcTemplate.queryForObject("select count(*) from project_version where project_id = ?", Long.class, f.project.getId())).isEqualTo(before);
     }
 

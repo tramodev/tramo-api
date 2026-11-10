@@ -55,7 +55,8 @@ public class ProjectVersionService {
     }
 
     public record History(List<ProjectVersionSummaryDTO> versions, Long nextCursor, boolean unavailable) {}
-    public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot) {}
+    public record Detail(ProjectVersionSummaryDTO version, ProjectVersionData snapshot, Map<Long, List<ProjectVersionSummaryDTO.Author>> itemAuthors) {}
+    public record Current(ProjectVersionData snapshot, Map<Long, List<ProjectVersionSummaryDTO.Author>> itemAuthors) {}
 
     public History list(Long id, Long beforeId, User user) {
         Project project = access.getProject(id, user, ProjectRole.VIEWER);
@@ -66,12 +67,12 @@ public class ProjectVersionService {
     public Detail detail(Long id, Long versionId, User user) {
         access.getProject(id, user, ProjectRole.VIEWER);
         ProjectVersion version = version(id, versionId);
-        return new Detail(summary(version), capture.read(version.getSnapshot()));
+        return new Detail(summary(version), capture.read(version.getSnapshot()), capture.versionItemAuthors(version.getId()));
     }
 
     @Transactional
-    public ProjectVersionData current(Long id, User user) {
-        return capture.capture(access.getProject(id, user, ProjectRole.VIEWER));
+    public Current current(Long id, User user) {
+        return new Current(capture.capture(access.getProject(id, user, ProjectRole.VIEWER)), capture.pendingItemAuthors(id));
     }
 
     @Transactional
