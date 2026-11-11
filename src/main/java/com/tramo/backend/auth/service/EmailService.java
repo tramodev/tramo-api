@@ -7,7 +7,9 @@ import com.tramo.backend.user.entity.User;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
+import org.springframework.mail.MailPreparationException;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -37,6 +39,9 @@ public class EmailService {
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.mail.contact}")
+    private String contactAddress;
 
     @Value("${app.mail.enabled:true}")
     private boolean mailEnabled;
@@ -79,6 +84,24 @@ public class EmailService {
         String html = layoutHtml("Moderation notice", "A moderator reviewed your Tramo account.", content);
         try { mailSender.send(message(email, "Tramo moderation notice", text, html)); }
         catch (MailException | MessagingException failure) { SafeLog.failure(log, "moderation_email_failed", "MAIL_SEND_FAILED", failure); }
+    }
+
+    public void sendContactEmail(String email, String topic, String body) {
+        if (!mailEnabled) {
+            log.info("event=contact_email_skipped code=MAIL_DISABLED");
+            return;
+        }
+        String text = "From: " + email + "\nTopic: " + topic + "\n\n" + body;
+        String content = render("notice", Map.of("title", "Contact: " + escape(topic), "username", escape(contactAddress),
+                "message", escape(text).replace("\n", "<br>")));
+        String html = layoutHtml("Contact message", "New message from the Tramo contact form.", content);
+        try {
+            MimeMessage message = message(contactAddress, "[Contact] " + topic + " from " + email, text, html);
+            message.setReplyTo(InternetAddress.parse(email));
+            mailSender.send(message);
+        } catch (MessagingException failure) {
+            throw new MailPreparationException(failure);
+        }
     }
 
     @Async
