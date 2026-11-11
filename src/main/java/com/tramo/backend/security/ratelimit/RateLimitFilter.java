@@ -63,6 +63,11 @@ public class RateLimitFilter implements Filter {
             if (!tryConsumeOrReject(bucket, res)) return;
         }
 
+        if ("POST".equals(req.getMethod()) && "/api/public/contact".equals(path)) {
+            Bucket bucket = rateLimiterService.resolveBucket(ip + ":contact", 3, 3, Duration.ofHours(1));
+            if (!tryConsumeOrReject(bucket, res)) return;
+        }
+
         if (path.startsWith("/api/public/") && path.endsWith("/editor-images/resolve")) {
             Bucket bucket = rateLimiterService.resolveBucket(ip + ":image-resolve", 120, 120, Duration.ofMinutes(1));
             if (!tryConsumeOrReject(bucket, res)) return;

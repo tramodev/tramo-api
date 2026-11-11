@@ -21,6 +21,7 @@ import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -39,6 +40,7 @@ class EmailServiceTest {
         ReflectionTestUtils.setField(emailService, "fromAddress", "noreply@tramo.dev");
         ReflectionTestUtils.setField(emailService, "frontendUrl", "https://tramo.dev");
         ReflectionTestUtils.setField(emailService, "mailEnabled", true);
+        ReflectionTestUtils.setField(emailService, "contactAddress", "contact@tramo.dev");
     }
 
     private User user(String username, String email) {
@@ -114,6 +116,21 @@ class EmailServiceTest {
     void failedModerationEmailDoesNotFailTheCommittedAction() {
         doThrow(new MailSendException("smtp down")).when(mailSender).send(any(MimeMessage.class));
         assertThatCode(() -> emailService.sendModerationEmail("alice@example.com", "alice", "Notice")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void contactEmailGoesToContactAddressWithReplyToSenderAndPropagatesFailures() throws Exception {
+        emailService.sendContactEmail("reader@example.com", "BUG", "<script>x</script>");
+        var captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage sent = captor.getValue();
+        assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("contact@tramo.dev");
+        assertThat(sent.getReplyTo()[0].toString()).isEqualTo("reader@example.com");
+        assertThat(sent.getSubject()).isEqualTo("[Contact] BUG from reader@example.com");
+        assertThat(part(sent, "text/plain")).contains("reader@example.com", "<script>x</script>");
+        assertThat(part(sent, "text/html")).doesNotContain("<script>");
+        doThrow(new MailSendException("smtp down")).when(mailSender).send(any(MimeMessage.class));
+        assertThatThrownBy(() -> emailService.sendContactEmail("reader@example.com", "BUG", "Hi")).isInstanceOf(MailSendException.class);
     }
 
     @Test
