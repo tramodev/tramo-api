@@ -267,6 +267,11 @@ public class NotificationService {
         recordNotice(owner, NotificationTypes.SHARE_LINK, project, owner, null);
     }
 
+    @Transactional
+    public void recordProjectTrashed(List<User> recipients, Project project) {
+        recipients.forEach(recipient -> recordNotice(recipient, NotificationTypes.PROJECT_TRASHED, project, project.getOwner(), null));
+    }
+
     private void recordNotice(User recipient, String type, Project project, User actor, String message) {
         if (recipient == null) return;
         Notification notification = new Notification();

@@ -73,7 +73,8 @@ public class ProjectResponseMapper {
                 source != null ? project.getForkedFromTitle() : null,
                 source != null ? source.getOwner().getUsername() : null,
                 project.getOwner().getUsername(),
-                null
+                null,
+                project.getTrashedAt()
         );
     }
 

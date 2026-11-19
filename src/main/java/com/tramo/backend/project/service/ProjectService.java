@@ -151,6 +151,7 @@ public class ProjectService {
             projects.add(member.getProject());
             roles.put(member.getProject().getId(), member.getRole());
         }
+        projects.removeIf(project -> project.getTrashedAt() != null);
         List<Long> projectIds = projects.stream().map(Project::getId).toList();
         Map<Long, Long> imageBytesByProjectId = uploadRecordRepository.sumBytesGroupedByProjectIdIn(projectIds).stream()
                 .collect(Collectors.toMap(UploadRecordRepository.ProjectBytesSum::getProjectId, UploadRecordRepository.ProjectBytesSum::getBytes));
@@ -297,7 +298,7 @@ public class ProjectService {
 
     @Transactional
     public void delete(Long id, User requester) {
-        Project project = accessGuard.getOwnedProject(id, requester);
+        Project project = accessGuard.getOwnedProjectIncludingTrash(id, requester);
         tagService.applyProjectTags(project, List.of(), requester.getId());
         imageDeletionQueue.queue(project.getThumbnailImageUrl(), requester.getId());
         for (String url : itemImageReferenceRepository.findUrlsByProjectId(id)) {

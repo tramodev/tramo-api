@@ -46,7 +46,7 @@ public class ProjectAccessRequestService {
     @Transactional
     public void request(Long projectId, User requester) {
         Project project = projectRepository.findById(projectId).orElse(null);
-        if (project == null) return;
+        if (project == null || project.getTrashedAt() != null) return;
         User owner = project.getOwner();
         if (owner.isBanned() || accessGuard.roleOf(project, requester) != null
                 || blockedUserRepository.existsEitherDirection(owner.getId(), requester.getId())
