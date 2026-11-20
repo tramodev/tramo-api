@@ -24,6 +24,7 @@ import com.tramo.backend.project.service.ProjectEngagementService;
 import com.tramo.backend.project.service.ProjectForkService;
 import com.tramo.backend.project.service.ProjectPublishService;
 import com.tramo.backend.project.service.ProjectService;
+import com.tramo.backend.project.service.ProjectTrashService;
 import com.tramo.backend.project.service.ProjectEditorService;
 import com.tramo.backend.security.ClientIp;
 import com.tramo.backend.user.entity.User;
@@ -40,6 +41,7 @@ import java.util.List;
 public class ProjectController {
     private final ProjectStartService startService;
     private final ProjectService projectService;
+    private final ProjectTrashService trashService;
     private final ProjectEditorService projectEditorService;
     private final ProjectPublishService publishService;
     private final ProjectForkService forkService;
@@ -48,9 +50,10 @@ public class ProjectController {
     private final ProjectIdCodec projectIdCodec;
     private final ClientIp clientIp;
 
-    public ProjectController(ProjectStartService startService, ProjectService projectService, ProjectEditorService projectEditorService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
+    public ProjectController(ProjectStartService startService, ProjectService projectService, ProjectTrashService trashService, ProjectEditorService projectEditorService, ProjectPublishService publishService, ProjectForkService forkService, ProjectEngagementService engagementService, ModerationService moderationService, ProjectIdCodec projectIdCodec, ClientIp clientIp) {
         this.startService = startService;
         this.projectService = projectService;
+        this.trashService = trashService;
         this.projectEditorService = projectEditorService;
         this.publishService = publishService;
         this.forkService = forkService;
@@ -96,6 +99,11 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.getAllForUser(user));
     }
 
+    @GetMapping("/trash")
+    public ResponseEntity<List<ProjectResponseDTO>> getTrash(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(trashService.list(user));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ProjectResponseDTO> getById(@PathVariable String id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(projectService.getById(projectIdCodec.decode(id), user));
@@ -122,6 +130,18 @@ public class ProjectController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id, @AuthenticationPrincipal User user) {
         projectService.delete(projectIdCodec.decode(id), user);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/trash")
+    public ResponseEntity<Void> trash(@PathVariable String id, @AuthenticationPrincipal User user) {
+        trashService.trash(projectIdCodec.decode(id), user);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<Void> restore(@PathVariable String id, @AuthenticationPrincipal User user) {
+        trashService.restore(projectIdCodec.decode(id), user);
         return ResponseEntity.noContent().build();
     }
 

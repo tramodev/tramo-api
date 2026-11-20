@@ -64,6 +64,7 @@ public class Project {
     
     private Date firstPublishedDate;
     private Date lastPublishedDate;
+    private Date trashedAt;
 
     @Column(columnDefinition = "bigint default 0")
     private long viewCount;

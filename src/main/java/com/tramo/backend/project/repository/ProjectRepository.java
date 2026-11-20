@@ -19,6 +19,8 @@ import java.util.UUID;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
     List<Project> findByOwnerId(Long ownerId);
+    List<Project> findByOwnerIdAndTrashedAtNotNullOrderByTrashedAtDesc(Long ownerId);
+    List<Project> findByTrashedAtBefore(java.util.Date cutoff);
 
     @Query("SELECT p FROM Project p WHERE p.owner.id = :ownerId AND p.example = true")
     Optional<Project> findExampleByOwnerId(@Param("ownerId") Long ownerId);
@@ -112,11 +114,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Optional<Project> findFirstByVisibilityOrderByLastPublishedDateDesc(ProjectVisibility visibility);
 
-    @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC")
+    @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL AND p.trashedAt IS NULL ORDER BY p.creationDate DESC")
     List<Project> findByOwnerIdAndForkedFromNotNullOrderByCreationDateDesc(@Param("ownerId") Long ownerId, Pageable pageable);
 
-    @Query(value = "SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL ORDER BY p.creationDate DESC",
-            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL")
+    @Query(value = "SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH fo.owner WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL AND p.trashedAt IS NULL ORDER BY p.creationDate DESC",
+            countQuery = "SELECT COUNT(p) FROM Project p WHERE p.owner.id = :ownerId AND p.forkedFrom IS NOT NULL AND p.trashedAt IS NULL")
     Page<Project> findByOwnerIdAndForkedFromNotNullOrderByCreationDateDescPaged(@Param("ownerId") Long ownerId, Pageable pageable);
 
     @Query("SELECT p FROM Project p LEFT JOIN FETCH p.forkedFrom fo LEFT JOIN FETCH p.owner WHERE fo.owner.id = :forkedFromOwnerId AND p.owner.id <> :ownerId ORDER BY p.creationDate DESC")

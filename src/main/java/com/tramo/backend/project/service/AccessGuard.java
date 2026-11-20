@@ -32,6 +32,17 @@ public class AccessGuard {
         return getProject(id, requester, ProjectRole.OWNER);
     }
 
+    public Project getOwnedProjectIncludingTrash(Long id, User requester) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        if (project.getTrashedAt() == null) {
+            assertRole(project, requester, ProjectRole.OWNER);
+        } else if (requester == null || !project.getOwner().getId().equals(requester.getId())) {
+            throw new ResourceNotFoundException("Project not found");
+        }
+        return project;
+    }
+
     public Project getProject(Long id, User requester, ProjectRole min) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
@@ -55,7 +66,7 @@ public class AccessGuard {
     }
 
     public ProjectRole roleOf(Project project, User requester) {
-        if (requester == null) {
+        if (requester == null || project.getTrashedAt() != null) {
             return null;
         }
         if (project.getOwner().getId().equals(requester.getId())) {

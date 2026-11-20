@@ -138,7 +138,7 @@ public class ProjectShareLinkService {
 
     private void assertUsable(ProjectShareLink link, User requester, Date now) {
         User owner = link.getProject().getOwner();
-        if (link.getRevokedAt() != null || (link.getExpiresAt() != null && !link.getExpiresAt().after(now)) || owner.isBanned()
+        if (link.getRevokedAt() != null || link.getProject().getTrashedAt() != null || (link.getExpiresAt() != null && !link.getExpiresAt().after(now)) || owner.isBanned()
                 || (requester != null && blockedUserRepository.existsEitherDirection(owner.getId(), requester.getId()))) {
             throw new ResourceNotFoundException("Share link not found");
         }

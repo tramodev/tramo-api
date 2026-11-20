@@ -32,4 +32,5 @@ public class ProjectResponseDTO {
     private String forkedFromOwnerUsername;
     private String ownerUsername;
     private ProjectRole role;
+    private Date trashedAt;
 }
