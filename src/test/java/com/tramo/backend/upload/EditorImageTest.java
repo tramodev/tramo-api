@@ -298,7 +298,7 @@ class EditorImageTest extends AbstractIntegrationTest {
         resolve(project, null, image, true, null, 404);
         resolveShared(project, null, image, token, 200);
         resolveShared(other, null, image, token, 404);
-        resolveShared(project, null, image, "x" + token.substring(1), 404);
+        resolveShared(project, null, image, (token.charAt(0) == 'x' ? "y" : "x") + token.substring(1), 404);
         jdbcTemplate.update("INSERT INTO blocked_user(id, blocker_id, blocked_id) VALUES (999999, ?, ?)", owner.getId(), reader.getId());
         resolveShared(project, reader, image, token, 404);
         mockMvc.perform(put("/api/project/" + pid(project) + "/share-link").header("Authorization", bearer(owner))

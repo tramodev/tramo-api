@@ -99,7 +99,7 @@ class ShareLinkTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"token\":\"%s\"}".formatted(token)))
                 .andExpect(status().isUnauthorized());
-        accept(createUser("slguest2"), "x" + token.substring(1)).andExpect(status().isNotFound());
+        accept(createUser("slguest2"), (token.charAt(0) == 'x' ? "y" : "x") + token.substring(1)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -213,7 +213,7 @@ class ShareLinkTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/public/project/" + pid(project))).andExpect(status().isNotFound());
         mockMvc.perform(post("/api/project/" + pid(project) + "/fork").header("Authorization", bearer(reader)))
                 .andExpect(status().isNotFound());
-        view(null, "x" + token.substring(1)).andExpect(status().isNotFound());
+        view(null, (token.charAt(0) == 'x' ? "y" : "x") + token.substring(1)).andExpect(status().isNotFound());
 
         jdbcTemplate.update("INSERT INTO blocked_user(id, blocker_id, blocked_id) VALUES (999998, ?, ?)", owner.getId(), reader.getId());
         view(reader, token).andExpect(status().isNotFound());
