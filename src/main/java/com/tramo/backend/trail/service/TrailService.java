@@ -67,7 +67,7 @@ public class TrailService {
         if (bytes > 0) subscriptions.assertUploadAllowed(project.getOwner(), bytes, subscriptions.isSupporter(project.getOwner()));
         history.beforeStructureChange(project);
         Trail trail = new Trail();
-        trail.setTitle(request.getTitle());
+        trail.setTitle(uniqueTitle(projectId, request.getTitle(), null));
         trail.setDescription(request.getDescription());
         trail.setVisibility(request.getVisibility());
         trail.setProject(project);
@@ -75,6 +75,17 @@ public class TrailService {
         trail.setCreationDate(new Date());
         trail.setModifiedDate(new Date());
         return toResponse(trailRepository.save(trail));
+    }
+
+    private String uniqueTitle(Long projectId, String title, Long selfId) {
+        var taken = trailRepository.findByProjectId(projectId).stream()
+                .filter(other -> !other.getId().equals(selfId)).map(Trail::getTitle).collect(Collectors.toSet());
+        String candidate = title;
+        for (int n = 2; taken.contains(candidate); n++) {
+            String suffix = " (" + n + ")";
+            candidate = title.substring(0, Math.min(title.length(), 255 - suffix.length())) + suffix;
+        }
+        return candidate;
     }
 
     public List<TrailResponseDTO> getAllForProject(Long projectId, User requester) {
@@ -113,7 +124,7 @@ public class TrailService {
         if (!changed) return toResponse(trail);
         history.beforeStructureChange(project);
         if (request.getTitle() != null && !request.getTitle().isBlank()) {
-            trail.setTitle(request.getTitle());
+            trail.setTitle(uniqueTitle(project.getId(), request.getTitle(), trail.getId()));
         }
         if (request.getDescription() != null) {
             long growth = (long) ContentLimits.bytes(request.getDescription()) - ContentLimits.bytes(trail.getDescription());
