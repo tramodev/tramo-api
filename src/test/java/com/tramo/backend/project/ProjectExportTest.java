@@ -52,6 +52,7 @@ class ProjectExportTest extends AbstractIntegrationTest {
         projects.saveAndFlush(project);
         long first = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Repeated\",\"description\":\"First path\"}");
         long second = postForId(owner, "/api/project/" + pid(project) + "/trail", "{\"title\":\"Repeated\"}");
+        jdbcTemplate.update("UPDATE trail SET title = 'Repeated' WHERE id = ?", second);
         long shared = postForId(owner, "/api/trail/" + first + "/item", "{\"title\":\"Repeated\"}");
         long loose = postForId(owner, "/api/project/" + pid(project) + "/item", "{\"title\":\"Repeated\"}");
         itemService.attachToTrail(second, shared, owner);
