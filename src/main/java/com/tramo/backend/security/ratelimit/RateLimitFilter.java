@@ -25,7 +25,7 @@ public class RateLimitFilter implements Filter {
     private static final Set<String> COLLAB_TOKEN_PATHS = Set.of("/api/collab/token", "/api/collab/project-token");
     private static final Set<String> TIGHT_TIER_PATHS = Set.of(
             "/user/password", "/user/me", "/api/uploads/presign", "/api/uploads/editor-images/presign",
-            "/api/subscription/patreon/sync", "/api/project/draft-commit"
+            "/api/subscription/patreon/sync", "/api/project/draft-commit", "/api/project/import"
     );
 
     private final RateLimiterService rateLimiterService;

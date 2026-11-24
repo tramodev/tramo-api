@@ -6,6 +6,7 @@ import com.tramo.backend.common.ContentLimits;
 import com.tramo.backend.project.entity.ProjectDraftCommit;
 import com.tramo.backend.project.dto.DraftCommitDTO;
 import com.tramo.backend.project.dto.DraftCommitRequest;
+import com.tramo.backend.project.dto.ProjectImportRequest;
 import com.tramo.backend.project.repository.ProjectDraftCommitRepository;
 import com.tramo.backend.exception.RequestErrorCode;
 import com.tramo.backend.exception.RequestValidationException;
@@ -38,6 +39,10 @@ import java.time.temporal.ChronoUnit;
 import org.springframework.scheduling.annotation.Scheduled;
 import com.tramo.backend.exception.ResourceNotFoundException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
 
 @Service
 public class ProjectStartService {
@@ -104,6 +109,73 @@ public class ProjectStartService {
         receipt.setItemTitle(itemTitle);
         draftCommits.save(receipt);
         return draftResult(receipt);
+    }
+
+    @Transactional
+    public StartedProjectDTO importProject(ProjectImportRequest request, User user) {
+        entityManager.find(User.class, user.getId(), LockModeType.PESSIMISTIC_WRITE);
+        var existing = projects.findByOwnerIdAndStartRequestId(user.getId(), request.clientRequestId());
+        if (existing.isPresent()) return start(existing.get().getId(), null, user);
+        var notes = new LinkedHashMap<String, ProjectImportRequest.ImportItem>();
+        for (var item : request.items()) {
+            if (notes.put(item.id(), item) != null) throw new RequestValidationException(RequestErrorCode.PROJECT_ITEM_INVALID);
+            if (visibleText(item.content())) ContentLimits.assertEditorNote(item.content());
+        }
+        for (var trail : request.trails()) {
+            if (new HashSet<>(trail.itemIds()).size() != trail.itemIds().size() || !notes.keySet().containsAll(trail.itemIds()))
+                throw new RequestValidationException(RequestErrorCode.PROJECT_ITEM_INVALID);
+        }
+        var project = new Project();
+        project.setOwner(user);
+        project.setStartRequestId(request.clientRequestId());
+        project.setTitle(draftTitle(request.title(), "Untitled project"));
+        project.setVisibility(ProjectVisibility.PRIVATE);
+        project.setCreationDate(new Date());
+        project.setModifiedDate(new Date());
+        projects.save(project);
+        var ids = new HashMap<String, Long>();
+        for (var trail : request.trails()) {
+            Long trailId = trail(project.getId(), draftTitle(trail.title(), "Untitled trail"), "", user);
+            for (String id : trail.itemIds()) {
+                if (ids.containsKey(id)) itemService.attachToTrail(trailId, ids.get(id), user);
+                else ids.put(id, itemService.create(trailId, importedItem(notes.get(id)), user).getId());
+            }
+        }
+        for (var item : notes.values()) {
+            if (!ids.containsKey(item.id())) ids.put(item.id(), itemService.createLoose(project.getId(), importedItem(item), user).getId());
+            Long itemId = ids.get(item.id());
+            itemService.update(itemId, importedItem(item), user);
+            if (visibleText(item.content())) itemService.updateContent(itemId, remapItemLinks(item.content(), ids), user);
+        }
+        return start(project.getId(), null, user);
+    }
+
+    private ItemRequestDTO importedItem(ProjectImportRequest.ImportItem item) {
+        var request = new ItemRequestDTO();
+        request.setTitle(draftTitle(item.title(), "Untitled note"));
+        request.setTitleAlign(item.titleAlign());
+        return request;
+    }
+
+    private String remapItemLinks(String content, Map<String, Long> ids) {
+        JsonNode root;
+        try { root = mapper.readTree(content); }
+        catch (RuntimeException invalid) { return content; }
+        remapItemLinks(root, ids);
+        return mapper.writeValueAsString(root);
+    }
+
+    private void remapItemLinks(JsonNode node, Map<String, Long> ids) {
+        if (node instanceof ObjectNode link && "link".equals(link.path("type").asText())) {
+            String rel = link.path("rel").asText("");
+            String prefix = rel.startsWith("tramo-idea:") ? "tramo-idea:" : rel.startsWith("mypath-idea:") ? "mypath-idea:" : null;
+            if (prefix != null) {
+                Long id = ids.get(rel.substring(prefix.length()));
+                if (id != null) link.put("rel", "tramo-idea:" + id);
+                else link.remove("rel");
+            }
+        }
+        for (JsonNode child : node) remapItemLinks(child, ids);
     }
 
     @Scheduled(cron = "0 0 3 * * *")

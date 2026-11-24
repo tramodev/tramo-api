@@ -4,6 +4,7 @@ package com.tramo.backend.project.controller;
 
 import com.tramo.backend.project.dto.DraftCommitDTO;
 import com.tramo.backend.project.dto.DraftCommitRequest;
+import com.tramo.backend.project.dto.ProjectImportRequest;
 import com.tramo.backend.common.ProjectIdCodec;
 import com.tramo.backend.moderation.dto.ReportRequestDTO;
 import com.tramo.backend.moderation.service.ModerationService;
@@ -74,6 +75,13 @@ public class ProjectController {
             @Valid @RequestBody DraftCommitRequest request,
             @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(startService.commitDraft(request, user));
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<StartedProjectDTO> importProject(
+            @Valid @RequestBody ProjectImportRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(startService.importProject(request, user));
     }
 
     @PostMapping("/start")
