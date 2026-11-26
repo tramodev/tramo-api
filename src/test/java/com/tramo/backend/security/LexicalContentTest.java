@@ -24,8 +24,8 @@ class LexicalContentTest {
 
     @Test
     void boundsMusicLengthAndRequiresStringSources() {
-        for (String type : new String[]{"equation", "music"}) {
-            String field = "equation".equals(type) ? "equation" : "abc";
+        for (String type : new String[]{"equation", "music", "graph"}) {
+            String field = "music".equals(type) ? "abc" : "equation";
             assertThatCode(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\",\"" + field + "\":\"" + "x".repeat(10000) + "\"}")))
                     .doesNotThrowAnyException();
             assertThatThrownBy(() -> ContentLimits.assertEditorNote(state("{\"type\":\"" + type + "\",\"" + field + "\":\"" + "x".repeat(10001) + "\"}")))
@@ -113,8 +113,8 @@ class LexicalContentTest {
 
     @Test
     void updatePreservesOnlyExistingLegacySourcesAndTheirMultiplicity() {
-        for (String type : new String[]{"equation", "music"}) {
-            String field = "equation".equals(type) ? "equation" : "abc";
+        for (String type : new String[]{"equation", "music", "graph"}) {
+            String field = "music".equals(type) ? "abc" : "equation";
             for (String source : new String[]{"42", "null", "true", "{}", "[]", "\"" + "x".repeat(10001) + "\""}) {
                 String legacy = "{\"type\":\"" + type + "\",\"" + field + "\":" + source + "}";
                 String previous = state(legacy);

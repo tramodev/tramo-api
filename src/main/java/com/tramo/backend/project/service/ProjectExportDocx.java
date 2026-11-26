@@ -132,13 +132,13 @@ public class ProjectExportDocx {
                 int width = n.path("width").asInt(0);
                 picture(p, path, width > 0 && width <= 10000 ? width : 0, n.path("caption").asText(""), "image in note " + itemId);
             }
-            case "equation", "music" -> {
+            case "equation", "music", "graph" -> {
                 sourceEmbeds++;
-                boolean math = "equation".equals(type);
+                boolean math = !"music".equals(type);
                 JsonNode source = n.path(math ? "equation" : "abc");
                 if (!source.isString()) warnings.add("Note " + itemId + ": " + type + " source is not text; original JSON is preserved.");
                 else if (source.asText().length() > 10000) warnings.add("Note " + itemId + ": " + type + " source exceeds 10,000 characters; original source is preserved.");
-                warnings.add("Note " + itemId + ": " + (math ? "equation shown as LaTeX source" : "music shown as ABC notation without sheet rendering or audio") + ".");
+                warnings.add("Note " + itemId + ": " + (math ? type + " shown as LaTeX source" : "music shown as ABC notation without sheet rendering or audio") + ".");
                 mono(p.createRun(), source.isString() ? source.asText() : source.toString());
             }
             case "link", "autolink" -> {

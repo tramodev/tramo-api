@@ -82,13 +82,13 @@ public class ProjectExportMarkdown {
             String caption = n.path("caption").asText("");
             return "![" + escape(n.path("altText").asText("")) + "](" + path + ")" + (caption.isBlank() ? "" : "<br>*" + escape(caption) + "*");
         }
-        if ("equation".equals(type) || "music".equals(type)) {
+        if ("equation".equals(type) || "music".equals(type) || "graph".equals(type)) {
             sourceEmbeds++;
-            boolean math = "equation".equals(type);
+            boolean math = !"music".equals(type);
             JsonNode source = n.path(math ? "equation" : "abc");
             if (!source.isString()) warnings.add("Note " + itemId + ": " + type + " source is not text; original JSON is preserved.");
             else if (source.asText().length() > 10000) warnings.add("Note " + itemId + ": " + type + " source exceeds 10,000 characters; original source is preserved.");
-            warnings.add("Note " + itemId + ": " + (math ? "equation shown as LaTeX source" : "music shown as ABC notation without sheet rendering or audio") + ".");
+            warnings.add("Note " + itemId + ": " + (math ? type + " shown as LaTeX source" : "music shown as ABC notation without sheet rendering or audio") + ".");
             String text = source.isString() ? source.asText() : source.toString();
             if (!math) return fence("abc", text);
             return n.path("inline").asBoolean(false) ? "$" + text + "$" : "$$\n" + text + "\n$$";

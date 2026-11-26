@@ -22,7 +22,7 @@ public final class LexicalContent {
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
     private static final Set<String> TYPES = Set.of("root", "paragraph", "text", "linebreak", "tab",
             "heading", "quote", "list", "listitem", "code", "code-highlight", "link", "autolink",
-            "image", "equation", "music", "embed", "table", "tablerow", "tablecell", "horizontalrule");
+            "image", "equation", "music", "graph", "embed", "table", "tablerow", "tablecell", "horizontalrule");
     private static final Set<String> EMBED_FIELDS = Set.of("type", "version", "format", "provider", "id");
     private static final Set<String> SCHEMES = Set.of("http", "https", "mailto", "sms", "tel");
     private static final Pattern FONT_SIZE = Pattern.compile("[0-9]+(?:\\.[0-9]+)?px");
@@ -53,8 +53,8 @@ public final class LexicalContent {
 
     private static String legacySourceKey(JsonNode node) {
         String type = node.path("type").asText("");
-        if (!"equation".equals(type) && !"music".equals(type)) return null;
-        JsonNode source = node.path("equation".equals(type) ? "equation" : "abc");
+        if (!"equation".equals(type) && !"music".equals(type) && !"graph".equals(type)) return null;
+        JsonNode source = node.path("music".equals(type) ? "abc" : "equation");
         return !source.isString() || source.asText().length() > 10000 ? type + ":" + source.toString() : null;
     }
 
